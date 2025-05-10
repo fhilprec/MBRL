@@ -1,3 +1,9 @@
+import os
+# Add CUDA paths to environment
+os.environ['XLA_FLAGS'] = '--xla_gpu_cuda_data_dir=/usr/lib/cuda'
+# Remove CPU restriction to allow GPU usage
+# os.environ['JAX_PLATFORM_NAME'] = 'cpu'  # Comment this out
+
 import jax
 import jax.numpy as jnp
 import optax
@@ -222,28 +228,25 @@ def train_world_model(game, num_epochs=50, batch_size=64,
     return params
 
 if __name__ == "__main__":
+    # Check JAX configuration
     print("JAX version:", jax.__version__)
     print("Available devices:", jax.devices())
     print("Default backend:", jax.default_backend())
     
-    # Try to explicitly set GPU if available
-    try:
-        from jax.config import config
-        config.update("jax_platform_name", "gpu")
-        print("After setting GPU preference:", jax.devices())
-    except Exception as e:
-        print("Error setting GPU preference:", e)
-
+    # Check if GPU is available
+    gpu_devices = [d for d in jax.devices() if d.platform == 'gpu']
+    if gpu_devices:
+        print(f"GPU devices found: {gpu_devices}")
+    else:
+        print("No GPU devices found, falling back to CPU")
+        os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+    
     # Initialize the game environment
     game = JaxSeaquest()
     
     # Train the world model
-    model_params = train_world_model(
-        game,
-        num_epochs=50,
-        batch_size=64,
-        num_episodes_collect=100,
-        save_path='world_model.pkl'
-    )
-    
-    print("World model training complete!")
+    params = train_world_model(game, 
+                              num_epochs=50, 
+                              batch_size=64, 
+                              num_episodes_collect=10,
+                              save_path="world_model.pkl")
