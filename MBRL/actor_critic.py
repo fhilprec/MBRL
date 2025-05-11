@@ -6,7 +6,7 @@ import pickle
 from typing import Tuple, Dict, List
 
 # Import your world model
-from train_worldmodel import build_world_model
+from worldmodel import build_world_model
 
 # Import environment
 import sys

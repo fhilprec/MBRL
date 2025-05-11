@@ -22,7 +22,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestObservation, SeaquestState
 
-def build_world_model(game):
+def build_world_model():
     def forward(flat_obs, action):
         # Check if we have a batch dimension
         batched = len(flat_obs.shape) > 1
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     else:
         print("No GPU devices found, falling back to CPU")
         os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-    
+
     # Initialize the game environment
     game = JaxSeaquest()
     
