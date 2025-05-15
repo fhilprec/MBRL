@@ -1,0 +1,1 @@
+didnt have a reward model at first -> have to learn a reward model alongside the worldmodel
