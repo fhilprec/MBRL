@@ -3,10 +3,12 @@ import jax.numpy as jnp
 import optax
 import haiku as hk
 import pickle
+import numpy as np
+import matplotlib.pyplot as plt
 from typing import Tuple, Dict, List
 
 # Import your world model
-from worldmodel import build_world_model
+from worldmodel import build_world_model, build_reward_model
 
 # Import environment
 import sys
@@ -37,17 +39,41 @@ def build_actor_critic():
     return actor, critic
 
 def load_world_model(path):
-    """Load a trained world model from file."""
+    """Load a trained world model and reward model from file."""
+    
     with open(path, 'rb') as f:
         saved_data = pickle.load(f)
     
-    model = build_world_model()
-    return model, saved_data['params']
+    dynamics_model = build_world_model()
+    reward_model = build_reward_model()
+    
+    # Check which format the saved data is in
+    if 'dynamics_params' in saved_data and 'reward_params' in saved_data:
+        # New format with both models
+        return (dynamics_model, saved_data['dynamics_params']), (reward_model, saved_data['reward_params'])
+    elif 'params' in saved_data:
+        # Old format with just world model
+        print("Found old model format with only dynamics model parameters.")
+        print("Initializing reward model from scratch.")
+        
+        # Initialize reward model with random parameters
+        dummy_obs, _ = JaxSeaquest().reset()
+        dummy_flat_obs = JaxSeaquest().obs_to_flat_array(dummy_obs)
+        dummy_action = jnp.array(0)
+        
+        reward_rng = jax.random.PRNGKey(42)
+        reward_params = reward_model.init(reward_rng, dummy_flat_obs, dummy_action)
+        
+        return (dynamics_model, saved_data['params']), (reward_model, reward_params)
+    else:
+        raise KeyError("Saved model file has unexpected format")
 
-def train_actor_critic_with_world_model(game, world_model, world_model_params, 
+
+def train_actor_critic_with_world_model(game, dynamics_model, dynamics_params, reward_model, reward_params, 
                                         num_epochs=100, batch_size=64, 
-                                        rollout_length=5, gamma=0.99):
-    """Train actor-critic agent using world model rollouts."""
+                                        rollout_length=10, gamma=0.99,
+                                        entropy_coef=0.01):
+    """Train actor-critic agent using world model rollouts with learned rewards."""
     # Initialize actor-critic networks
     actor, critic = build_actor_critic()
     rng = jax.random.PRNGKey(42)
@@ -68,31 +94,33 @@ def train_actor_critic_with_world_model(game, world_model, world_model_params,
     critic_opt_state = critic_opt.init(critic_params)
     
     # World model rollout function
-    def world_model_rollout(params, obs, horizon=rollout_length):
-        """Generate a trajectory using the world model."""
+    def world_model_rollout(rng_key, obs, horizon=rollout_length):
+        """Generate a trajectory using the world model with learned rewards."""
         states = [obs]
         rewards = []
+        actions_taken = []
         current_obs = obs
         
-        for _ in range(horizon):
+        for step in range(horizon):
             # Get action probabilities from current policy
             logits = actor.apply(actor_params, None, current_obs)
-            probs = jax.nn.softmax(logits)
             
-            # Sample action
-            action = jax.random.categorical(jax.random.PRNGKey(42), logits)
+            # Sample action with unique random key for proper exploration
+            rng_key, action_key = jax.random.split(rng_key)
+            action = jax.random.categorical(action_key, logits)
+            actions_taken.append(action)
             
-            # Predict next state using world model
-            next_obs = world_model.apply(world_model_params, None, current_obs, action)
+            # Predict next state using world dynamics model
+            next_obs = dynamics_model.apply(dynamics_params, None, current_obs, action)
             
-            # Simple reward function (can be learned separately if needed)
-            reward = jnp.sum(jnp.abs(next_obs - current_obs))  # Proxy reward
+            # Predict reward using reward model
+            reward = reward_model.apply(reward_params, None, current_obs, action)
             
             states.append(next_obs)
             rewards.append(reward)
             current_obs = next_obs
         
-        return states, rewards
+        return states, rewards, actions_taken, rng_key
     
     # Advantage calculation
     def compute_advantages(values, rewards, gamma):
@@ -111,14 +139,22 @@ def train_actor_critic_with_world_model(game, world_model, world_model_params,
     
     # Training step functions
     def actor_loss(actor_params, observations, actions, advantages):
-        """Actor loss function (policy gradient)."""
+        """Actor loss function (policy gradient with entropy regularization)."""
         logits = jax.vmap(lambda o: actor.apply(actor_params, None, o))(observations)
         log_probs = jax.nn.log_softmax(logits)
         action_log_probs = jnp.take_along_axis(
             log_probs, actions[:, None], axis=1
         ).squeeze()
         
-        return -jnp.mean(action_log_probs * advantages)
+        # Policy gradient loss
+        pg_loss = -jnp.mean(action_log_probs * advantages)
+        
+        # Entropy regularization
+        probs = jax.nn.softmax(logits)
+        entropy = -jnp.sum(probs * log_probs, axis=1)
+        entropy_loss = -jnp.mean(entropy)  # Negative because we want to maximize entropy
+        
+        return pg_loss + entropy_coef * entropy_loss
     
     def critic_loss(critic_params, observations, returns):
         """Critic loss function (value estimation)."""
@@ -147,13 +183,18 @@ def train_actor_critic_with_world_model(game, world_model, world_model_params,
         return new_params, new_opt_state, loss
     
     # Training loop
+    actor_losses = []
+    critic_losses = []
+    rng_key = jax.random.PRNGKey(0)  # Different from model initialization key
+    
     for epoch in range(num_epochs):
         # Sample initial state from environment
         obs, state = game.reset()
         flat_obs = game.obs_to_flat_array(obs)
         
-        # Generate rollout using world model
-        states, rewards = world_model_rollout(world_model_params, flat_obs)
+        # Generate rollout using world model with proper random key propagation
+        rng_key, rollout_key = jax.random.split(rng_key)
+        states, rewards, actions, rng_key = world_model_rollout(rollout_key, flat_obs)
         
         # Get value estimates for all states in rollout
         values = jax.vmap(lambda o: critic.apply(critic_params, None, o))(jnp.array(states))
@@ -163,10 +204,7 @@ def train_actor_critic_with_world_model(game, world_model, world_model_params,
         
         # Prepare data for training (excluding final state)
         train_obs = jnp.array(states[:-1])
-        
-        # Sample actions for training data
-        logits = jax.vmap(lambda o: actor.apply(actor_params, None, o))(train_obs)
-        actions = jax.random.categorical(jax.random.PRNGKey(epoch), logits)
+        actions = jnp.array(actions)
         
         # Update actor and critic
         actor_params, actor_opt_state, actor_loss_val = train_actor_step(
@@ -177,23 +215,54 @@ def train_actor_critic_with_world_model(game, world_model, world_model_params,
             critic_params, critic_opt_state, train_obs, returns
         )
         
+        actor_losses.append(actor_loss_val)
+        critic_losses.append(critic_loss_val)
+        
         # Log progress
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Actor Loss: {actor_loss_val}, Critic Loss: {critic_loss_val}")
+        if epoch % 10 == 0 or epoch == num_epochs - 1:
+            print(f"Epoch {epoch}, Actor Loss: {actor_loss_val:.6f}, Critic Loss: {critic_loss_val:.6f}")
+            
+            # For debugging: print distribution of actions in latest rollout
+            action_counts = np.bincount(np.array(actions), minlength=18)
+            print(f"Action distribution: {action_counts}")
+    
+    # Plot training losses
+    plt.figure(figsize=(12, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(actor_losses)
+    plt.title('Actor Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    
+    plt.subplot(1, 2, 2)
+    plt.plot(critic_losses)
+    plt.title('Critic Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    
+    plt.tight_layout()
+    plt.savefig('actor_critic_training_losses.png')
+    plt.show()
     
     return actor_params, critic_params
 
-# Main execution
 if __name__ == "__main__":
     # Initialize game
     game = JaxSeaquest()
     
-    # Load trained world model
-    world_model, world_model_params = load_world_model('world_model.pkl')
+    # Load trained world model and reward model
+    (dynamics_model, dynamics_params), (reward_model, reward_params) = load_world_model('world_model.pkl')
     
     # Train actor-critic using world model rollouts
     actor_params, critic_params = train_actor_critic_with_world_model(
-        game, world_model, world_model_params
+        game, 
+        dynamics_model, dynamics_params, 
+        reward_model, reward_params,
+        num_epochs=500,           # More epochs
+        rollout_length=40,        # Longer rollouts
+        entropy_coef=0.1,        # Higher entropy bonus to promote exploration
+        gamma=0.99
     )
     
     # Save trained policy

@@ -53,6 +53,8 @@ def render_episode(game, actor, actor_params, renderer, max_steps=1000, render_m
         # Get action from policy
         logits = actor.apply(actor_params, None, flat_obs)
         action = jnp.argmax(logits).item()
+
+        print(f"Step {step}: Action {action}, Logits: {logits}")
         
         # Take step in environment
         next_obs, next_state, reward, done, _ = jitted_step(state, action)
