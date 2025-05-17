@@ -97,7 +97,7 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 1000,
     actions = []
     next_observations = []
     rewards = []
-    
+    ng 
     # Get jitted step and reset functions for efficiency
     jitted_step = jax.jit(game.step)
     jitted_reset = jax.jit(game.reset)
