@@ -7,305 +7,237 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 import pygame
 import os
+import argparse
+import flax
+from flax.training.train_state import TrainState
+from typing import Any
 
-# Import your actor-critic model and environment
-from actor_critic import build_actor_critic
-# Import with correct path structure
-from src.jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestRenderer
-
-def load_actor_critic(path):
-    """Load the trained actor-critic model."""
-    try:
-        print(f"Attempting to load model from {path}")
-        with open(path, 'rb') as f:
-            saved_data = pickle.load(f)
-            
-        print(f"Model loaded. Available keys in saved data: {list(saved_data.keys())}")
-        
-        # Import the actual ActorCritic class used in training
-        from actor_critic import ActorCritic
-        
-        # Create the original network to match the parameter structure
-        network = ActorCritic(action_dim=18)
-        
-        # Check different possible parameter key formats
-        if 'params' in saved_data:
-            params = saved_data['params']
-            print("Found 'params' key in saved model")
-        elif 'runner_state' in saved_data:
-            # This format is from the PPO implementation
-            print("Found 'runner_state' key in saved model")
-            train_state = saved_data['runner_state'][0]
-            if hasattr(train_state, 'params'):
-                params = train_state.params
-                print("Found params in train_state")
-            else:
-                print("Available attributes in train_state:", dir(train_state))
-                raise KeyError("Could not find params in train_state")
-        elif isinstance(saved_data, dict) and len(saved_data) > 0:
-            # Look for any dictionary that might contain parameters
-            print("Looking for parameters in alternative dictionary structure")
-            
-            # If we have a dictionary with a single key, try using that
-            if len(saved_data) == 1:
-                key = list(saved_data.keys())[0]
-                params = saved_data[key]
-                print(f"Using value from key '{key}' as parameters")
-            else:
-                # Print the structure to help diagnose
-                for key, value in saved_data.items():
-                    print(f"Key: {key}, Type: {type(value)}")
-                raise KeyError("Multiple keys found but none matched expected parameter structure")
-        else:
-            raise KeyError("Could not find parameters in saved model")
-            
-        # Create a dummy observation to initialize the separate actor
-        dummy_obs = jnp.zeros((241,))  # Match your observation size
-        
-        # This will extract just the actor part of the network
-        def get_actor_prediction(params, obs):
-            pi, _ = network.apply(params, obs)
-            return pi.logits
-        
-        # Create a wrapper function to use with the renderer
-        def actor_fn(params, obs):
-            return get_actor_prediction(params, obs)
-        
-        return actor_fn, params
-            
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Let's get more info about the model file
-        try:
-            if os.path.exists(path):
-                file_size = os.path.getsize(path) / 1024
-                print(f"Model file exists, size: {file_size:.2f} KB")
-                
-                # Peek at the file structure
-                with open(path, 'rb') as f:
-                    peek_data = pickle.load(f)
-                    if isinstance(peek_data, dict):
-                        print("Model contains a dictionary with keys:", list(peek_data.keys()))
-                    else:
-                        print(f"Model contains a {type(peek_data)} (not a dictionary)")
-            else:
-                print(f"Model file does not exist at: {path}")
-                
-                # List available pickle files
-                print("\nAvailable pickle files:")
-                for file in os.listdir(os.path.dirname(path) or "."):
-                    if file.endswith(".pkl"):
-                        full_path = os.path.join(os.path.dirname(path) or ".", file)
-                        print(f"- {full_path} ({os.path.getsize(full_path)/1024:.2f} KB)")
-        except Exception as peek_error:
-            print(f"Error examining model file: {peek_error}")
-        
-        raise Exception(f"Failed to load model: {e}")
+from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestRenderer, SCALING_FACTOR, WIDTH, HEIGHT
+from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
+from actor_critic import ActorCritic, CustomTrainState
 
 
-def render_episode(game, actor_fn, actor_params, renderer, max_steps=10000, render_mode='human', fps=30):
-    """Render an episode with the trained agent."""
+def load_model(path, train_state=None):
+    """Load a previously saved model."""
+    with open(path, 'rb') as f:
+        bytes_data = f.read()
+    
+    if train_state is not None:
+        return flax.serialization.from_bytes(train_state, bytes_data)
+    else:
+        return flax.serialization.msgpack_restore(bytes_data)
+
+
+def create_network(num_actions, obs_shape, activation="relu"):
+    """Create the actor-critic network."""
+    network = ActorCritic(num_actions, activation=activation)
+    
+    # Initialize with dummy input
+    rng = jax.random.PRNGKey(0)
+    init_x = jnp.zeros(obs_shape)
+    params = network.init(rng, init_x)
+    return network, params
+
+
+def reset_environment():
+    """Set up and reset the Seaquest environment."""
+    env = JaxSeaquest()
+    env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+    env = FlattenObservationWrapper(env)
+    env = LogWrapper(env)
+    
+    rng = jax.random.PRNGKey(int(time.time()))
+    obs, state = env.reset(rng)
+    return env, obs, state
+
+
+def render_agent(model_path, num_episodes=5, fps=60, record=False, output_path=None):
+    """
+    Render the agent playing Seaquest.
+    
+    Args:
+        model_path: Path to the saved model
+        num_episodes: Number of episodes to play
+        fps: Frames per second for rendering
+        record: Whether to record a video
+        output_path: Output path for the recorded video
+    """
+    # Initialize environment and renderer
+    env, obs, state = reset_environment()
+    
+    # Create network with correct shapes
+    network, _ = create_network(
+        env.action_space().n, 
+        env.observation_space().shape, 
+        activation="relu"
+    )
+    
+    # Load trained parameters
+    loaded_params = load_model(model_path)
+    
+    print(f"Loaded model from: {model_path}")
+    
+    # Fix the parameters structure - extract the inner params if needed
+    if "params" in loaded_params and isinstance(loaded_params["params"], dict):
+        model_params = loaded_params["params"]
+    else:
+        model_params = loaded_params
+    
+    import optax
+    # Create a dummy optimizer that doesn't do anything
+    dummy_tx = optax.identity()
+
+    # Create train state with properly structured params
+    train_state = CustomTrainState.create(
+        apply_fn=network.apply,
+        params=model_params,  # Use the fixed params structure
+        tx=dummy_tx,
+    )
+    
+    # Initialize pygame
+    pygame.init()
+    screen = pygame.display.set_mode((WIDTH * SCALING_FACTOR, HEIGHT * SCALING_FACTOR))
+    pygame.display.set_caption(f"JAX Seaquest - {os.path.basename(model_path)}")
+    clock = pygame.time.Clock()
+    
+    # Set up renderer
+    renderer = SeaquestRenderer()
+    
+    # Set up recording if needed
     frames = []
+    
+    # Jit the policy function
+    @jax.jit
+    def get_action(params, obs):
+        pi, _ = network.apply(params, obs)
+        return pi.mode()
+    
+    # Main rendering loop
+    episode = 0
+    steps = 0
     total_reward = 0
-    
-    # Initialize the environment
-    obs, state = game.reset()
-    flat_obs = game.obs_to_flat_array(obs)
-    
-    # Create jitted step function
-    jitted_step = jax.jit(game.step)
-    
-    # Initialize pygame if using human mode
-    if render_mode == 'human':
-        pygame.init()
-        # Increase window size (swapped width/height for 90 degree rotation)
-        # Original was 160*3 x 210*3, making it larger and rotated
-        display_width = 210*4  # Larger and swapped
-        display_height = 160*4  # Larger and swapped
-        screen = pygame.display.set_mode((display_width, display_height))
-        pygame.display.set_caption("Seaquest Agent (Rotated)")
-        clock = pygame.time.Clock()
-    
     running = True
-    for step in range(max_steps):
-        if not running:
-            break
+    
+    print(f"Rendering agent from: {model_path}")
+    print("Controls: Q to quit, P to pause/unpause")
+    
+    # Game loop with rendering
+    paused = False
+    
+    while running and episode < num_episodes:
+        # Process pygame events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    running = False
+                elif event.key == pygame.K_p:
+                    paused = not paused
+                    print("Paused" if paused else "Unpaused")
+        
+        if not paused:
+            # Get action from policy
+            action = get_action(train_state.params, obs)
             
-        # Get action from policy using our wrapper function
-        logits = actor_fn(actor_params, flat_obs)
-        action = jnp.argmax(logits).item()
-
-        print(f"Step {step}: Action {action}, Logits: {logits}")
-        
-        # Take step in environment
-        next_obs, next_state, reward, done, _ = jitted_step(state, action)
-        total_reward += reward
-        
-        # Render AFTER taking the step so we see the result of the action
-        if render_mode in ['rgb_array', 'human']:
-            try:
-                # Render the current state
-                frame = renderer.render(next_state)
+            # Take step in environment - corrected order of arguments
+            rng, next_rng = jax.random.split(jax.random.PRNGKey(int(time.time()) + steps))
+            obs, state, reward, done, info = env.step(rng, state, action)
+            steps += 1
+            total_reward += reward
+            
+            # Render current state
+            # raster = renderer.render(state)
+            raster = renderer.render(state.env_state.env_state)
+            
+            # Add frame to recording if enabled
+            if record:
+                frames.append(np.array(raster * 255, dtype=np.uint8))
+            
+            # Update pygame display
+            update_pygame(screen, raster, SCALING_FACTOR, WIDTH, HEIGHT)
+            
+            # Check for episode termination
+            if done:
+                print(f"Episode {episode+1}/{num_episodes} finished. Score: {total_reward:.1f}, Steps: {steps}")
+                episode += 1
+                steps = 0
+                total_reward = 0
                 
-                if render_mode == 'rgb_array':
-                    frames.append(np.array(frame))
-                else:  # render_mode == 'human'
-                    # Convert JAX array to numpy for pygame
-                    frame_np = np.array(frame)
-                    
-                    # Create surface from the frame
-                    surf = pygame.surfarray.make_surface(frame_np.transpose(1, 0, 2))
-                    
-                    # Rotate 90 degrees clockwise
-                    rotated_surf = pygame.transform.rotate(surf, 270)  # 270° = 90° clockwise
-                    
-                    # Scale to new size (4x larger)
-                    scaled_surf = pygame.transform.scale(rotated_surf, (display_width, display_height))
-                    
-                    # Display on screen
-                    screen.blit(scaled_surf, (0, 0))
-                    pygame.display.flip()
-                    clock.tick(fps)
-                    
-                    # Check for exit events
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            running = False
-                            break
-            except Exception as e:
-                print(f"Error rendering frame: {e}")
-                if step == 0:  # Only print once
-                    print("Continuing without rendering...")
+                if episode < num_episodes:
+                    # Reset environment for next episode
+                    rng = jax.random.PRNGKey(int(time.time()) + episode)
+                    obs, state = env.reset(rng)
         
-        # Update for next iteration
-        obs, state = next_obs, next_state
-        flat_obs = game.obs_to_flat_array(obs)
-        
-        if done:
-            print(f"Episode ended after {step} steps")
-            break
+        # Control rendering speed
+        clock.tick(fps)
     
-    # Clean up pygame if initialized
-    if render_mode == 'human':
-        pygame.quit()
+    pygame.quit()
     
-    print(f"Episode completed with total reward: {total_reward}")
-    return frames
+    # Save video if recording was enabled
+    if record and frames and output_path:
+        save_video(frames, output_path, fps)
+        print(f"Video saved to {output_path}")
 
-def create_animation(frames, filename=None, fps=30):
-    """Create an animation from frames."""
-    if not frames or len(frames) == 0:
-        print("No frames to create animation")
-        return None
+
+def update_pygame(screen, raster, scale, width, height):
+    """Update the pygame display with the current frame."""
+    # Convert raster to a format pygame can use
+    raster_np = np.array(raster * 255, dtype=np.uint8)
+    surface = pygame.surfarray.make_surface(raster_np.transpose(1, 0, 2))
     
-    print(f"Creating animation with {len(frames)} frames")
+    # Scale the surface to the desired size
+    scaled_surface = pygame.transform.scale(surface, (width * scale, height * scale))
     
-    # Check frame data
-    print(f"Frame shape: {frames[0].shape}, dtype: {frames[0].dtype}")
+    # Display the scaled surface
+    screen.blit(scaled_surface, (0, 0))
+    pygame.display.flip()
+
+
+def save_video(frames, filename, fps=60):
+    """Save a sequence of frames as an MP4 video."""
+    print(f"Saving video with {len(frames)} frames at {fps} fps...")
     
-    plt.figure(figsize=(frames[0].shape[1]/72, frames[0].shape[0]/72), dpi=72)
-    plt.axis('off')
+    # Create figure for plotting frames
+    fig, ax = plt.subplots(figsize=(frames[0].shape[1]/100, frames[0].shape[0]/100))
+    ax.set_axis_off()
     
-    patch = plt.imshow(frames[0])
+    # Plot the first frame
+    img = ax.imshow(frames[0])
+    
+    def init():
+        img.set_data(frames[0])
+        return (img,)
     
     def animate(i):
-        patch.set_data(frames[i])
-        return [patch]
+        img.set_data(frames[i])
+        return (img,)
     
+    # Create animation
     anim = animation.FuncAnimation(
-        plt.gcf(), animate, frames=len(frames), interval=1000/fps)
+        fig, animate, init_func=init, frames=len(frames), interval=1000/fps, blit=True
+    )
     
-    if filename:
-        print(f"Saving animation to {filename}...")
-        try:
-            # Try different writers
-            writers = ['ffmpeg', 'imagemagick', 'pillow']
-            for writer in writers:
-                try:
-                    print(f"Trying to save with {writer}...")
-                    anim.save(filename, fps=fps, writer=writer)
-                    print(f"Animation saved to {filename} using {writer}")
-                    break
-                except Exception as e:
-                    print(f"Failed with {writer}: {e}")
-            else:
-                print("All specific writers failed, trying default...")
-                anim.save(filename, fps=fps)
-                print(f"Animation saved to {filename} with default writer")
-        except Exception as e:
-            print(f"Failed to save animation: {e}")
-            
-            # Last resort: save individual frames as images
-            print("Saving individual frames...")
-            os.makedirs("frames", exist_ok=True)
-            for i, frame in enumerate(frames):
-                plt.imsave(f"frames/frame_{i:04d}.png", frame)
-            print(f"Saved {len(frames)} individual frames to 'frames/' directory")
-    
-    plt.close()
-    return None
+    # Save as MP4
+    writer = animation.FFMpegWriter(fps=fps, metadata=dict(artist='JAX Seaquest Agent'), bitrate=1800)
+    anim.save(filename, writer=writer)
+    plt.close(fig)
+
 
 if __name__ == "__main__":
-    # Initialize game
-    print("Initializing Seaquest environment...")
-    game = JaxSeaquest()
+    parser = argparse.ArgumentParser(description="Render a trained Seaquest agent")
+    parser.add_argument("--model", type=str, required=True, help="Path to the model checkpoint")
+    parser.add_argument("--episodes", type=int, default=5, help="Number of episodes to run")
+    parser.add_argument("--fps", type=int, default=60, help="Frames per second for rendering")
+    parser.add_argument("--record", action="store_true", help="Record a video of the agent playing")
+    parser.add_argument("--output", type=str, default="seaquest_agent.mp4", help="Output path for the recorded video")
     
-    # Initialize the renderer
-    print("Initializing Seaquest renderer...")
-    try:
-        renderer = SeaquestRenderer()
-        print("Renderer initialized successfully")
-    except Exception as e:
-        print(f"Error initializing renderer: {e}")
-        import traceback
-        traceback.print_exc()
-        exit(1)
+    args = parser.parse_args()
     
-    try:
-        # Load trained actor-critic model
-        print("Loading trained actor-critic model...")
-        # Look for the PPO model file first
-        model_path = 'ppo_agent_real_env.pkl'
-        if not os.path.exists(model_path):
-            print(f"Model not found at {model_path}, trying model_world...")
-            model_path = 'ppo_agent_world_model.pkl'
-        
-        if not os.path.exists(model_path):
-            print(f"Standard models not found, looking for model files...")
-            model_files = []
-            for root, dirs, files in os.walk('.'):
-                for file in files:
-                    if file.endswith('.pkl'):
-                        model_files.append(os.path.join(root, file))
-                        print(f"Found: {os.path.join(root, file)}")
-            
-            if model_files:
-                model_path = model_files[0]  # Pick the first one by default
-                print(f"Using model at: {model_path}")
-            else:
-                model_path = input("Enter the path to your model file: ")
-                if not model_path:
-                    raise FileNotFoundError("No model file specified")
-                
-        actor, actor_params = load_actor_critic(model_path)
-        print(model_path)
-        # Choose rendering mode
-        render_mode = 'human'  # or 'human' for interactive display
-        print(f"Rendering episode with mode: {render_mode}")
-        
-        # Render an episode
-        frames = render_episode(game, actor, actor_params, renderer, render_mode=render_mode)
-        
-        if render_mode == 'rgb_array' and frames and len(frames) > 0:
-            # Create and save animation
-            print("Creating animation...")
-            create_animation(frames, filename="agent_gameplay.mp4", fps=30)
-        else:
-            print("No frames were captured.")
-    except Exception as e:
-        print(f"Error occurred: {e}")
-        import traceback
-        traceback.print_exc()
+    render_agent(
+        model_path=args.model,
+        num_episodes=args.episodes,
+        fps=args.fps,
+        record=args.record,
+        output_path=args.output if args.record else None
+    )
