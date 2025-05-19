@@ -12,3 +12,5 @@ typing-extensions==4.12.2
 gymnax==0.0.8
 dm-haiku
 tqdm
+brax
+wandb
