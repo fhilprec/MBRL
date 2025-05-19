@@ -1,0 +1,7 @@
+{"time":"2025-05-19T19:03:39.674777991+02:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/fhilprec/MBRL/wandb/run-20250519_190339-n6htf2fk/logs/debug-core.log"}
+{"time":"2025-05-19T19:03:40.005894924+02:00","level":"INFO","msg":"created new stream","id":"n6htf2fk"}
+{"time":"2025-05-19T19:03:40.00597624+02:00","level":"INFO","msg":"stream: started","id":"n6htf2fk"}
+{"time":"2025-05-19T19:03:40.006043913+02:00","level":"INFO","msg":"writer: Do: started","stream_id":"n6htf2fk"}
+{"time":"2025-05-19T19:03:40.006137353+02:00","level":"INFO","msg":"sender: started","stream_id":"n6htf2fk"}
+{"time":"2025-05-19T19:03:40.006157116+02:00","level":"INFO","msg":"handler: started","stream_id":"n6htf2fk"}
+{"time":"2025-05-19T19:03:40.296305252+02:00","level":"INFO","msg":"Starting system monitor"}
