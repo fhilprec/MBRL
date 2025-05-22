@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import optax
 import haiku as hk
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -16,7 +16,8 @@ import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
-VERBOSE = False
+
+VERBOSE = True
 
 
 
@@ -193,173 +194,30 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
 
     return states, actions, next_states, rewards
 
-def create_batches(states, actions, next_states, rewards, batch_size):
-    """Create mini-batches for training with flattened data."""
-    # Determine total number of samples (should match first dimension of actions)
-    num_samples = actions.shape[0]
-    indices = np.arange(num_samples)
-    np.random.shuffle(indices)
-    
-    for start_idx in range(0, num_samples, batch_size):
-        end_idx = min(start_idx + batch_size, num_samples)
-        batch_indices = indices[start_idx:end_idx]
-        
-        # Extract batches from the flattened arrays
-        # For states and next_states which are PyTrees, we need to select indices from each leaf
-        states_batch = jax.tree.map(lambda x: x[batch_indices], states)
-        actions_batch = actions[batch_indices]
-        next_states_batch = jax.tree.map(lambda x: x[batch_indices], next_states)
-        rewards_batch = rewards[batch_indices]
-        
-        yield states_batch, actions_batch, next_states_batch, rewards_batch
 
 
-def train_world_model(game, num_epochs=50, batch_size=1024, 
-                     num_episodes_collect=100, save_path=None):
-    """Train the world model on flattened experience data."""
-    global model
-    
-    # Initialize models
-    model = build_world_model()
-    
-    # Initialize random keys
-    rng = jax.random.PRNGKey(42)
-    rng, init_rng_dynamics = jax.random.split(rng)
-    
-    # Initialize the environment to get a sample state
-    _, state = game.reset(init_rng_dynamics)
-    dummy_state = state.env_state.env_state  # Extract the inner state
-    dummy_action = jnp.array(0)
-    
-    # Initialize model parameters
-    dynamics_params = model.init(init_rng_dynamics, dummy_state, dummy_action)
-    
-    # Define dynamics loss function for batched, flattened data
-    def dynamics_loss_fn(params, rng, states_batch, actions_batch, next_states_batch):
-        # Convert PyTree states to flat arrays for all samples in batch at once
-        states_flat = jax.vmap(lambda s: jax.flatten_util.ravel_pytree(s)[0])(states_batch)
-        next_states_flat = jax.vmap(lambda s: jax.flatten_util.ravel_pytree(s)[0])(next_states_batch)
-        
-        # Apply model to all state-action pairs in batch at once
-        pred_next_states_flat = jax.vmap(model.apply, in_axes=(None, None, 0, 0))(
-            params, rng, states_batch, actions_batch
-        )
-        
-        # Compute MSE loss across the batch
-        mse = jnp.mean(jnp.square(pred_next_states_flat - next_states_flat))
-        return mse
-    
-    # Create optimizer
-    optimizer = optax.adam(learning_rate=1e-4)
-    opt_state = optimizer.init(dynamics_params)
-    
-    # JIT-compile the training step
-    @jax.jit
-    def train_step(params, opt_state, states_batch, actions_batch, next_states_batch, rng):
-        loss_val, grads = jax.value_and_grad(dynamics_loss_fn)(
-            params, rng, states_batch, actions_batch, next_states_batch
-        )
-        updates, new_opt_state = optimizer.update(grads, opt_state)
-        new_params = optax.apply_updates(params, updates)
-        return new_params, new_opt_state, loss_val
-    
-    # Collect experience data
-    print("Collecting experience data...")
-    states, actions, next_states, rewards = collect_experience(
-        game, num_episodes=num_episodes_collect
-    )
-    
-    # No need to extract single environment data - we're using all data now
-    print(f"Training on {actions.shape[0]} total transitions")
-    
-    # Training loop
-    print("Training world model...")
-    losses = []
-    
-    for epoch in range(num_epochs):
-        epoch_losses = []
-        print(f"Epoch {epoch + 1}/{num_epochs}")
-        
-        # Create batches for this epoch
-        batch_gen = create_batches(
-            states, actions, next_states, rewards, batch_size
-        )
-        
-        # Track progress with tqdm
-        num_batches = actions.shape[0] // batch_size
-        with tqdm(total=num_batches, desc=f"Epoch {epoch+1}/{num_epochs}") as pbar:
-            for states_batch, actions_batch, next_states_batch, _ in batch_gen:
-                # Train dynamics model
-                rng, step_rng = jax.random.split(rng)
-                dynamics_params, opt_state, loss = train_step(
-                    dynamics_params, opt_state, states_batch, actions_batch, next_states_batch, step_rng
-                )
-                epoch_losses.append(loss)
-                pbar.update(1)
-                pbar.set_postfix({"loss": float(loss)})
-        
-        # Compute average loss for this epoch
-        avg_loss = jnp.mean(jnp.array(epoch_losses))
-        losses.append(avg_loss)
-        
-        # Print progress
-        print(f"Epoch {epoch+1}/{num_epochs}, Avg Loss: {avg_loss:.6f}")
-    
-    # Save trained model if path is provided
-    if save_path:
-        with open(save_path, 'wb') as f:
-            pickle.dump({
-                'dynamics_params': dynamics_params,
-            }, f)
-        print(f"Model saved to {save_path}")
-    
-    # Plot training losses
-    plt.figure(figsize=(10, 6))
-    plt.plot(losses)
-    plt.title('World Model Training Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Mean Squared Error')
-    plt.tight_layout()
-    plt.savefig('world_model_training_loss.png')
-    plt.show()
-    
-    return dynamics_params
+def train_world_model(
+    states, 
+    actions, 
+    next_states, 
+    rewards,
+    learning_rate: float = 3e-4,
+    batch_size: int = 256,
+    num_epochs: int = 100,
+    validation_split: float = 0.1,
+    grad_clip_norm: float = 1.0,
+    verbose: bool = True
+) -> Tuple[hk.Params, Dict[str, Any]]:
+    pass
 
-def evaluate_model(params, game, model, num_steps=100):
-    """Evaluate model prediction quality on tree-structured states."""
-    rng = jax.random.PRNGKey(0)
-    rng, reset_rng = jax.random.split(rng)
-    
-    _, state = game.reset(reset_rng)
-    current_state = state.env_state.env_state
-    
-    mse_values = []
-    
-    for step in range(num_steps):
-        # Choose a random action
-        rng, action_rng = jax.random.split(rng)
-        action = jax.random.randint(action_rng, (), 0, 18)
-        
-        # Step environment to get actual next state
-        rng, step_rng = jax.random.split(rng)
-        _, next_state, _, _, _ = game.step(step_rng, state, action)
-        actual_next_state = next_state.env_state.env_state
-        
-        # Get prediction from world model
-        # Flatten states for comparison
-        actual_next_state_flat = jax.flatten_util.ravel_pytree(actual_next_state)[0]
-        pred_next_state_flat = model.apply(params, None, current_state, action)
-        
-        # Compute MSE between prediction and actual
-        mse = jnp.mean(jnp.square(pred_next_state_flat - actual_next_state_flat))
-        mse_values.append(mse)
-        
-        # Update for next step
-        state = next_state
-        current_state = actual_next_state
-    
-    return jnp.mean(jnp.array(mse_values))
+    print(states.shape)
+    print()
 
+
+
+    return 1,2
+    
+    
 
 
 
@@ -379,6 +237,9 @@ if __name__ == "__main__":
     # Set the global model variable
     model = build_world_model()
 
+
+
+
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
         with open(save_path, 'rb') as f:
@@ -386,14 +247,59 @@ if __name__ == "__main__":
             dynamics_params = saved_data['dynamics_params']
     else:
         print("No existing model found. Training a new model...")
-        dynamics_params = train_world_model(
-            env, 
-            num_epochs=50, 
-            batch_size=1024, 
-            num_episodes_collect=5,
-            save_path=save_path
+
+        # Define a file path for the experience data
+        experience_data_path = "experience_data.pkl"
+
+        # Check if experience data file exists
+        if os.path.exists(experience_data_path):
+            print(f"Loading existing experience data from {experience_data_path}...")
+            with open(experience_data_path, 'rb') as f:
+                saved_data = pickle.load(f)
+                states = saved_data['states']
+                actions = saved_data['actions']
+                next_states = saved_data['next_states']
+                rewards = saved_data['rewards']
+        else:
+            print("No existing experience data found. Collecting new experience data...")
+            # Collect experience data
+            states, actions, next_states, rewards = collect_experience(
+                game,
+                num_episodes=1,
+                max_steps_per_episode=10000,
+                num_envs=512
+            )
+            
+            # Save the collected experience data
+            with open(experience_data_path, 'wb') as f:
+                pickle.dump({
+                    'states': states,
+                    'actions': actions,
+                    'next_states': next_states,
+                    'rewards': rewards
+                }, f)
+            print(f"Experience data saved to {experience_data_path}")
+
+        #train world model
+        dynamics_params, training_info = train_world_model(
+            states,
+            actions,
+            next_states,
+            rewards,
+            learning_rate=3e-4,
+            batch_size=256,
+            num_epochs=100,
+            validation_split=0.1,
+            grad_clip_norm=1.0,
+            verbose=True
         )
 
-    # Evaluate the model
-    eval_mse = evaluate_model(dynamics_params, game, model)
-    print(f"Final evaluation MSE: {eval_mse:.6f}")
+    # # Evaluate the model
+    # eval_mse = evaluate_model(dynamics_params, env, model)
+    # print(f"Final evaluation MSE: {eval_mse:.6f}")
+
+
+    #  # Then visualize the predictions
+    # print("Visualizing model predictions vs. actual gameplay...")
+    # stats = visualize_predictions(dynamics_params, env, model, num_steps=500, delay=0.05)
+    # print(f"Visualization stats: {stats}")
