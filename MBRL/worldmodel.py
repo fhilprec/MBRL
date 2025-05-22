@@ -13,129 +13,190 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import pickle
-from jaxatari.games.jax_seaquest import SeaquestRenderer
+from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
+from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
+VERBOSE = False
 
-
-# Import the Seaquest environment
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestObservation, SeaquestState
-import os
-
-def build_world_model():
-    def forward(flat_obs, action):
-        # Check if we have a batch dimension
-        batched = len(flat_obs.shape) > 1
-        
-        # Convert action to one-hot (handling both batched and single inputs)
-        if batched:
-            action_one_hot = jax.nn.one_hot(action, num_classes=18)  # Shape: (batch, 18)
-            # Concatenate along the feature dimension (axis=1)
-            inputs = jnp.concatenate([flat_obs, action_one_hot], axis=1)
-        else:
-            action_one_hot = jax.nn.one_hot(action, num_classes=18)  # Shape: (18,)
-            # Concatenate along the feature dimension (axis=0)
-            inputs = jnp.concatenate([flat_obs, action_one_hot], axis=0)
-        
-        # Simple MLP to predict next observation
-        x = hk.Linear(256)(inputs)
-        x = jax.nn.relu(x)
-        x = hk.Linear(256)(x)
-        x = jax.nn.relu(x)
-        
-        # Predict next observation (output shape matches input observation shape)
-        output_size = flat_obs.shape[-1]  # Get last dimension regardless of batching
-        pred_next_obs = hk.Linear(output_size)(x)
-        
-        return pred_next_obs
-    
-    return hk.transform(forward)
-
-
-def build_reward_model():
-    """Build a reward prediction model."""
-    def forward(flat_obs, action):
-        # Check if we have a batch dimension
-        batched = len(flat_obs.shape) > 1
-        
-        # Convert action to one-hot (handling both batched and single inputs)
-        if batched:
-            action_one_hot = jax.nn.one_hot(action, num_classes=18)  # Shape: (batch, 18)
-            # Concatenate along the feature dimension (axis=1)
-            inputs = jnp.concatenate([flat_obs, action_one_hot], axis=1)
-        else:
-            action_one_hot = jax.nn.one_hot(action, num_classes=18)  # Shape: (18,)
-            # Concatenate along the feature dimension (axis=0)
-            inputs = jnp.concatenate([flat_obs, action_one_hot], axis=0)
-        
-        # Simple MLP to predict reward
-        x = hk.Linear(128)(inputs)
-        x = jax.nn.relu(x)
-        x = hk.Linear(64)(x)
-        x = jax.nn.relu(x)
-        
-        # Predict scalar reward
-        reward = hk.Linear(1)(x)
-        
-        return reward.squeeze()
-    
-    return hk.transform(forward)
 
 
 # Global variable to hold model for evaluate_model function
 model = None
 
-# Collect experience from environment
-def collect_experience(game: JaxSeaquest, num_episodes: int = 1000, 
-                       max_steps_per_episode: int = 1000) -> Tuple[List, List, List, List]:
-    """Collect experience data by playing random actions in the environment."""
-    print("Collecting experience data...")
-    
-    observations = []
-    actions = []
-    next_observations = []
-    rewards = []
-    ng 
-    # Get jitted step and reset functions for efficiency
-    jitted_step = jax.jit(game.step)
-    jitted_reset = jax.jit(game.reset)
-    
-    for episode in tqdm(range(num_episodes)):
-        obs, state = jitted_reset()
+def build_world_model():
+    def forward(state, action):
+        # Flatten the state tree structure to a 1D vector
+        flat_state = hk.Flatten()(jax.flatten_util.ravel_pytree(state)[0])
         
-        for step in range(max_steps_per_episode):
-            # Select random action
-            action = jax.random.randint(
-                jax.random.PRNGKey(episode * 10000 + step), 
-                shape=(), 
-                minval=0, 
-                maxval=18
-            )
-            
-            # Take a step in the environment
-            next_obs, next_state, reward, done, _ = jitted_step(state, action)
-            
-            # Store experience
-            observations.append(game.obs_to_flat_array(obs))
-            actions.append(action)
-            next_observations.append(game.obs_to_flat_array(next_obs))
-            rewards.append(reward)
-            
-            if done:
-                break
-                
-            # Update for next step
-            obs, state = next_obs, next_state
+        # Convert action to one-hot
+        action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        
+        # Determine if we have a batch dimension
+        is_batched = len(action_one_hot.shape) > 1
+        
+        # Concatenate along the appropriate axis
+        if is_batched:
+            inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
+        else:
+            inputs = jnp.concatenate([flat_state, action_one_hot], axis=0)
+        
+        # Feed through MLP
+        x = hk.Linear(512)(inputs)
+        x = jax.nn.relu(x)
+        x = hk.Linear(512)(x)
+        x = jax.nn.relu(x)
+        
+        # Final output layer
+        # For simplicity, predict the flattened state vector directly
+        # The state size will be determined by the flattened input
+        output_size = flat_state.shape[-1]
+        flat_next_state = hk.Linear(output_size)(x)
+        
+        return flat_next_state
     
-    print(f"Collected {len(observations)} transitions from {num_episodes} episodes")
-    return observations, actions, next_observations, rewards
+    return hk.transform(forward)
 
-# Create batches for training
-def create_batches(observations, actions, next_observations, batch_size):
-    """Create mini-batches from collected data."""
-    num_samples = len(observations)
+
+
+
+
+
+#this function does not differentiate between done and not done environments
+#maybe this is not a problem since the model should learn to predict the next state regardless of whether the environment is done or not
+def collect_experience(game: JaxSeaquest, num_episodes: int = 100, 
+                       max_steps_per_episode: int = 1000, num_envs: int = 512) -> Tuple[List, List, List]:
+
+    print(f"Collecting experience data from {num_envs} parallel environments...")
+    
+    
+    
+    # Create vectorized reset and step functions stolen from ppo
+    vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
+        jax.random.split(rng, n_envs)
+    )
+    vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+        env.step
+    )(jax.random.split(rng, n_envs), env_state, action)
+    
+    # Initialize storage for collected data
+    states = []
+    next_states = []
+    actions = []
+    rewards = []
+    
+    # Initialize random key
+    rng = jax.random.PRNGKey(42)  # Use a fixed seed for reproducibility
+    
+    # JIT compile the reset and step functions
+    jitted_reset = jax.jit(vmap_reset(num_envs))
+    jitted_step = jax.jit(vmap_step(num_envs))
+    
+    # Reset all environments
+    rng, reset_rng = jax.random.split(rng) #returns two random keys
+    # Reset all environments in parallel
+    _, state = jitted_reset(reset_rng)
+    
+
+    
+    total_steps = 0
+    total_episodes = 0
+    
+
+    while total_episodes < num_episodes * num_envs:
+        # Store the current state
+        current_state_repr = jax.tree.map(lambda x: x, state.env_state.env_state)
+        
+        # Generate random actions for all environments
+        rng, action_rng = jax.random.split(rng)
+        action_batch = jax.random.randint(action_rng, (num_envs,), 0, 18)
+        
+        # Step all environments
+        rng, step_rng = jax.random.split(rng)
+        _, next_state, reward_batch, done_batch, _ = jitted_step(step_rng, state, action_batch)
+        
+
+        
+        if jnp.any(done_batch):
+            # Reset environments that are done
+            rng, reset_rng = jax.random.split(rng)
+            _, reset_states = jitted_reset(reset_rng)
+            
+            # Create a function to update only the done states
+            def update_where_done(old_state, new_state, done_mask):
+                """Update states only where done_mask is True."""
+                def where_with_correct_broadcasting(x, y, mask):
+                    # Handle broadcasting for different array dimensions
+                    if hasattr(x, 'shape') and hasattr(y, 'shape'):
+                        if x.ndim > 1:
+                            # Create mask with right shape for broadcasting
+                            new_shape = (mask.shape[0],) + (1,) * (x.ndim - 1)
+                            reshaped_mask = mask.reshape(new_shape)
+                            return jnp.where(reshaped_mask, y, x)
+                        else:
+                            return jnp.where(mask, y, x)
+                    else:
+                        # For non-array elements
+                        return x  # Keep original for simplicity
+                
+                return jax.tree.map(
+                    lambda x, y: where_with_correct_broadcasting(x, y, done_mask),
+                    old_state, new_state
+                )
+            
+            # Update only the states that are done
+            next_state = update_where_done(next_state, reset_states, done_batch)
+        
+
+
+
+
+        # Extract state representation from the new state
+        next_state_repr = jax.tree.map(lambda x: x, next_state.env_state.env_state) #not sure here whether there are multiple states or not
+        
+
+        # Store experience
+        states.append(current_state_repr)
+        actions.append(action_batch)
+        next_states.append(next_state_repr)
+        rewards.append(reward_batch)
+        
+        # Count completed episodes from done signals
+        newly_completed = jnp.sum(done_batch)
+        total_episodes += newly_completed
+        total_steps += num_envs
+        
+        
+        # Just update state for next iteration, ignoring done environments (inefficient but simple)
+        state = next_state
+
+        # Break if we've collected enough episodes
+        if total_episodes >= num_episodes * num_envs:
+            break
+    
+
+    if VERBOSE:
+        print(f"Experience collection completed:")
+        print(f"- Total steps: {total_steps}")
+        print(f"- Total episodes: {total_episodes}")
+        print(f"- Total transitions: {len(states)}")
+    
+
+    # Convert lists to arrays
+    states = jax.tree.map(lambda *xs: jnp.concatenate(xs, axis=0), *states)
+    actions = jnp.concatenate(actions, axis=0)
+    next_states = jax.tree.map(lambda *xs: jnp.concatenate(xs, axis=0), *next_states)
+    rewards = jnp.concatenate(rewards, axis=0)
+
+    if VERBOSE:
+        print(f"Final flattened shape: states: {jax.tree.map(lambda x: x.shape, states)}")
+        print(f"Actions shape: {actions.shape}, Rewards shape: {rewards.shape}")
+
+    return states, actions, next_states, rewards
+
+def create_batches(states, actions, next_states, rewards, batch_size):
+    """Create mini-batches for training with flattened data."""
+    # Determine total number of samples (should match first dimension of actions)
+    num_samples = actions.shape[0]
     indices = np.arange(num_samples)
     np.random.shuffle(indices)
     
@@ -143,266 +204,174 @@ def create_batches(observations, actions, next_observations, batch_size):
         end_idx = min(start_idx + batch_size, num_samples)
         batch_indices = indices[start_idx:end_idx]
         
-        yield (
-            jnp.array([observations[i] for i in batch_indices]),
-            jnp.array([actions[i] for i in batch_indices]),
-            jnp.array([next_observations[i] for i in batch_indices])
-        )
+        # Extract batches from the flattened arrays
+        # For states and next_states which are PyTrees, we need to select indices from each leaf
+        states_batch = jax.tree.map(lambda x: x[batch_indices], states)
+        actions_batch = actions[batch_indices]
+        next_states_batch = jax.tree.map(lambda x: x[batch_indices], next_states)
+        rewards_batch = rewards[batch_indices]
+        
+        yield states_batch, actions_batch, next_states_batch, rewards_batch
 
-# Evaluate model predictions
-def evaluate_model(params, game, model, num_steps=100):  # Pass model as parameter
-    """Evaluate model prediction quality by comparing with actual environment steps."""
-    obs, state = game.reset()
-    jitted_step = jax.jit(game.step)
-    
-    mse_values = []
-    
-    for _ in range(num_steps):
-        # Choose a random action
-        action = jax.random.randint(jax.random.PRNGKey(42), (), 0, 18)
-        
-        # Get actual next observation from environment
-        next_obs, next_state, _, _, _ = jitted_step(state, action)
-        actual_next_obs = game.obs_to_flat_array(next_obs)
-        
-        # Get prediction from world model
-        flat_obs = game.obs_to_flat_array(obs)
-        pred_next_obs = model.apply(params, None, flat_obs, action)
-        
-        # Compute MSE between prediction and actual
-        mse = jnp.mean(jnp.square(pred_next_obs - actual_next_obs))
-        mse_values.append(mse)
-        
-        # Update for next step
-        obs, state = next_obs, next_state
-    
-    return jnp.mean(jnp.array(mse_values))
 
-# Main training function
-def train_world_model(game, num_epochs=50, batch_size=64, 
+def train_world_model(game, num_epochs=50, batch_size=1024, 
                      num_episodes_collect=100, save_path=None):
-    """Train the world model and reward model on collected experience."""
-    global model  # Use global model for evaluate_model
+    """Train the world model on flattened experience data."""
+    global model
     
     # Initialize models
     model = build_world_model()
-    reward_model = build_reward_model()
     
+    # Initialize random keys
     rng = jax.random.PRNGKey(42)
-    rng, init_rng_dynamics, init_rng_reward = jax.random.split(rng, 3)
+    rng, init_rng_dynamics = jax.random.split(rng)
     
-    # Get a sample observation to initialize parameters
-    dummy_obs, _ = game.reset()
-    dummy_flat_obs = game.obs_to_flat_array(dummy_obs)
+    # Initialize the environment to get a sample state
+    _, state = game.reset(init_rng_dynamics)
+    dummy_state = state.env_state.env_state  # Extract the inner state
     dummy_action = jnp.array(0)
     
-    # Initialize parameters
-    dynamics_params = model.init(init_rng_dynamics, dummy_flat_obs, dummy_action)
-    reward_params = reward_model.init(init_rng_reward, dummy_flat_obs, dummy_action)
+    # Initialize model parameters
+    dynamics_params = model.init(init_rng_dynamics, dummy_state, dummy_action)
     
-    # Define loss functions
-    def dynamics_loss_fn(params, rng, obs_batch, action_batch, next_obs_batch):
-        pred_next_obs = model.apply(params, rng, obs_batch, action_batch)
-        return jnp.mean(jnp.square(pred_next_obs - next_obs_batch))
+    # Define dynamics loss function for batched, flattened data
+    def dynamics_loss_fn(params, rng, states_batch, actions_batch, next_states_batch):
+        # Convert PyTree states to flat arrays for all samples in batch at once
+        states_flat = jax.vmap(lambda s: jax.flatten_util.ravel_pytree(s)[0])(states_batch)
+        next_states_flat = jax.vmap(lambda s: jax.flatten_util.ravel_pytree(s)[0])(next_states_batch)
+        
+        # Apply model to all state-action pairs in batch at once
+        pred_next_states_flat = jax.vmap(model.apply, in_axes=(None, None, 0, 0))(
+            params, rng, states_batch, actions_batch
+        )
+        
+        # Compute MSE loss across the batch
+        mse = jnp.mean(jnp.square(pred_next_states_flat - next_states_flat))
+        return mse
     
-    def reward_loss_fn(params, rng, obs_batch, action_batch, reward_batch):
-        pred_rewards = reward_model.apply(params, rng, obs_batch, action_batch)
-        return jnp.mean(jnp.square(pred_rewards - reward_batch))
+    # Create optimizer
+    optimizer = optax.adam(learning_rate=1e-4)
+    opt_state = optimizer.init(dynamics_params)
     
-    # Create optimizers
-    dynamics_optimizer = optax.adam(learning_rate=1e-3)
-    reward_optimizer = optax.adam(learning_rate=1e-3)
-    
-    dynamics_opt_state = dynamics_optimizer.init(dynamics_params)
-    reward_opt_state = reward_optimizer.init(reward_params)
-    
-    # JIT-compile the training steps for efficiency
+    # JIT-compile the training step
     @jax.jit
-    def train_dynamics_step(params, opt_state, obs, actions, next_obs, rng):
-        loss_val, grads = jax.value_and_grad(dynamics_loss_fn)(params, rng, obs, actions, next_obs)
-        updates, new_opt_state = dynamics_optimizer.update(grads, opt_state)
-        new_params = optax.apply_updates(params, updates)
-        return new_params, new_opt_state, loss_val
-    
-    @jax.jit
-    def train_reward_step(params, opt_state, obs, actions, rewards, rng):
-        loss_val, grads = jax.value_and_grad(reward_loss_fn)(params, rng, obs, actions, rewards)
-        updates, new_opt_state = reward_optimizer.update(grads, opt_state)
+    def train_step(params, opt_state, states_batch, actions_batch, next_states_batch, rng):
+        loss_val, grads = jax.value_and_grad(dynamics_loss_fn)(
+            params, rng, states_batch, actions_batch, next_states_batch
+        )
+        updates, new_opt_state = optimizer.update(grads, opt_state)
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss_val
     
     # Collect experience data
-    observations, actions, next_observations, rewards = collect_experience(
+    print("Collecting experience data...")
+    states, actions, next_states, rewards = collect_experience(
         game, num_episodes=num_episodes_collect
     )
     
-    # Training loop
-    dynamics_losses = []
-    reward_losses = []
+    # No need to extract single environment data - we're using all data now
+    print(f"Training on {actions.shape[0]} total transitions")
     
-    print("Training world model and reward model...")
+    # Training loop
+    print("Training world model...")
+    losses = []
+    
     for epoch in range(num_epochs):
-        epoch_dynamics_losses = []
-        epoch_reward_losses = []
+        epoch_losses = []
+        print(f"Epoch {epoch + 1}/{num_epochs}")
         
         # Create batches for this epoch
-        for batch_idx, (obs_batch, action_batch, next_obs_batch) in enumerate(create_batches(
-            observations, actions, next_observations, batch_size
-        )):
-            # Extract matching rewards for this batch
-            start_idx = batch_idx * batch_size
-            end_idx = min(start_idx + batch_size, len(rewards))
-            reward_batch = jnp.array(rewards[start_idx:end_idx])
-            
-            # Train dynamics model
-            rng, step_rng_dynamics = jax.random.split(rng)
-            dynamics_params, dynamics_opt_state, dynamics_loss = train_dynamics_step(
-                dynamics_params, dynamics_opt_state, obs_batch, action_batch, next_obs_batch, step_rng_dynamics
-            )
-            epoch_dynamics_losses.append(dynamics_loss)
-            
-            # Train reward model
-            rng, step_rng_reward = jax.random.split(rng)
-            reward_params, reward_opt_state, reward_loss = train_reward_step(
-                reward_params, reward_opt_state, obs_batch, action_batch, reward_batch, step_rng_reward
-            )
-            epoch_reward_losses.append(reward_loss)
+        batch_gen = create_batches(
+            states, actions, next_states, rewards, batch_size
+        )
         
-        # Compute average losses for this epoch
-        avg_dynamics_loss = jnp.mean(jnp.array(epoch_dynamics_losses))
-        avg_reward_loss = jnp.mean(jnp.array(epoch_reward_losses))
+        # Track progress with tqdm
+        num_batches = actions.shape[0] // batch_size
+        with tqdm(total=num_batches, desc=f"Epoch {epoch+1}/{num_epochs}") as pbar:
+            for states_batch, actions_batch, next_states_batch, _ in batch_gen:
+                # Train dynamics model
+                rng, step_rng = jax.random.split(rng)
+                dynamics_params, opt_state, loss = train_step(
+                    dynamics_params, opt_state, states_batch, actions_batch, next_states_batch, step_rng
+                )
+                epoch_losses.append(loss)
+                pbar.update(1)
+                pbar.set_postfix({"loss": float(loss)})
         
-        dynamics_losses.append(avg_dynamics_loss)
-        reward_losses.append(avg_reward_loss)
+        # Compute average loss for this epoch
+        avg_loss = jnp.mean(jnp.array(epoch_losses))
+        losses.append(avg_loss)
         
         # Print progress
-        if epoch % 5 == 0 or epoch == num_epochs - 1:
-            eval_mse = evaluate_model(dynamics_params, game, model)
-            print(f"Epoch {epoch}/{num_epochs}, Dynamics Loss: {avg_dynamics_loss:.6f}, "
-                  f"Reward Loss: {avg_reward_loss:.6f}, Eval MSE: {eval_mse:.6f}")
+        print(f"Epoch {epoch+1}/{num_epochs}, Avg Loss: {avg_loss:.6f}")
     
-    # Save trained models if path is provided
+    # Save trained model if path is provided
     if save_path:
         with open(save_path, 'wb') as f:
             pickle.dump({
                 'dynamics_params': dynamics_params,
-                'reward_params': reward_params
             }, f)
+        print(f"Model saved to {save_path}")
     
     # Plot training losses
-    plt.figure(figsize=(12, 5))
-    
-    plt.subplot(1, 2, 1)
-    plt.plot(dynamics_losses)
-    plt.title('Dynamics Model Training Loss')
+    plt.figure(figsize=(10, 6))
+    plt.plot(losses)
+    plt.title('World Model Training Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Mean Squared Error')
-    
-    plt.subplot(1, 2, 2)
-    plt.plot(reward_losses)
-    plt.title('Reward Model Training Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Mean Squared Error')
-    
     plt.tight_layout()
-    plt.savefig('model_training_losses.png')
+    plt.savefig('world_model_training_loss.png')
     plt.show()
     
-    return dynamics_params, reward_params
+    return dynamics_params
 
-
-
-def visualize_world_model_predictions(game, params, num_steps=100, render_every=5, model=None):
-    """
-    Visualize world model predictions compared to actual game frames.
+def evaluate_model(params, game, model, num_steps=100):
+    """Evaluate model prediction quality on tree-structured states."""
+    rng = jax.random.PRNGKey(0)
+    rng, reset_rng = jax.random.split(rng)
     
-    Args:
-        game: The JaxSeaquest game environment
-        params: Trained world model parameters
-        num_steps: Number of steps to simulate
-        render_every: How often to render frames (every N steps)
-        model: The world model to use for predictions
-    """
-    print("Visualizing world model predictions...")
+    _, state = game.reset(reset_rng)
+    current_state = state.env_state.env_state
     
-    # Initialize environment
-    obs, state = game.reset()
-
-    # Create a renderer for visualization
-    renderer = SeaquestRenderer()
-    
-    flat_obs = game.obs_to_flat_array(obs)
-    
-    # JIT-compiled step function
-    jitted_step = jax.jit(game.step)
+    mse_values = []
     
     for step in range(num_steps):
         # Choose a random action
-        action = jax.random.randint(jax.random.PRNGKey(step), (), 0, 18)
+        rng, action_rng = jax.random.split(rng)
+        action = jax.random.randint(action_rng, (), 0, 18)
         
-        # Get actual next observation from environment
-        next_obs, next_state, reward, done, _ = jitted_step(state, action)
-        next_flat_obs = game.obs_to_flat_array(next_obs)
+        # Step environment to get actual next state
+        rng, step_rng = jax.random.split(rng)
+        _, next_state, _, _, _ = game.step(step_rng, state, action)
+        actual_next_state = next_state.env_state.env_state
         
         # Get prediction from world model
-        pred_next_flat_obs = model.apply(params, None, flat_obs, action)
+        # Flatten states for comparison
+        actual_next_state_flat = jax.flatten_util.ravel_pytree(actual_next_state)[0]
+        pred_next_state_flat = model.apply(params, None, current_state, action)
         
-        # Render every N steps
-        if step % render_every == 0:
-            mse = jnp.mean(jnp.square(pred_next_flat_obs - next_flat_obs))
-            
-            # Create visualization
-            plt.figure(figsize=(15, 5))
-            
-            # Render the actual game state using the renderer
-            plt.subplot(1, 3, 1)
-            game_frame = renderer.render(state)
-            plt.imshow(game_frame, interpolation='nearest')
-            plt.title(f"Actual Game Frame (Step {step})")
-            
-            # Render actual observation (flattened)
-            plt.subplot(1, 3, 2)
-            plt.imshow([next_flat_obs], aspect='auto', cmap='viridis')
-            plt.title(f"Actual Observation\nStep {step}")
-            plt.colorbar()
-            
-            # Render predicted observation
-            plt.subplot(1, 3, 3)
-            plt.imshow([pred_next_flat_obs], aspect='auto', cmap='viridis')
-            plt.title(f"Predicted Observation\nMSE: {mse:.6f}")
-            plt.colorbar()
-            
-            plt.tight_layout()
-            plt.savefig(f"world_model_viz_step_{step}.png")
-            plt.show()
-            print(f"Step {step}, MSE: {mse:.6f}")
+        # Compute MSE between prediction and actual
+        mse = jnp.mean(jnp.square(pred_next_state_flat - actual_next_state_flat))
+        mse_values.append(mse)
         
         # Update for next step
-        obs, state = next_obs, next_state
-        flat_obs = next_flat_obs
-        
-        if done:
-            print("Episode ended")
-            obs, state = game.reset()
-            flat_obs = game.obs_to_flat_array(obs)
+        state = next_state
+        current_state = actual_next_state
+    
+    return jnp.mean(jnp.array(mse_values))
+
+
+
+
+
 
 
 if __name__ == "__main__":
-    # Check JAX configuration
-    print("JAX version:", jax.__version__)
-    print("Available devices:", jax.devices())
-    print("Default backend:", jax.default_backend())
-    
-    # Check if GPU is available
-    gpu_devices = [d for d in jax.devices() if d.platform == 'gpu']
-    if gpu_devices:
-        print(f"GPU devices found: {gpu_devices}")
-    else:
-        print("No GPU devices found, falling back to CPU")
-        os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-
     # Initialize the game environment
     game = JaxSeaquest()
+    env = AtariWrapper(game, sticky_actions=False, episodic_life=False)
+    env = FlattenObservationWrapper(env)
+    env = LogWrapper(env)
     
     # Train the world model
     save_path = "world_model.pkl"
@@ -414,18 +383,17 @@ if __name__ == "__main__":
         print(f"Loading existing model from {save_path}...")
         with open(save_path, 'rb') as f:
             saved_data = pickle.load(f)
-            
             dynamics_params = saved_data['dynamics_params']
-            reward_params = saved_data['reward_params'] 
     else:
         print("No existing model found. Training a new model...")
-        dynamics_params, reward_params = train_world_model(
-            game, 
+        dynamics_params = train_world_model(
+            env, 
             num_epochs=50, 
-            batch_size=64, 
-            num_episodes_collect=100,
+            batch_size=1024, 
+            num_episodes_collect=5,
             save_path=save_path
         )
 
-    # Pass the model parameter to the visualization function
-    # visualize_world_model_predictions(game, dynamics_params, num_steps=50, render_every=10, model=model)
+    # Evaluate the model
+    eval_mse = evaluate_model(dynamics_params, game, model)
+    print(f"Final evaluation MSE: {eval_mse:.6f}")

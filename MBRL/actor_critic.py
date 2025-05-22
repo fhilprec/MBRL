@@ -100,6 +100,8 @@ def make_train(config):
     config["OBS_SHAPE"] = env.observation_space().shape
     config["NUM_ACTIONS"] = env.action_space().n
 
+
+    #those two things are vectorized functions
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
@@ -326,9 +328,9 @@ def make_train(config):
 if __name__ == "__main__":
     config = {
         "LR": 2.5e-4,
-        "NUM_ENVS": 128,
+        "NUM_ENVS": 1024,
         "NUM_STEPS": 128,
-        "TOTAL_TIMESTEPS": 1e9,
+        "TOTAL_TIMESTEPS": 1e8, #changed this so it doesnt take hours
         "UPDATE_EPOCHS": 4,
         "NUM_MINIBATCHES": 4,
         "GAMMA": 0.99,
