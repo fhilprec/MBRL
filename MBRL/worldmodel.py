@@ -215,7 +215,7 @@ def train_world_model(states, actions, next_states, rewards,
     params = model.init(rng, dummy_state, dummy_action)
     opt_state = optimizer.init(params)
     
-    # Loss function - predict next state
+    # Define loss function for a single batch
     def loss_fn(params, state_batch, action_batch, next_state_batch):
         # Predict next state
         pred_next_state = model.apply(params, None, state_batch, action_batch)
@@ -239,33 +239,47 @@ def train_world_model(states, actions, next_states, rewards,
         mse = jnp.mean((pred_next_state - flat_next_state) ** 2)
         return mse
     
-    # Training loop
+    # Define a single update step (to be JIT-compiled)
+    @jax.jit
+    def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
+        # Compute loss and gradients
+        loss, grads = jax.value_and_grad(loss_fn)(params, state_batch, action_batch, next_state_batch)
+        # Update parameters
+        updates, new_opt_state = optimizer.update(grads, opt_state)
+        new_params = optax.apply_updates(params, updates)
+        return new_params, new_opt_state, loss
+    
+    # Create batches all at once - more efficient than slicing in each iteration
     num_batches = len(actions) // batch_size
+    batches = []
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = start_idx + batch_size
+        state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], states)
+        action_batch = actions[start_idx:end_idx]
+        next_state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], next_states)
+        batches.append((state_batch, action_batch, next_state_batch))
     
+    # Convert to JAX arrays for more efficient processing
+    batches = jax.device_put(batches)
+    
+    # Process multiple batches in parallel for each epoch
     for epoch in range(num_epochs):
-        epoch_loss = 0.0
+       
         
-        for batch_idx in range(num_batches):
-            # Get batch
-            start_idx = batch_idx * batch_size
-            end_idx = start_idx + batch_size
-            
-            state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], states)
-            action_batch = actions[start_idx:end_idx]
-            next_state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], next_states)
-            
-            # Compute gradients
-            loss, grads = jax.value_and_grad(loss_fn)(params, state_batch, action_batch, next_state_batch)
-            
-            # Update parameters
-            updates, opt_state = optimizer.update(grads, opt_state)
-            params = optax.apply_updates(params, updates)
-            
-            epoch_loss += loss
+        # Simple implementation to process batches sequentially but with JIT acceleration
+        losses = []
+        for batch in batches:
+            state_batch, action_batch, next_state_batch = batch
+            params, opt_state, loss = update_step(params, opt_state, state_batch, action_batch, next_state_batch)
+            losses.append(loss)
         
-        print(f"Epoch {epoch+1}: Loss = {epoch_loss/num_batches:.6f}")
-    
-    return params, {"final_loss": epoch_loss/num_batches}
+        # Calculate mean loss for the epoch
+        epoch_loss = jnp.mean(jnp.array(losses))
+      
+        if VERBOSE:
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")    
+    return params, {"final_loss": epoch_loss}
     
     
 
