@@ -24,22 +24,29 @@ VERBOSE = True
 # Global variable to hold model for evaluate_model function
 model = None
 
+
 def build_world_model():
     def forward(state, action):
         # Flatten the state tree structure to a 1D vector
-        flat_state = hk.Flatten()(jax.flatten_util.ravel_pytree(state)[0])
+        flat_state_raw = hk.Flatten()(jax.flatten_util.ravel_pytree(state)[0])
         
-        # Convert action to one-hot
+        # Get batch size from action shape
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+        
+        # Reshape flat_state to ensure correct batch dimension
+        if len(flat_state_raw.shape) == 1:
+            # No batch dimension, need to reshape
+            feature_size = flat_state_raw.shape[0]
+            flat_state = flat_state_raw.reshape(batch_size, feature_size // batch_size)
+        else:
+            # Already has batch dimension
+            flat_state = flat_state_raw
+            
+        # Convert action to one-hot encoding with correct batch dimension
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
         
-        # Determine if we have a batch dimension
-        is_batched = len(action_one_hot.shape) > 1
-        
-        # Concatenate along the appropriate axis
-        if is_batched:
-            inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
-        else:
-            inputs = jnp.concatenate([flat_state, action_one_hot], axis=0)
+        # Concatenate along feature dimension (axis=1)
+        inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         
         # Feed through MLP
         x = hk.Linear(512)(inputs)
@@ -47,10 +54,8 @@ def build_world_model():
         x = hk.Linear(512)(x)
         x = jax.nn.relu(x)
         
-        # Final output layer
-        # For simplicity, predict the flattened state vector directly
-        # The state size will be determined by the flattened input
-        output_size = flat_state.shape[-1]
+        # Final output layer - output size should match input state size
+        output_size = flat_state.shape[1]  # Features per example
         flat_next_state = hk.Linear(output_size)(x)
         
         return flat_next_state
@@ -196,26 +201,71 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
 
 
 
-def train_world_model(
-    states, 
-    actions, 
-    next_states, 
-    rewards,
-    learning_rate: float = 3e-4,
-    batch_size: int = 256,
-    num_epochs: int = 100,
-    validation_split: float = 0.1,
-    grad_clip_norm: float = 1.0,
-    verbose: bool = True
-) -> Tuple[hk.Params, Dict[str, Any]]:
-    pass
-
-    print(states.shape)
-    print()
-
-
-
-    return 1,2
+def train_world_model(states, actions, next_states, rewards, 
+                     learning_rate=3e-4, batch_size=256, num_epochs=10):
+    
+    # Initialize model and optimizer
+    model = build_world_model()
+    optimizer = optax.adam(learning_rate)
+    
+    # Initialize parameters with dummy data
+    rng = jax.random.PRNGKey(42)
+    dummy_state = jax.tree.map(lambda x: x[:1], states)  # Take first state
+    dummy_action = actions[:1]  # Take first action
+    params = model.init(rng, dummy_state, dummy_action)
+    opt_state = optimizer.init(params)
+    
+    # Loss function - predict next state
+    def loss_fn(params, state_batch, action_batch, next_state_batch):
+        # Predict next state
+        pred_next_state = model.apply(params, None, state_batch, action_batch)
+        
+        # Flatten actual next state for comparison with consistent batch dimension
+        flat_next_state_raw = jax.flatten_util.ravel_pytree(next_state_batch)[0]
+        
+        # Ensure proper reshaping to match pred_next_state
+        batch_size = pred_next_state.shape[0]
+        feature_size = pred_next_state.shape[1]
+        
+        if len(flat_next_state_raw.shape) == 1:
+            flat_next_state = flat_next_state_raw.reshape(batch_size, feature_size)
+        else:
+            flat_next_state = hk.Flatten(preserve_dims=1)(flat_next_state_raw)
+            # If sizes still don't match, we need to reshape
+            if flat_next_state.shape[1] != feature_size:
+                flat_next_state = flat_next_state.reshape(batch_size, feature_size)
+        
+        # Mean squared error
+        mse = jnp.mean((pred_next_state - flat_next_state) ** 2)
+        return mse
+    
+    # Training loop
+    num_batches = len(actions) // batch_size
+    
+    for epoch in range(num_epochs):
+        epoch_loss = 0.0
+        
+        for batch_idx in range(num_batches):
+            # Get batch
+            start_idx = batch_idx * batch_size
+            end_idx = start_idx + batch_size
+            
+            state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], states)
+            action_batch = actions[start_idx:end_idx]
+            next_state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], next_states)
+            
+            # Compute gradients
+            loss, grads = jax.value_and_grad(loss_fn)(params, state_batch, action_batch, next_state_batch)
+            
+            # Update parameters
+            updates, opt_state = optimizer.update(grads, opt_state)
+            params = optax.apply_updates(params, updates)
+            
+            epoch_loss += loss
+        
+        print(f"Epoch {epoch+1}: Loss = {epoch_loss/num_batches:.6f}")
+    
+    return params, {"final_loss": epoch_loss/num_batches}
     
     
 
@@ -289,9 +339,6 @@ if __name__ == "__main__":
             learning_rate=3e-4,
             batch_size=256,
             num_epochs=100,
-            validation_split=0.1,
-            grad_clip_norm=1.0,
-            verbose=True
         )
 
     # # Evaluate the model
