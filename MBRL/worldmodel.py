@@ -208,36 +208,61 @@ def train_world_model(states, actions, next_states, rewards,
     model = build_world_model()
     optimizer = optax.adam(learning_rate)
     
+    # Simple scaling for states to reduce the magnitude
+    # Normalize all values to 0-1 range using fixed constants for Atari
+    # Most Atari game values are in 0-255 range for pixels
+    SCALE_FACTOR = 1/255.0  # Simple scaling factor for pixel values
+    
+    # Scale states and next_states (simple multiplication is safe for tree structures)
+    scaled_states = jax.tree.map(lambda x: x * SCALE_FACTOR, states)
+    scaled_next_states = jax.tree.map(lambda x: x * SCALE_FACTOR, next_states)
+    
     # Initialize parameters with dummy data
     rng = jax.random.PRNGKey(42)
-    dummy_state = jax.tree.map(lambda x: x[:1], states)  # Take first state
+    dummy_state = jax.tree.map(lambda x: x[:1], scaled_states)  # Take first state
     dummy_action = actions[:1]  # Take first action
     params = model.init(rng, dummy_state, dummy_action)
     opt_state = optimizer.init(params)
     
-    # Define loss function for a single batch
+    # Define loss function with L1 loss (more stable than MSE for high values)
     def loss_fn(params, state_batch, action_batch, next_state_batch):
         # Predict next state
         pred_next_state = model.apply(params, None, state_batch, action_batch)
         
-        # Flatten actual next state for comparison with consistent batch dimension
+        # Flatten actual next state for comparison
         flat_next_state_raw = jax.flatten_util.ravel_pytree(next_state_batch)[0]
         
-        # Ensure proper reshaping to match pred_next_state
+        # Get shapes for proper reshaping
         batch_size = pred_next_state.shape[0]
         feature_size = pred_next_state.shape[1]
         
+        # Print shape information in the first iteration for debugging
+        if hasattr(loss_fn, 'first_call') == False:
+            print(f"Prediction shape: {pred_next_state.shape}")
+            print(f"Target shape before reshape: {flat_next_state_raw.shape}")
+            loss_fn.first_call = True
+        
         if len(flat_next_state_raw.shape) == 1:
+            # Ensure the total size is consistent before reshaping
+            total_size = flat_next_state_raw.shape[0]
+            if total_size != batch_size * feature_size:
+                # Adjust feature_size if dimensions don't match
+                feature_size = total_size // batch_size
             flat_next_state = flat_next_state_raw.reshape(batch_size, feature_size)
         else:
-            flat_next_state = hk.Flatten(preserve_dims=1)(flat_next_state_raw)
-            # If sizes still don't match, we need to reshape
+            flat_next_state = flat_next_state_raw
             if flat_next_state.shape[1] != feature_size:
-                flat_next_state = flat_next_state.reshape(batch_size, feature_size)
+                # Safely reshape while preserving batch dimension
+                feature_size = flat_next_state.shape[1]
+                flat_next_state = flat_next_state[:, :feature_size]
+                pred_next_state = pred_next_state[:, :feature_size]
         
-        # Mean squared error
-        mse = jnp.mean((pred_next_state - flat_next_state) ** 2)
-        return mse
+        # Use L1 loss (mean absolute error) - more stable with high values
+        mae = jnp.mean(jnp.abs(pred_next_state - flat_next_state))
+        return mae
+    
+    # Set attribute for first call detection
+    loss_fn.first_call = False
     
     # Define a single update step (to be JIT-compiled)
     @jax.jit
@@ -249,15 +274,15 @@ def train_world_model(states, actions, next_states, rewards,
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
     
-    # Create batches all at once - more efficient than slicing in each iteration
+    # Create batches using the scaled data
     num_batches = len(actions) // batch_size
     batches = []
     for batch_idx in range(num_batches):
         start_idx = batch_idx * batch_size
         end_idx = start_idx + batch_size
-        state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], states)
+        state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], scaled_states)
         action_batch = actions[start_idx:end_idx]
-        next_state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], next_states)
+        next_state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], scaled_next_states)
         batches.append((state_batch, action_batch, next_state_batch))
     
     # Convert to JAX arrays for more efficient processing
@@ -265,7 +290,6 @@ def train_world_model(states, actions, next_states, rewards,
     
     # Process multiple batches in parallel for each epoch
     for epoch in range(num_epochs):
-       
         
         # Simple implementation to process batches sequentially but with JIT acceleration
         losses = []
@@ -278,14 +302,164 @@ def train_world_model(states, actions, next_states, rewards,
         epoch_loss = jnp.mean(jnp.array(losses))
       
         if VERBOSE:
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")    
-    return params, {"final_loss": epoch_loss}
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
+    
+    # Return both the trained parameters and the scaling factor for future use
+    return params, {"final_loss": epoch_loss, "scale_factor": SCALE_FACTOR}
     
     
 
 
+import os
+import sys
+import pygame
+import jax
+import jax.numpy as jnp
+import pickle
+import numpy as np
+import time
+from typing import Tuple, Dict, Any
 
-
+def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
+    """
+    Compare the real environment with the world model predictions.
+    
+    Args:
+        num_steps: Number of steps to run the comparison
+        render_scale: Scale factor for rendering
+    """
+    # Initialize game and renderer
+    real_env = JaxSeaquest()
+    renderer = SeaquestRenderer()
+    
+    # Check if world model exists
+    model_path = "world_model.pkl"
+    if not os.path.exists(model_path):
+        print(f"Error: World model not found at {model_path}")
+        return
+    
+    # Load world model
+    with open(model_path, 'rb') as f:
+        model_data = pickle.load(f)
+        dynamics_params = model_data['dynamics_params']
+        scale_factor = model_data.get('scale_factor', 1/255.0)
+    
+    # Initialize model
+    world_model = build_world_model()
+    
+    # Initialize pygame
+    pygame.init()
+    
+    # Set up display - side by side comparison
+    WIDTH = 160
+    HEIGHT = 210
+    WINDOW_WIDTH = WIDTH * render_scale * 2 + 20  # Extra 20px for separation
+    WINDOW_HEIGHT = HEIGHT * render_scale
+    
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("Real Environment vs World Model")
+    
+    # Initialize environments
+    rng = jax.random.PRNGKey(int(time.time()))
+    rng, reset_key = jax.random.split(rng)
+    real_obs, real_state = real_env.reset(reset_key)
+    model_state = real_state  # Start with the same state
+    
+    # Prepare surfaces for rendering
+    real_surface = pygame.Surface((WIDTH, HEIGHT))
+    model_surface = pygame.Surface((WIDTH, HEIGHT))
+    
+    # Pre-define a jitted step function for the real environment
+    jitted_step = jax.jit(real_env.step)
+    
+    # Define a world model prediction function
+    def predict_next_state(params, state, action, scale_factor=1/255.0):
+        """Predict next state using the world model"""
+        # Scale the state (normalization)
+        scaled_state = jax.tree.map(lambda x: x * scale_factor, state)
+        
+        # Get prediction from model
+        pred_next_state = world_model.apply(params, None, scaled_state, action)
+        
+        # The model predicts the flattened state, need to reconstruct the tree structure
+        # For simplicity, we'll just use the predicted state as a direct modification
+        # to the current state's flat representation
+        flat_state, pytree_def = jax.flatten_util.ravel_pytree(state)
+        flat_state_size = pred_next_state.shape[-1]
+        
+        # Replace the relevant portion of the flat state with our prediction
+        new_flat_state = flat_state.at[:flat_state_size].set(pred_next_state[0] / scale_factor)
+        
+        # Reconstruct the state tree
+        return pytree_def.unflatten(new_flat_state)
+    
+    # For efficiency
+    jitted_predict = jax.jit(predict_next_state)
+    
+    # Main loop
+    running = True
+    step_count = 0
+    clock = pygame.time.Clock()
+    
+    while running and step_count < num_steps:
+        # Handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+        
+        # Random action
+        rng, action_key = jax.random.split(rng)
+        action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)
+        
+        # Step real environment
+        real_obs, real_state, real_reward, real_done, real_info = jitted_step(real_state, action)
+        
+        # Step world model
+        model_state = jitted_predict(dynamics_params, model_state, action, scale_factor)
+        model_obs = real_env._get_observation(model_state)
+        
+        # Render real environment
+        real_raster = renderer.render(real_state)
+        # Convert JAX array to numpy and then to pygame surface
+        real_img = np.array(real_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(real_surface, real_img)
+        
+        # Render model environment
+        model_raster = renderer.render(model_state)
+        model_img = np.array(model_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(model_surface, model_img)
+        
+        # Scale and blit to screen
+        screen.fill((0, 0, 0))
+        # Left side: real environment
+        scaled_real = pygame.transform.scale(real_surface, (WIDTH * render_scale, HEIGHT * render_scale))
+        screen.blit(scaled_real, (0, 0))
+        
+        # Right side: world model
+        scaled_model = pygame.transform.scale(model_surface, (WIDTH * render_scale, HEIGHT * render_scale))
+        screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
+        
+        # Add labels
+        font = pygame.font.SysFont(None, 24)
+        real_text = font.render("Real Environment", True, (255, 255, 255))
+        model_text = font.render("World Model", True, (255, 255, 255))
+        screen.blit(real_text, (20, 10))
+        screen.blit(model_text, (WIDTH * render_scale + 40, 10))
+        
+        # Update display
+        pygame.display.flip()
+        
+        # Reset if either environment is done
+        if real_done:
+            rng, reset_key = jax.random.split(rng)
+            real_obs, real_state = real_env.reset(reset_key)
+            model_state = real_state  # Sync model state with real state
+        
+        step_count += 1
+        clock.tick(30)
+    
+    pygame.quit()
+    print("Comparison completed")
 
 
 if __name__ == "__main__":
@@ -351,9 +525,17 @@ if __name__ == "__main__":
             next_states,
             rewards,
             learning_rate=3e-4,
-            batch_size=256,
-            num_epochs=100,
+            batch_size=4096,
+            num_epochs=1000,
         )
+
+        # Save the model and scaling factor
+        with open(save_path, 'wb') as f:
+            pickle.dump({
+                'dynamics_params': dynamics_params,
+                'scale_factor': training_info['scale_factor']
+            }, f)
+        print(f"Model saved to {save_path}")
 
     # # Evaluate the model
     # eval_mse = evaluate_model(dynamics_params, env, model)
@@ -364,3 +546,5 @@ if __name__ == "__main__":
     # print("Visualizing model predictions vs. actual gameplay...")
     # stats = visualize_predictions(dynamics_params, env, model, num_steps=500, delay=0.05)
     # print(f"Visualization stats: {stats}")
+
+    compare_real_vs_model(num_steps=5000, render_scale=3)
