@@ -37,10 +37,13 @@ def build_world_model():
         if len(flat_state_raw.shape) == 1:
             # No batch dimension, need to reshape
             feature_size = flat_state_raw.shape[0]
-            flat_state = flat_state_raw.reshape(batch_size, feature_size // batch_size)
+            flat_state_full = flat_state_raw.reshape(batch_size, feature_size // batch_size)
         else:
             # Already has batch dimension
-            flat_state = flat_state_raw
+            flat_state_full = flat_state_raw
+        
+        # Exclude the last two values which are random numbers
+        flat_state = flat_state_full[:, :-2]
             
         # Convert action to one-hot encoding with correct batch dimension
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
@@ -54,8 +57,8 @@ def build_world_model():
         x = hk.Linear(512)(x)
         x = jax.nn.relu(x)
         
-        # Final output layer - output size should match input state size
-        output_size = flat_state.shape[1]  # Features per example
+        # Final output layer - output size should match input state size minus the 2 random values
+        output_size = flat_state.shape[1]  # Features per example (without the last 2 random values)
         flat_next_state = hk.Linear(output_size)(x)
         
         return flat_next_state
@@ -245,19 +248,24 @@ def train_world_model(states, actions, next_states, rewards,
         if len(flat_next_state_raw.shape) == 1:
             # Ensure the total size is consistent before reshaping
             total_size = flat_next_state_raw.shape[0]
-            if total_size != batch_size * feature_size:
-                # Adjust feature_size if dimensions don't match
-                feature_size = total_size // batch_size
-            flat_next_state = flat_next_state_raw.reshape(batch_size, feature_size)
+            # Adjust feature_size if dimensions don't match
+            full_feature_size = total_size // batch_size
+            flat_next_state_full = flat_next_state_raw.reshape(batch_size, full_feature_size)
         else:
-            flat_next_state = flat_next_state_raw
-            if flat_next_state.shape[1] != feature_size:
-                # Safely reshape while preserving batch dimension
-                feature_size = flat_next_state.shape[1]
-                flat_next_state = flat_next_state[:, :feature_size]
-                pred_next_state = pred_next_state[:, :feature_size]
-        
+            flat_next_state_full = flat_next_state_raw
+    
+        # Exclude the last two values which are random
+        flat_next_state = flat_next_state_full[:, :-2]
+    
+        # Make sure we're comparing the same dimensions
+        if flat_next_state.shape[1] != feature_size:
+            # Safely reshape while preserving batch dimension
+            min_size = min(flat_next_state.shape[1], feature_size)
+            flat_next_state = flat_next_state[:, :min_size]
+            pred_next_state = pred_next_state[:, :min_size]
+    
         # Use L1 loss (mean absolute error) - more stable with high values
+        # pred_next_state = jax.tree.map(lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), pred_next_state) -> model not differentiable anymore when doing this here
         mae = jnp.mean(jnp.abs(pred_next_state - flat_next_state))
         return mae
     
@@ -378,21 +386,35 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         # Scale the state (normalization)
         scaled_state = jax.tree.map(lambda x: x * scale_factor, state)
         
+        # Convert the single action to a batched action
+        if not isinstance(action, jnp.ndarray) or action.ndim == 0:
+            action = jnp.array([action])  # Add batch dimension
+    
         # Get prediction from model
         pred_next_state = world_model.apply(params, None, scaled_state, action)
         
-        # The model predicts the flattened state, need to reconstruct the tree structure
-        # For simplicity, we'll just use the predicted state as a direct modification
-        # to the current state's flat representation
-        flat_state, pytree_def = jax.flatten_util.ravel_pytree(state)
-        flat_state_size = pred_next_state.shape[-1]
-        
-        # Replace the relevant portion of the flat state with our prediction
-        new_flat_state = flat_state.at[:flat_state_size].set(pred_next_state[0] / scale_factor)
-        
-        # Reconstruct the state tree
-        return pytree_def.unflatten(new_flat_state)
+        # Get flat representation of state and pytree structure
+        flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     
+        # Make a copy of the flat state to modify
+        new_flat_state = jnp.array(flat_state)  # Create a copy
+    
+        # Calculate how many elements to replace
+        # Exclude the last two random values
+        elements_to_replace = len(flat_state) - 2
+        pred_size = pred_next_state.shape[1]  # Second dimension has the features
+    
+        # Make sure we don't overrun the array bounds
+        copy_size = min(elements_to_replace, pred_size)
+    
+        # Replace all but the last two values with our prediction
+        # Need to reshape prediction to match the expected flat shape
+        new_flat_state = new_flat_state.at[:copy_size].set(
+            (pred_next_state[0][:copy_size] / scale_factor)
+        )
+    
+        # Use the unflattener function returned by ravel_pytree
+        return unflattener(new_flat_state)
     # For efficiency
     jitted_predict = jax.jit(predict_next_state)
     
@@ -410,7 +432,8 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         # Random action
         rng, action_key = jax.random.split(rng)
         action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)
-        
+        if step_count % 4 == 0: #force agent to swim down to extent episode
+            action = 5
         # Step real environment
         real_obs, real_state, real_reward, real_done, real_info = jitted_step(real_state, action)
         
@@ -425,9 +448,18 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         pygame.surfarray.blit_array(real_surface, real_img)
         
         # Render model environment
+        # Convert JAX array to numpy and then to pygame surface     
+        # 
+        # clip values to sensible range but preserve original type
+        model_state = jax.tree.map(lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), model_state)
+        
         model_raster = renderer.render(model_state)
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
+
+        print(real_state)
+        print(model_state)
+
         
         # Scale and blit to screen
         screen.fill((0, 0, 0))
