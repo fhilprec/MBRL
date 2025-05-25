@@ -1,8 +1,6 @@
 import os
 # Add CUDA paths to environment
 os.environ['XLA_FLAGS'] = '--xla_gpu_cuda_data_dir=/usr/lib/cuda'
-# Remove CPU restriction to allow GPU usage
-# os.environ['JAX_PLATFORM_NAME'] = 'cpu'  # Comment this out
 
 import jax
 import jax.numpy as jnp
@@ -16,18 +14,15 @@ import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
-
 VERBOSE = True
-
-
 
 # Global variable to hold model for evaluate_model function
 model = None
 
-
 def build_world_model():
     def forward(state, action):
         # Flatten the state tree structure to a 1D vector
+        # The AtariWrapper with frame_stack_size=4 already gives us 4 stacked frames in the state
         flat_state_raw = hk.Flatten()(jax.flatten_util.ravel_pytree(state)[0])
         
         # Get batch size from action shape
@@ -51,35 +46,32 @@ def build_world_model():
         # Concatenate along feature dimension (axis=1)
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         
-        # Feed through MLP
-        x = hk.Linear(512)(inputs)
+        # Feed through MLP - larger network since we now have 4x more input (4 stacked frames)
+        x = hk.Linear(1024)(inputs)
+        x = jax.nn.relu(x)
+        x = hk.Linear(1024)(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(1024)(x)
         x = jax.nn.relu(x)
         x = hk.Linear(512)(x)
         x = jax.nn.relu(x)
         
         # Final output layer - output size should match input state size minus the 2 random values
-        output_size = flat_state.shape[1]  # Features per example (without the last 2 random values)
-        flat_next_state = hk.Linear(output_size)(x)
+        # But since we have 4 stacked frames as input, we predict only 1 frame (1/4 of input size)
+        single_frame_size = flat_state.shape[1] // 4  # Predict single frame from 4 stacked frames
+        flat_next_state = hk.Linear(single_frame_size)(x)
         
         return flat_next_state
     
     return hk.transform(forward)
 
-
-
-
-
-
-#this function does not differentiate between done and not done environments
-#maybe this is not a problem since the model should learn to predict the next state regardless of whether the environment is done or not
-def collect_experience(game: JaxSeaquest, num_episodes: int = 100, 
+def collect_experience(env, num_episodes: int = 100, 
                        max_steps_per_episode: int = 1000, num_envs: int = 512) -> Tuple[List, List, List]:
 
     print(f"Collecting experience data from {num_envs} parallel environments...")
+    print("Note: AtariWrapper provides 4 stacked frames automatically")
     
-    
-    
-    # Create vectorized reset and step functions stolen from ppo
+    # Create vectorized reset and step functions
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)
     )
@@ -94,26 +86,23 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
     rewards = []
     
     # Initialize random key
-    rng = jax.random.PRNGKey(42)  # Use a fixed seed for reproducibility
+    rng = jax.random.PRNGKey(42)
     
     # JIT compile the reset and step functions
     jitted_reset = jax.jit(vmap_reset(num_envs))
     jitted_step = jax.jit(vmap_step(num_envs))
     
     # Reset all environments
-    rng, reset_rng = jax.random.split(rng) #returns two random keys
-    # Reset all environments in parallel
+    rng, reset_rng = jax.random.split(rng)
     _, state = jitted_reset(reset_rng)
-    
-
     
     total_steps = 0
     total_episodes = 0
     
-
     while total_episodes < num_episodes * num_envs:
-        # Store the current state
-        current_state_repr = jax.tree.map(lambda x: x, state.env_state.env_state)
+        # Store the current state - AtariWrapper state structure is different
+        # For AtariWrapper, the state contains the stacked frames directly
+        current_state_repr = jax.tree.map(lambda x: x, state.state)
         
         # Generate random actions for all environments
         rng, action_rng = jax.random.split(rng)
@@ -122,8 +111,6 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
         # Step all environments
         rng, step_rng = jax.random.split(rng)
         _, next_state, reward_batch, done_batch, _ = jitted_step(step_rng, state, action_batch)
-        
-
         
         if jnp.any(done_batch):
             # Reset environments that are done
@@ -154,15 +141,10 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
             
             # Update only the states that are done
             next_state = update_where_done(next_state, reset_states, done_batch)
-        
-
-
-
 
         # Extract state representation from the new state
-        next_state_repr = jax.tree.map(lambda x: x, next_state.env_state.env_state) #not sure here whether there are multiple states or not
+        next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
         
-
         # Store experience
         states.append(current_state_repr)
         actions.append(action_batch)
@@ -174,22 +156,19 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
         total_episodes += newly_completed
         total_steps += num_envs
         
-        
-        # Just update state for next iteration, ignoring done environments (inefficient but simple)
+        # Update state for next iteration
         state = next_state
 
         # Break if we've collected enough episodes
         if total_episodes >= num_episodes * num_envs:
             break
     
-
     if VERBOSE:
         print(f"Experience collection completed:")
         print(f"- Total steps: {total_steps}")
         print(f"- Total episodes: {total_episodes}")
         print(f"- Total transitions: {len(states)}")
     
-
     # Convert lists to arrays
     states = jax.tree.map(lambda *xs: jnp.concatenate(xs, axis=0), *states)
     actions = jnp.concatenate(actions, axis=0)
@@ -202,8 +181,6 @@ def collect_experience(game: JaxSeaquest, num_episodes: int = 100,
 
     return states, actions, next_states, rewards
 
-
-
 def train_world_model(states, actions, next_states, rewards, 
                      learning_rate=3e-4, batch_size=256, num_epochs=10):
     
@@ -212,24 +189,22 @@ def train_world_model(states, actions, next_states, rewards,
     optimizer = optax.adam(learning_rate)
     
     # Simple scaling for states to reduce the magnitude
-    # Normalize all values to 0-1 range using fixed constants for Atari
-    # Most Atari game values are in 0-255 range for pixels
-    SCALE_FACTOR = 1/255.0  # Simple scaling factor for pixel values
+    SCALE_FACTOR = 1/255.0
     
-    # Scale states and next_states (simple multiplication is safe for tree structures)
+    # Scale states and next_states
     scaled_states = jax.tree.map(lambda x: x * SCALE_FACTOR, states)
     scaled_next_states = jax.tree.map(lambda x: x * SCALE_FACTOR, next_states)
     
     # Initialize parameters with dummy data
     rng = jax.random.PRNGKey(42)
-    dummy_state = jax.tree.map(lambda x: x[:1], scaled_states)  # Take first state
-    dummy_action = actions[:1]  # Take first action
+    dummy_state = jax.tree.map(lambda x: x[:1], scaled_states)
+    dummy_action = actions[:1]
     params = model.init(rng, dummy_state, dummy_action)
     opt_state = optimizer.init(params)
     
-    # Define loss function with L1 loss (more stable than MSE for high values)
+    # Define loss function
     def loss_fn(params, state_batch, action_batch, next_state_batch):
-        # Predict next state
+        # Predict next state (single frame from 4 stacked frames)
         pred_next_state = model.apply(params, None, state_batch, action_batch)
         
         # Flatten actual next state for comparison
@@ -237,7 +212,7 @@ def train_world_model(states, actions, next_states, rewards,
         
         # Get shapes for proper reshaping
         batch_size = pred_next_state.shape[0]
-        feature_size = pred_next_state.shape[1]
+        pred_feature_size = pred_next_state.shape[1]
         
         # Print shape information in the first iteration for debugging
         if hasattr(loss_fn, 'first_call') == False:
@@ -248,7 +223,6 @@ def train_world_model(states, actions, next_states, rewards,
         if len(flat_next_state_raw.shape) == 1:
             # Ensure the total size is consistent before reshaping
             total_size = flat_next_state_raw.shape[0]
-            # Adjust feature_size if dimensions don't match
             full_feature_size = total_size // batch_size
             flat_next_state_full = flat_next_state_raw.reshape(batch_size, full_feature_size)
         else:
@@ -256,17 +230,21 @@ def train_world_model(states, actions, next_states, rewards,
     
         # Exclude the last two values which are random
         flat_next_state = flat_next_state_full[:, :-2]
+        
+        # Since we're predicting single frame from 4 stacked frames,
+        # we need to extract the most recent frame from the target
+        # The next_state contains 4 stacked frames, we want the newest one
+        single_frame_size = flat_next_state.shape[1] // 4
+        target_single_frame = flat_next_state[:, -single_frame_size:]  # Last frame
     
         # Make sure we're comparing the same dimensions
-        if flat_next_state.shape[1] != feature_size:
-            # Safely reshape while preserving batch dimension
-            min_size = min(flat_next_state.shape[1], feature_size)
-            flat_next_state = flat_next_state[:, :min_size]
+        if target_single_frame.shape[1] != pred_feature_size:
+            min_size = min(target_single_frame.shape[1], pred_feature_size)
+            target_single_frame = target_single_frame[:, :min_size]
             pred_next_state = pred_next_state[:, :min_size]
     
-        # Use L1 loss (mean absolute error) - more stable with high values
-        # pred_next_state = jax.tree.map(lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), pred_next_state) -> model not differentiable anymore when doing this here
-        mae = jnp.mean(jnp.abs(pred_next_state - flat_next_state))
+        # Use L1 loss (mean absolute error)
+        mae = jnp.mean(jnp.abs(pred_next_state - target_single_frame))
         return mae
     
     # Set attribute for first call detection
@@ -298,7 +276,6 @@ def train_world_model(states, actions, next_states, rewards,
     
     # Process multiple batches in parallel for each epoch
     for epoch in range(num_epochs):
-        
         # Simple implementation to process batches sequentially but with JIT acceleration
         losses = []
         for batch in batches:
@@ -314,30 +291,16 @@ def train_world_model(states, actions, next_states, rewards,
     
     # Return both the trained parameters and the scaling factor for future use
     return params, {"final_loss": epoch_loss, "scale_factor": SCALE_FACTOR}
-    
-    
-
-
-import os
-import sys
-import pygame
-import jax
-import jax.numpy as jnp
-import pickle
-import numpy as np
-import time
-from typing import Tuple, Dict, Any
 
 def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
     """
     Compare the real environment with the world model predictions.
-    
-    Args:
-        num_steps: Number of steps to run the comparison
-        render_scale: Scale factor for rendering
+    Now works with 4 stacked frames from AtariWrapper.
     """
-    # Initialize game and renderer
-    real_env = JaxSeaquest()
+    # Initialize base game and wrapped environment
+    base_game = JaxSeaquest()
+    # Use AtariWrapper with frame stacking (default frame_stack_size=4)
+    real_env = AtariWrapper(base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4)
     renderer = SeaquestRenderer()
     
     # Check if world model exists
@@ -356,16 +319,18 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
     world_model = build_world_model()
     
     # Initialize pygame
+    import pygame
+    import time
     pygame.init()
     
     # Set up display - side by side comparison
     WIDTH = 160
     HEIGHT = 210
-    WINDOW_WIDTH = WIDTH * render_scale * 2 + 20  # Extra 20px for separation
+    WINDOW_WIDTH = WIDTH * render_scale * 2 + 20
     WINDOW_HEIGHT = HEIGHT * render_scale
     
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Real Environment vs World Model")
+    pygame.display.set_caption("Real Environment vs World Model (AtariWrapper Frame Stack)")
     
     # Initialize environments
     rng = jax.random.PRNGKey(int(time.time()))
@@ -378,43 +343,64 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
     model_surface = pygame.Surface((WIDTH, HEIGHT))
     
     # Pre-define a jitted step function for the real environment
-    jitted_step = jax.jit(real_env.step)
+    def step_with_rng(rng, state, action):
+        return real_env.step(rng, state, action)
+    jitted_step = jax.jit(step_with_rng)
     
     # Define a world model prediction function
     def predict_next_state(params, state, action, scale_factor=1/255.0):
-        """Predict next state using the world model"""
+        """Predict next state using the world model with 4 stacked frames"""
         # Scale the state (normalization)
-        scaled_state = jax.tree.map(lambda x: x * scale_factor, state)
+        scaled_state = jax.tree.map(lambda x: x * scale_factor, state.env_state)
         
         # Convert the single action to a batched action
         if not isinstance(action, jnp.ndarray) or action.ndim == 0:
-            action = jnp.array([action])  # Add batch dimension
+            action = jnp.array([action])
     
-        # Get prediction from model
-        pred_next_state = world_model.apply(params, None, scaled_state, action)
+        # Get prediction from model (single frame prediction)
+        pred_next_frame = world_model.apply(params, None, scaled_state, action)
         
-        # Get flat representation of state and pytree structure
-        flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
+        # Get flat representation of current state and pytree structure
+        flat_state, unflattener = jax.flatten_util.ravel_pytree(state.env_state)
     
         # Make a copy of the flat state to modify
-        new_flat_state = jnp.array(flat_state)  # Create a copy
-    
-        # Calculate how many elements to replace
-        # Exclude the last two random values
-        elements_to_replace = len(flat_state) - 2
-        pred_size = pred_next_state.shape[1]  # Second dimension has the features
-    
-        # Make sure we don't overrun the array bounds
-        copy_size = min(elements_to_replace, pred_size)
-    
-        # Replace all but the last two values with our prediction
-        # Need to reshape prediction to match the expected flat shape
-        new_flat_state = new_flat_state.at[:copy_size].set(
-            (pred_next_state[0][:copy_size] / scale_factor)
+        new_flat_state = jnp.array(flat_state)
+        
+        # The state contains 4 stacked frames. We want to:
+        # 1. Shift the 4 frames: [frame1, frame2, frame3, frame4] -> [frame2, frame3, frame4, predicted_frame]
+        # 2. Replace the last frame with our prediction
+        
+        # Calculate frame sizes
+        total_state_size = len(flat_state) - 2  # Exclude 2 random values
+        single_frame_size = total_state_size // 4
+        pred_size = pred_next_frame.shape[1]
+        
+        # Make sure we don't overrun bounds
+        copy_size = min(single_frame_size, pred_size)
+        
+        # Shift frames: move frames 1,2,3 to positions 0,1,2
+        for i in range(3):
+            start_old = (i + 1) * single_frame_size
+            end_old = start_old + copy_size
+            start_new = i * single_frame_size  
+            end_new = start_new + copy_size
+            new_flat_state = new_flat_state.at[start_new:end_new].set(
+                new_flat_state[start_old:end_old]
+            )
+        
+        # Set the last frame to our prediction
+        last_frame_start = 3 * single_frame_size
+        last_frame_end = last_frame_start + copy_size
+        new_flat_state = new_flat_state.at[last_frame_start:last_frame_end].set(
+            (pred_next_frame[0][:copy_size] / scale_factor)
         )
     
-        # Use the unflattener function returned by ravel_pytree
-        return unflattener(new_flat_state)
+        # Reconstruct the state
+        new_env_state = unflattener(new_flat_state)
+        
+        # Return the full state structure
+        return state.replace(env_state=new_env_state)
+    
     # For efficiency
     jitted_predict = jax.jit(predict_next_state)
     
@@ -431,34 +417,52 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         
         # Random action
         rng, action_key = jax.random.split(rng)
-        action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)
-        if step_count % 4 == 0: #force agent to swim down to extent episode
+        action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)  
+        if step_count % 4 == 0:  # Force agent to swim down to extend episode
             action = 5
+        
         # Step real environment
-        real_obs, real_state, real_reward, real_done, real_info = jitted_step(real_state, action)
+        rng, step_rng = jax.random.split(rng)
+        real_obs, real_state, real_reward, real_done, real_info = jitted_step(step_rng, real_state, action)
         
         # Step world model
         model_state = jitted_predict(dynamics_params, model_state, action, scale_factor)
-        model_obs = real_env._get_observation(model_state)
         
-        # Render real environment
-        real_raster = renderer.render(real_state)
-        # Convert JAX array to numpy and then to pygame surface
-        real_img = np.array(real_raster * 255, dtype=np.uint8)
-        pygame.surfarray.blit_array(real_surface, real_img)
-        
-        # Render model environment
-        # Convert JAX array to numpy and then to pygame surface     
-        # 
-        # clip values to sensible range but preserve original type
+        # Clip model state values for rendering
         model_state = jax.tree.map(lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), model_state)
         
-        model_raster = renderer.render(model_state)
+        if VERBOSE and step_count % 100 == 0:
+            print(f"Step {step_count}: Real vs Model state comparison")
+        
+        # For rendering, we need to get the base game state
+        # AtariWrapper stores the base game state differently - we need to extract it properly
+        # Let's get the most recent frame from the stacked frames for rendering
+        
+        # Extract base game state for rendering from the AtariWrapper
+        real_base_state = real_state.env_state  # This should be the stacked frames
+        model_base_state = model_state.env_state
+        
+        # The renderer expects the base game state, but we have stacked frames
+        # We need to extract just the most recent frame for rendering
+        # This requires understanding the AtariWrapper's frame stacking structure
+        
+        # For now, let's try rendering the full state and see what happens
+
+        print("---------------------------------------------------------------Real State-------------------------------------------------")
+        print(real_base_state)
+        print("---------------------------------------------------------------Model State------------------------------------------------")
+        print(model_base_state)
+
+
+        # Render real environment - try to extract the most recent frame
+        real_raster = renderer.render(real_base_state)
+        real_img = np.array(real_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(real_surface, real_img)
+
+
+        model_raster = renderer.render(model_base_state)
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
-
-        print(real_state)
-        print(model_state)
 
         
         # Scale and blit to screen
@@ -474,7 +478,7 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         # Add labels
         font = pygame.font.SysFont(None, 24)
         real_text = font.render("Real Environment", True, (255, 255, 255))
-        model_text = font.render("World Model", True, (255, 255, 255))
+        model_text = font.render("World Model (4 Frames)", True, (255, 255, 255))
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         
@@ -493,13 +497,10 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
     pygame.quit()
     print("Comparison completed")
 
-
 if __name__ == "__main__":
-    # Initialize the game environment
+    # Initialize the game environment with AtariWrapper (includes frame stacking)
     game = JaxSeaquest()
-    env = AtariWrapper(game, sticky_actions=False, episodic_life=False)
-    env = FlattenObservationWrapper(env)
-    env = LogWrapper(env)
+    env = AtariWrapper(game, sticky_actions=False, episodic_life=False, frame_stack_size=4)
     
     # Train the world model
     save_path = "world_model.pkl"
@@ -507,8 +508,47 @@ if __name__ == "__main__":
     # Set the global model variable
     model = build_world_model()
 
+    '''
+    # First, let's understand the state structure by doing a single step
+    print("Analyzing state structure...")
+    rng = jax.random.PRNGKey(42)
+    rng, reset_key = jax.random.split(rng)
+    initial_obs, initial_state = env.reset(reset_key)
+    
+    print("AtariWrapper state structure:")
+    print(f"Full state: {initial_state}")
+    print(f"State type: {type(initial_state)}")
+    print(f"State env_state: {initial_state.env_state}")
+    print(f"env_state type: {type(initial_state.env_state)}")
+    
+    # Get all leaf values from the initial state tree structure
+    state_leaves = jax.tree_util.tree_leaves(initial_state.env_state)
+    
+    # Convert any JAX arrays to lists and flatten everything into a single list
+    all_values = []
+    for leaf in state_leaves:
+        if isinstance(leaf, jnp.ndarray):
+            all_values.extend(leaf.flatten().tolist())
+        else:
+            all_values.append(leaf)
+    
+    print("All state values as a flat list:")
+    print(f"Number of values in the wrapped state: {len(all_values)}")
+    
+    # Compare with base game
+    base_obs, base_state = game.reset(reset_key)
+    base_leaves = jax.tree_util.tree_leaves(base_state)
+    base_values = []
+    for leaf in base_leaves:
+        if isinstance(leaf, jnp.ndarray):
+            base_values.extend(leaf.flatten().tolist())
+        else:
+            base_values.append(leaf)
+    
+    print(f"Number of values in base game state: {len(base_values)}")
+    print(f"Frame stacking multiplier: {len(all_values) / len(base_values):.1f}")
 
-
+    '''
 
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
@@ -519,7 +559,7 @@ if __name__ == "__main__":
         print("No existing model found. Training a new model...")
 
         # Define a file path for the experience data
-        experience_data_path = "experience_data.pkl"
+        experience_data_path = "experience_data_frames.pkl"
 
         # Check if experience data file exists
         if os.path.exists(experience_data_path):
@@ -532,9 +572,9 @@ if __name__ == "__main__":
                 rewards = saved_data['rewards']
         else:
             print("No existing experience data found. Collecting new experience data...")
-            # Collect experience data
+            # Collect experience data (AtariWrapper handles frame stacking automatically)
             states, actions, next_states, rewards = collect_experience(
-                game,
+                env,  # Use wrapped environment
                 num_episodes=1,
                 max_steps_per_episode=10000,
                 num_envs=512
@@ -550,7 +590,7 @@ if __name__ == "__main__":
                 }, f)
             print(f"Experience data saved to {experience_data_path}")
 
-        #train world model
+        # Train world model
         dynamics_params, training_info = train_world_model(
             states,
             actions,
@@ -569,14 +609,5 @@ if __name__ == "__main__":
             }, f)
         print(f"Model saved to {save_path}")
 
-    # # Evaluate the model
-    # eval_mse = evaluate_model(dynamics_params, env, model)
-    # print(f"Final evaluation MSE: {eval_mse:.6f}")
-
-
-    #  # Then visualize the predictions
-    # print("Visualizing model predictions vs. actual gameplay...")
-    # stats = visualize_predictions(dynamics_params, env, model, num_steps=500, delay=0.05)
-    # print(f"Visualization stats: {stats}")
-
-    compare_real_vs_model(num_steps=5000, render_scale=3)
+    # Compare real vs model
+    compare_real_vs_model(num_steps=5000, render_scale=6)
