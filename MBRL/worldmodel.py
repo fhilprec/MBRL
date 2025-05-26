@@ -285,8 +285,8 @@ def train_world_model(states, actions, next_states, rewards,
                      learning_rate=3e-4, batch_size=256, num_epochs=10):
     
 
-    if VERBOSE:
-        render_trajectory(states, num_frames=100, render_scale=3, delay=50)
+    # if VERBOSE:
+    #     render_trajectory(states, num_frames=100, render_scale=3, delay=50)
 
     # Initialize model and optimizer
     model = build_world_model()
@@ -366,6 +366,7 @@ def train_world_model(states, actions, next_states, rewards,
     
     # Create batches using the scaled data
     num_batches = len(actions) // batch_size
+
     batches = []
     for batch_idx in range(num_batches):
         start_idx = batch_idx * batch_size
@@ -382,6 +383,8 @@ def train_world_model(states, actions, next_states, rewards,
     for epoch in range(num_epochs):
         # Simple implementation to process batches sequentially but with JIT acceleration
         losses = []
+
+
         for batch in batches:
             state_batch, action_batch, next_state_batch = batch
             params, opt_state, loss = update_step(params, opt_state, state_batch, action_batch, next_state_batch)
@@ -392,8 +395,7 @@ def train_world_model(states, actions, next_states, rewards,
 
         
       
-        if VERBOSE and (epoch + 1) % 10 == 0:
-            print(losses)
+        if VERBOSE and (epoch + 1) % 1 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
     
     # Return both the trained parameters and the scaling factor for future use
@@ -684,7 +686,7 @@ if __name__ == "__main__":
                 env,  # Use wrapped environment
                 num_episodes=1,
                 max_steps_per_episode=10000,
-                num_envs=1 # usually 512, but for debugging we use 1
+                num_envs=2 # usually 512, but for debugging we use 1
             )
             
             # Save the collected experience data
@@ -704,8 +706,8 @@ if __name__ == "__main__":
             next_states,
             rewards,
             learning_rate=3e-4,
-            batch_size=4096,
-            num_epochs=1000,
+            batch_size=128, #usually 4096
+            num_epochs=100,
         )
 
         # Save the model and scaling factor
