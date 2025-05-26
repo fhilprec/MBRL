@@ -82,7 +82,9 @@ class JaxSkiing(JaxEnvironment[GameState, SkiingObservation, SkiingInfo]):
         self.config = GameConfig()
         self.state = self.reset()
 
-    def reset(self, key: jax.random.PRNGKey = jax.random.key(1701)) -> Tuple[SkiingObservation, GameState]:
+    def reset(
+        self, key: jax.random.PRNGKey = jax.random.key(1701)
+    ) -> Tuple[SkiingObservation, GameState]:
         """Initialize a new game state"""
         flags = []
 
@@ -223,7 +225,9 @@ class JaxSkiing(JaxEnvironment[GameState, SkiingObservation, SkiingInfo]):
         return flags, trees, rocks, k
 
     @partial(jax.jit, static_argnums=(0,))
-    def step(self, state: GameState, action: int) -> tuple[SkiingObservation, GameState, float, bool, SkiingInfo]:
+    def step(
+        self, state: GameState, action: int
+    ) -> tuple[SkiingObservation, GameState, float, bool, SkiingInfo]:
         #                              -->  --_      \     |     |    /    _-- <--
         side_speed = jnp.array(
             [-1.0, -0.5, -0.333, 0.0, 0.0, 0.333, 0.5, 1], jnp.float32

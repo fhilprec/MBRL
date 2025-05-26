@@ -7,6 +7,7 @@ from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestRenderer
 from jaxatari.games.jax_kangaroo import JaxKangaroo, KangarooRenderer
 from jaxatari.games.jax_freeway import JaxFreeway, FreewayRenderer
 
+
 class JAXAtari:
     def __init__(self, game_name):
         renderer = None

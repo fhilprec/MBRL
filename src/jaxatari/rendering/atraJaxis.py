@@ -35,7 +35,7 @@ def loadFrame(fileName, transpose=True):
     """
     frame = jnp.load(fileName)
     if frame.ndim != 3 or frame.shape[2] != 4:
-         raise ValueError(
+        raise ValueError(
             f"Invalid frame format in {fileName}. Source .npy must be loadable with 3 dims and 4 channels."
         )
 
@@ -43,7 +43,7 @@ def loadFrame(fileName, transpose=True):
         # Source assumed H, W, C -> transpose to W, H, C
         return jnp.transpose(frame, (1, 0, 2))
     else:
-         # Source assumed W, H, C
+        # Source assumed W, H, C
         return frame
 
 
@@ -65,15 +65,15 @@ def load_and_pad_digits(path_pattern, num_chars=10):
     for i in range(num_chars):
         # Load with transpose=True (default) assuming source is H, W, C
         digit = loadFrame(path_pattern.format(i))
-        max_width = max(max_width, digit.shape[0])   # Axis 0 is Width
-        max_height = max(max_height, digit.shape[1]) # Axis 1 is Height
+        max_width = max(max_width, digit.shape[0])  # Axis 0 is Width
+        max_height = max(max_height, digit.shape[1])  # Axis 1 is Height
         digits.append(digit)
 
     # Pad digits to max dimensions (W, H)
     padded_digits = []
     for digit in digits:
         pad_w = max_width - digit.shape[0]  # Pad width (axis 0)
-        pad_h = max_height - digit.shape[1] # Pad height (axis 1)
+        pad_h = max_height - digit.shape[1]  # Pad height (axis 1)
         pad_left = pad_w // 2
         pad_right = pad_w - pad_left
         pad_top = pad_h // 2
@@ -82,7 +82,11 @@ def load_and_pad_digits(path_pattern, num_chars=10):
         # Padding order: ((pad_axis0_before, after), (pad_axis1_before, after), ...)
         padded_digit = jnp.pad(
             digit,
-            ((pad_left, pad_right), (pad_top, pad_bottom), (0, 0)), # Pad Width (axis 0), then Height (axis 1)
+            (
+                (pad_left, pad_right),
+                (pad_top, pad_bottom),
+                (0, 0),
+            ),  # Pad Width (axis 0), then Height (axis 1)
             mode="constant",
             constant_values=0,
         )
@@ -116,17 +120,17 @@ def get_sprite_frame(frames, frame_idx, loop=True):
     )
 
     # Get dimensions from input array shape (N, W, H, C)
-    frame_width = frames.shape[1]    # Axis 1 is Width
-    frame_height = frames.shape[2]   # Axis 2 is Height
-    frame_channels = frames.shape[3] # Axis 3 is Channels
+    frame_width = frames.shape[1]  # Axis 1 is Width
+    frame_height = frames.shape[2]  # Axis 2 is Height
+    frame_channels = frames.shape[3]  # Axis 3 is Channels
     blank_frame = jnp.zeros(
-        (frame_width, frame_height, frame_channels), dtype=frames.dtype # W, H, C
+        (frame_width, frame_height, frame_channels), dtype=frames.dtype  # W, H, C
     )
 
     return jax.lax.cond(
         valid_frame,
-        lambda _: frames[frame_idx_converted], # Shape (W, H, C)
-        lambda _: blank_frame,                 # Shape (W, H, C)
+        lambda _: frames[frame_idx_converted],  # Shape (W, H, C)
+        lambda _: blank_frame,  # Shape (W, H, C)
         operand=None,
     )
 
@@ -149,46 +153,54 @@ def render_at(raster, x, y, sprite_frame, flip_horizontal=False, flip_vertical=F
     # --- Input Validation and Setup ---
     x, y = jnp.asarray(x, dtype=jnp.int32), jnp.asarray(y, dtype=jnp.int32)
     # Arrays are (Width, Height, Channels)
-    sprite_frame = jnp.asarray(sprite_frame) # Assume concrete shape (W, H, 4)
-    raster = jnp.asarray(raster)             # Assume shape (W, H, 3 or 4)
+    sprite_frame = jnp.asarray(sprite_frame)  # Assume concrete shape (W, H, 4)
+    raster = jnp.asarray(raster)  # Assume shape (W, H, 3 or 4)
     raster_width, raster_height, raster_channels = raster.shape
-    sprite_width, sprite_height, _ = sprite_frame.shape # Need concrete shape here
+    sprite_width, sprite_height, _ = sprite_frame.shape  # Need concrete shape here
 
     # --- Sprite Flipping ---
     sprite = sprite_frame
     # Flip horizontal means flipping along the Width axis (Axis 0)
-    sprite = jax.lax.cond(flip_horizontal, lambda s: jnp.flip(s, axis=0), lambda s: s, sprite)
+    sprite = jax.lax.cond(
+        flip_horizontal, lambda s: jnp.flip(s, axis=0), lambda s: s, sprite
+    )
     # Flip vertical means flipping along the Height axis (Axis 1)
-    sprite = jax.lax.cond(flip_vertical,   lambda s: jnp.flip(s, axis=1), lambda s: s, sprite)
+    sprite = jax.lax.cond(
+        flip_vertical, lambda s: jnp.flip(s, axis=1), lambda s: s, sprite
+    )
 
     # --- Coordinate Calculation & Masking ---
     # Create coordinate grids for the *entire* raster (W, H)
     # 'ij' indexing: xx varies along axis 0 (Width), yy varies along axis 1 (Height)
     raster_xx, raster_yy = jnp.meshgrid(
-        jnp.arange(raster_width),   # X coords (0..W-1)
+        jnp.arange(raster_width),  # X coords (0..W-1)
         jnp.arange(raster_height),  # Y coords (0..H-1)
-        indexing='ij'
-    ) # raster_xx shape (W, H), raster_yy shape (W, H)
+        indexing="ij",
+    )  # raster_xx shape (W, H), raster_yy shape (W, H)
 
     # Calculate corresponding coordinates relative to the sprite's origin (top-left)
-    sprite_coord_x = raster_xx - x # X position on sprite for each raster pixel
-    sprite_coord_y = raster_yy - y # Y position on sprite for each raster pixel
+    sprite_coord_x = raster_xx - x  # X position on sprite for each raster pixel
+    sprite_coord_y = raster_yy - y  # Y position on sprite for each raster pixel
 
     # Create mask: identifies raster pixels (at raster_xx, raster_yy) that
     # correspond to valid coordinates *within* the sprite's bounds (0..W-1, 0..H-1)
-    sprite_bounds_mask = (sprite_coord_x >= 0) & (sprite_coord_x < sprite_width) & \
-                         (sprite_coord_y >= 0) & (sprite_coord_y < sprite_height)
+    sprite_bounds_mask = (
+        (sprite_coord_x >= 0)
+        & (sprite_coord_x < sprite_width)
+        & (sprite_coord_y >= 0)
+        & (sprite_coord_y < sprite_height)
+    )
     # sprite_bounds_mask has shape (W, H)
 
     # --- Safe Gathering using Padding ---
     # Pad the sprite (W, H, C) to handle potential out-of-bounds access.
-    pad_width_spec = ((1, 1), (1, 1), (0, 0)) # Pad W (axis 0), then H (axis 1)
-    sprite_padded = jnp.pad(sprite, pad_width_spec, mode='constant', constant_values=0)
+    pad_width_spec = ((1, 1), (1, 1), (0, 0))  # Pad W (axis 0), then H (axis 1)
+    sprite_padded = jnp.pad(sprite, pad_width_spec, mode="constant", constant_values=0)
     # sprite_padded has shape (W+2, H+2, 4)
 
     # Adjust coordinates to index into the *padded* sprite
-    sprite_coord_x_padded = sprite_coord_x + 1 # X index for padded sprite
-    sprite_coord_y_padded = sprite_coord_y + 1 # Y index for padded sprite
+    sprite_coord_x_padded = sprite_coord_x + 1  # X index for padded sprite
+    sprite_coord_y_padded = sprite_coord_y + 1  # Y index for padded sprite
 
     # Gather RGBA values from the padded sprite using calculated indices.
     # Indexing for (W, H, C) array is [x_index, y_index]
@@ -197,29 +209,32 @@ def render_at(raster, x, y, sprite_frame, flip_horizontal=False, flip_vertical=F
 
     # --- Blending Calculation (for all raster pixels) ---
     gathered_sprite_rgb = gathered_sprite_rgba[..., :3].astype(jnp.float32)
-    gathered_sprite_alpha = (gathered_sprite_rgba[..., 3:].astype(jnp.float32) / 255.0) # Shape (W, H, 1)
+    gathered_sprite_alpha = (
+        gathered_sprite_rgba[..., 3:].astype(jnp.float32) / 255.0
+    )  # Shape (W, H, 1)
 
     # Get current raster RGB (shape W, H, C)
     current_raster_rgb = raster[..., :raster_channels].astype(jnp.float32)
 
     # Perform alpha blending calculation everywhere
-    blended_rgb = gathered_sprite_rgb * gathered_sprite_alpha + \
-                  current_raster_rgb * (1.0 - gathered_sprite_alpha)
+    blended_rgb = gathered_sprite_rgb * gathered_sprite_alpha + current_raster_rgb * (
+        1.0 - gathered_sprite_alpha
+    )
     # blended_rgb has shape (W, H, C)
 
     # --- Apply Mask with jnp.where ---
-    final_mask_broadcasted = sprite_bounds_mask[..., None] # Shape (W, H, 1)
+    final_mask_broadcasted = sprite_bounds_mask[..., None]  # Shape (W, H, 1)
 
     # Where the mask is True (pixel corresponds to valid sprite area), select blended_rgb.
     # Where the mask is False (pixel outside sprite area), select the original current_raster_rgb.
     new_raster_float = jnp.where(
-        final_mask_broadcasted, # Condition (W, H, 1)
-        blended_rgb,            # Value if True (W, H, C)
-        current_raster_rgb      # Value if False (W, H, C)
+        final_mask_broadcasted,  # Condition (W, H, 1)
+        blended_rgb,  # Value if True (W, H, C)
+        current_raster_rgb,  # Value if False (W, H, C)
     )
 
     # Cast final result back to original raster dtype
-    new_raster = new_raster_float.astype(raster.dtype) # Shape (W, H, C)
+    new_raster = new_raster_float.astype(raster.dtype)  # Shape (W, H, C)
 
     return new_raster
 
@@ -251,7 +266,6 @@ def update_pygame(pygame_screen, raster, SCALING_FACTOR=3, WIDTH=400, HEIGHT=300
         target_width_px = int(raster_np.shape[0] * SCALING_FACTOR)
         target_height_px = int(raster_np.shape[1] * SCALING_FACTOR)
 
-
     frame_surface_scaled = pygame.transform.scale(
         frame_surface, (target_width_px, target_height_px)
     )
@@ -280,10 +294,10 @@ def render_label(raster, x, y, text_digits, char_sprites, spacing=15):
         Updated raster.
     """
     # Assumes char_sprites is (NumChars, W, H, C)
-    sprites = char_sprites[text_digits] # Fetches sprites -> shape (NumDigits, W, H, C)
+    sprites = char_sprites[text_digits]  # Fetches sprites -> shape (NumDigits, W, H, C)
 
     def render_char(i, current_raster):
-        char_x = x + i * spacing # Calculate x position for the i-th character
+        char_x = x + i * spacing  # Calculate x position for the i-th character
         # Render the i-th sprite at (char_x, y)
         return render_at(current_raster, char_x, y, sprites[i])
 
@@ -292,12 +306,16 @@ def render_label(raster, x, y, text_digits, char_sprites, spacing=15):
 
 
 @partial(jax.jit, static_argnames=["spacing", "num_to_render"])
-def render_label_selective(raster, x, y,
-                           all_digits,    # JAX array (e.g., length 2 or more)
-                           char_sprites,  # (10, W, H, C)
-                           start_index,   # Concrete integer (0 or 1 usually)
-                           num_to_render, # Concrete integer (1 or 2 usually)
-                           spacing=15):
+def render_label_selective(
+    raster,
+    x,
+    y,
+    all_digits,  # JAX array (e.g., length 2 or more)
+    char_sprites,  # (10, W, H, C)
+    start_index,  # Concrete integer (0 or 1 usually)
+    num_to_render,  # Concrete integer (1 or 2 usually)
+    spacing=15,
+):
     """Renders a specified number of digits from a digit array at (x, y).
 
     Args:
@@ -313,12 +331,13 @@ def render_label_selective(raster, x, y,
     Returns:
         Updated raster.
     """
+
     def render_char(i, current_raster):
         # i is the loop index (0 up to num_to_render-1)
         digit_index_in_array = start_index + i
         digit_value = all_digits[digit_index_in_array]
-        sprite_to_render = char_sprites[digit_value] # Gets (W, H, C) sprite
-        render_x = x + i * spacing # Calculate x position based on loop index
+        sprite_to_render = char_sprites[digit_value]  # Gets (W, H, C) sprite
+        render_x = x + i * spacing  # Calculate x position based on loop index
         return render_at(current_raster, render_x, y, sprite_to_render)
 
     raster = jax.lax.fori_loop(0, num_to_render, render_char, raster)
@@ -340,9 +359,10 @@ def render_indicator(raster, x, y, value, sprite, spacing=15):
     Returns:
         Updated raster.
     """
+
     # Assumes sprite is (W, H, C)
     def render_single_indicator(i, current_raster):
-        indicator_x = x + i * spacing # Calculate x for this instance
+        indicator_x = x + i * spacing  # Calculate x for this instance
         return render_at(current_raster, indicator_x, y, sprite)
 
     return jax.lax.fori_loop(0, value, render_single_indicator, raster)
@@ -366,7 +386,7 @@ def render_bar(raster, x, y, value, max_value, width, height, color, default_col
     Returns:
         Updated raster.
     """
-    color = jnp.asarray(color, dtype=jnp.uint8) # Use uint8 for direct use
+    color = jnp.asarray(color, dtype=jnp.uint8)  # Use uint8 for direct use
     default_color = jnp.asarray(default_color, dtype=jnp.uint8)
     if color.shape[0] != 4 or default_color.shape[0] != 4:
         raise ValueError("Color and default_color must be RGBA")
@@ -375,19 +395,21 @@ def render_bar(raster, x, y, value, max_value, width, height, color, default_col
     bar_shape = (width, height, 4)
 
     # Compute the filled portion width (along axis 0)
-    fill_width = jnp.clip(jnp.nan_to_num((value / max_value) * width), 0, width).astype(jnp.int32)
+    fill_width = jnp.clip(jnp.nan_to_num((value / max_value) * width), 0, width).astype(
+        jnp.int32
+    )
 
     # Create coordinate grids for the bar itself (W, H)
-    bar_xx, bar_yy = jnp.meshgrid(jnp.arange(width), jnp.arange(height), indexing='ij')
+    bar_xx, bar_yy = jnp.meshgrid(jnp.arange(width), jnp.arange(height), indexing="ij")
 
     # Create a mask for the filled portion
-    fill_mask = (bar_xx < fill_width)[..., None] # Shape (W, H, 1)
+    fill_mask = (bar_xx < fill_width)[..., None]  # Shape (W, H, 1)
 
     # Use jnp.where to create the bar content (W, H, 4) directly as uint8
     bar_content = jnp.where(
-        fill_mask,      # Condition
-        color,          # Value if True (broadcasts to (W, H, 4))
-        default_color   # Value if False (broadcasts)
+        fill_mask,  # Condition
+        color,  # Value if True (broadcasts to (W, H, 4))
+        default_color,  # Value if False (broadcasts)
     )
 
     # Render the generated bar (W, H, 4) onto the raster at (x, y)
@@ -410,14 +432,18 @@ def pad_to_match(sprites):
     max_height = 0
     for sprite in sprites:
         max_width = max(max_width, sprite.shape[0])  # Axis 0 is Width
-        max_height = max(max_height, sprite.shape[1]) # Axis 1 is Height
+        max_height = max(max_height, sprite.shape[1])  # Axis 1 is Height
 
     padded_sprites = []
     for sprite in sprites:
         pad_w = max_width - sprite.shape[0]
         pad_h = max_height - sprite.shape[1]
         # Padding spec: ((pad_axis0_before, after), (pad_axis1_before, after), ...)
-        pad_spec = ((0, pad_w), (0, pad_h), (0, 0)) # Pad Width (axis 0), then Height (axis 1)
+        pad_spec = (
+            (0, pad_w),
+            (0, pad_h),
+            (0, 0),
+        )  # Pad Width (axis 0), then Height (axis 1)
         padded_sprite = jnp.pad(
             sprite,
             pad_spec,
@@ -477,17 +503,16 @@ if __name__ == "__main__":
         jnp.repeat(sub_sprite_list[1][None], 4, axis=0),
         jnp.repeat(sub_sprite_list[2][None], 4, axis=0),
     ]
-    SPRITE_PL_SUB = jnp.concatenate(sub_frames_repeated, axis=0) # Shape (N, W, H, C)
+    SPRITE_PL_SUB = jnp.concatenate(sub_frames_repeated, axis=0)  # Shape (N, W, H, C)
 
     shark1 = loadFrame("./sprites/seaquest/shark/1.npy")
     shark2 = loadFrame("./sprites/seaquest/shark/2.npy")
     shark_sprite_list = pad_to_match([shark1, shark2])
     shark_frames_repeated = [
-         jnp.repeat(shark_sprite_list[0][None], 16, axis=0),
-         jnp.repeat(shark_sprite_list[1][None], 8, axis=0),
+        jnp.repeat(shark_sprite_list[0][None], 16, axis=0),
+        jnp.repeat(shark_sprite_list[1][None], 8, axis=0),
     ]
-    SPRITE_SHARK = jnp.concatenate(shark_frames_repeated, axis=0) # Shape (N, W, H, C)
-
+    SPRITE_SHARK = jnp.concatenate(shark_frames_repeated, axis=0)  # Shape (N, W, H, C)
 
     # load_and_pad_digits returns (NumDigits, W, H, C)
     digits_array = load_and_pad_digits("./sprites/seaquest/digits/{}.npy")
@@ -500,7 +525,9 @@ if __name__ == "__main__":
     HEIGHT = 300
 
     # Pygame screen size uses (width, height) tuple
-    screen = pygame.display.set_mode((int(WIDTH * SCALING_FACTOR), int(HEIGHT * SCALING_FACTOR)))
+    screen = pygame.display.set_mode(
+        (int(WIDTH * SCALING_FACTOR), int(HEIGHT * SCALING_FACTOR))
+    )
     clock = pygame.time.Clock()
     running = True
     frame_idx = 0
@@ -517,18 +544,29 @@ if __name__ == "__main__":
         shark_frame = get_sprite_frame(SPRITE_SHARK, frame_idx, loop=True)
 
         # Render using (x, y) coordinates
-        raster = render_at(raster, x=300, y=140, sprite_frame=sub_frame, flip_horizontal=True)
+        raster = render_at(
+            raster, x=300, y=140, sprite_frame=sub_frame, flip_horizontal=True
+        )
         raster = render_at(raster, x=100, y=100, sprite_frame=shark_frame)
 
         # Render labels/indicators using (x, y)
         digits = int_to_digits(114514)
-        raster = render_label(raster, x=10, y=10, text_digits=digits, char_sprites=digits_array)
+        raster = render_label(
+            raster, x=10, y=10, text_digits=digits, char_sprites=digits_array
+        )
         raster = render_indicator(raster, x=10, y=30, value=5, sprite=sub_frame)
 
         # Render bar using (x, y) and geometric width/height
         raster = render_bar(
-            raster, x=10, y=280, value=5, max_value=10, width=100, height=10,
-            color=(255, 0, 0, 255), default_color=(0, 0, 255, 255)
+            raster,
+            x=10,
+            y=280,
+            value=5,
+            max_value=10,
+            width=100,
+            height=10,
+            color=(255, 0, 0, 255),
+            default_color=(0, 0, 255, 255),
         )
 
         # Update display - expects raster as (W, H, C)

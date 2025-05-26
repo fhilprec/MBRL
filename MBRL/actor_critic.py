@@ -10,7 +10,7 @@ from flax.training.train_state import TrainState
 import distrax
 
 import wandb
-from jaxatari.games.jax_seaquest import JaxSeaquest 
+from jaxatari.games.jax_seaquest import JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
 
@@ -18,15 +18,14 @@ import os
 import pickle
 import flax
 
+
 # Add this function before the make_train function
 def save_model(train_state, path):
     """Save the training state to disk."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'wb') as f:
+    with open(path, "wb") as f:
         f.write(flax.serialization.to_bytes(train_state))
     print(f"Model saved to {path}")
-
-
 
 
 class ActorCritic(nn.Module):
@@ -76,6 +75,7 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
+
 class CustomTrainState(TrainState):
     timesteps: int = 0
     n_updates: int = 0
@@ -100,14 +100,15 @@ def make_train(config):
     config["OBS_SHAPE"] = env.observation_space().shape
     config["NUM_ACTIONS"] = env.action_space().n
 
-
-    #those two things are vectorized functions
+    # those two things are vectorized functions
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
-        jax.random.split(rng, n_envs)#, env_params
+        jax.random.split(rng, n_envs)  # , env_params
     )
     vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
-        env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+        env.step  # , in_axes=(0, 0, None)
+    )(
+        jax.random.split(rng, n_envs), env_state, action
+    )  # , env_params)
 
     def linear_schedule(count):
         frac = (
@@ -119,9 +120,7 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        network = ActorCritic(
-            config["NUM_ACTIONS"], activation=config["ACTIVATION"]
-        )
+        network = ActorCritic(config["NUM_ACTIONS"], activation=config["ACTIVATION"])
         rng, _rng = jax.random.split(rng)
         init_x = jnp.zeros(config["OBS_SHAPE"])
         network_params = network.init(_rng, init_x)
@@ -165,7 +164,9 @@ def make_train(config):
                 # obsv, env_state, reward, done, info = jax.vmap(
                 #     env.step, in_axes=(0, 0, 0, None)
                 # )(rng_step, env_state, action, env_params)
-                obsv, env_state, reward, done, info = vmap_step(config["NUM_ENVS"])(_rng, env_state, action)
+                obsv, env_state, reward, done, info = vmap_step(config["NUM_ENVS"])(
+                    _rng, env_state, action
+                )
                 transition = Transition(
                     done, action, value, reward, log_prob, last_obs, info
                 )
@@ -283,12 +284,12 @@ def make_train(config):
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
                 return update_state, total_loss
+
             # Updating Training State and Metrics:
             update_state = (train_state, traj_batch, advantages, targets, rng)
             update_state, loss_info = jax.lax.scan(
                 _update_epoch, update_state, None, config["UPDATE_EPOCHS"]
             )
-
 
             train_state = update_state[0]
             metrics = {
@@ -301,17 +302,18 @@ def make_train(config):
 
             rng = update_state[-1]
             train_state = train_state.replace(
-                timesteps=train_state.timesteps + config["NUM_STEPS"] * config["NUM_ENVS"],
+                timesteps=train_state.timesteps
+                + config["NUM_STEPS"] * config["NUM_ENVS"],
                 n_updates=train_state.n_updates + 1,
             )
 
-        
-
             if config["WANDB_MODE"] != "disabled":
+
                 def callback(metrics):
                     wandb.log(metrics, step=metrics["update_steps"])
+
                 jax.debug.callback(callback, metrics)
-            
+
             runner_state = (train_state, env_state, last_obs, rng)
             return runner_state, metrics
 
@@ -330,7 +332,7 @@ if __name__ == "__main__":
         "LR": 2.5e-4,
         "NUM_ENVS": 1024,
         "NUM_STEPS": 128,
-        "TOTAL_TIMESTEPS": 1e8, #changed this so it doesnt take hours
+        "TOTAL_TIMESTEPS": 1e8,  # changed this so it doesnt take hours
         "UPDATE_EPOCHS": 4,
         "NUM_MINIBATCHES": 4,
         "GAMMA": 0.99,
@@ -369,16 +371,16 @@ if __name__ == "__main__":
     train_jit.lower(rng).compile()
     print(f"Compilation took {time.time()-start} seconds.")
     out = train_jit(rng)
-    print(f"Training took {time.time()-start} seconds.") 
+    print(f"Training took {time.time()-start} seconds.")
 
-     # Extract the final train_state
+    # Extract the final train_state
     final_train_state = out["runner_state"][0]
-    
+
     # Save the checkpoint outside of the jitted function
     if config.get("CHECKPOINT_DIR"):
         checkpoint_path = os.path.join(
-            config["CHECKPOINT_DIR"], 
-            f"{config['ENV_NAME']}_{config['ALG_NAME']}_final.pkl"
+            config["CHECKPOINT_DIR"],
+            f"{config['ENV_NAME']}_{config['ALG_NAME']}_final.pkl",
         )
         save_model(final_train_state, checkpoint_path)
         print(f"Final model saved to {checkpoint_path}")

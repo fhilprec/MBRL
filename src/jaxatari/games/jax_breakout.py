@@ -62,25 +62,28 @@ BLOCK_START_X = 8  # Starting X position of blocks
 NUM_LIVES = 5
 
 # Ball speed
-BALL_VELOCITIES_ABS = jnp.array([
-    [[1, 1], [1, 1]],  # Base speed
-    [[2, 1], [1, 1]],  # Left hit or Right hit
-    [[1, 2], [1, 1]],  # Middle left, middle, middle right hit
-    [[2, 2], [2, 2]],  # Speed after 12th consecutive hit
-    [[2, 3], [2, 3]]   # Speed after hitting speed block (upper three layers)
-])
+BALL_VELOCITIES_ABS = jnp.array(
+    [
+        [[1, 1], [1, 1]],  # Base speed
+        [[2, 1], [1, 1]],  # Left hit or Right hit
+        [[1, 2], [1, 1]],  # Middle left, middle, middle right hit
+        [[2, 2], [2, 2]],  # Speed after 12th consecutive hit
+        [[2, 3], [2, 3]],  # Speed after hitting speed block (upper three layers)
+    ]
+)
 
-BALL_DIRECTIONS = jnp.array([
-    [1, 1],      # Down right
-    [-1, 1],     # Down left
-    [1, -1],     # Up right
-    [-1, -1],    # Up left
-])
+BALL_DIRECTIONS = jnp.array(
+    [
+        [1, 1],  # Down right
+        [-1, 1],  # Down left
+        [1, -1],  # Up right
+        [-1, -1],  # Up left
+    ]
+)
 
 # Lookup tables for reversing ball direction
 REVERSE_X = jnp.array([1, 0, 3, 2])
 REVERSE_Y = jnp.array([2, 3, 0, 1])
-
 
 
 class EntityPosition(NamedTuple):
@@ -89,12 +92,14 @@ class EntityPosition(NamedTuple):
     width: chex.Array
     height: chex.Array
 
+
 class BreakoutObservation(NamedTuple):
     player: EntityPosition
     ball: EntityPosition
     blocks: chex.Array
     score: chex.Array
     lives: chex.Array
+
 
 class BreakoutInfo(NamedTuple):
     time: chex.Array
@@ -130,6 +135,7 @@ FIRE = 1
 RIGHT = 2
 LEFT = 3
 
+
 def get_human_action() -> chex.Array:
     """Records keyboard input and returns the corresponding action."""
     keys = pygame.key.get_pressed()
@@ -141,6 +147,7 @@ def get_human_action() -> chex.Array:
         return jnp.array(FIRE)
     else:
         return jnp.array(NOOP)
+
 
 @jax.jit
 def player_step(
@@ -232,6 +239,7 @@ def player_step(
 
     return player_x, player_speed, new_acceleration_counter
 
+
 @jax.jit
 def get_ball_velocity(speed_idx, direction_idx, step_counter):
     """Returns the ball's velocity based on the speed and direction indices."""
@@ -240,6 +248,7 @@ def get_ball_velocity(speed_idx, direction_idx, step_counter):
     direction = BALL_DIRECTIONS[direction_idx]
     return abs_speed[0] * direction[0], abs_speed[1] * direction[1]
 
+
 @jax.jit
 def detect_paddle_hit(ball_x, ball_y, player_x, small_paddle):
     """Detects if the ball has hit the paddle."""
@@ -247,15 +256,15 @@ def detect_paddle_hit(ball_x, ball_y, player_x, small_paddle):
 
     paddle_hit_y = jnp.logical_and(
         ball_y + BALL_SIZE[1] > PLAYER_START_Y,
-        ball_y + BALL_SIZE[1] <= PLAYER_START_Y + PLAYER_SIZE[1]
+        ball_y + BALL_SIZE[1] <= PLAYER_START_Y + PLAYER_SIZE[1],
     )
 
     paddle_hit_x = jnp.logical_and(
-        ball_x + BALL_SIZE[0] >= player_x,
-        ball_x <= player_x + paddle_width
+        ball_x + BALL_SIZE[0] >= player_x, ball_x <= player_x + paddle_width
     )
 
     return jnp.logical_and(paddle_hit_x, paddle_hit_y)
+
 
 @jax.jit
 def ball_step(state, game_started, player_x):
@@ -270,9 +279,20 @@ def ball_step(state, game_started, player_x):
         # collision handling.
         new_direction_idx = jnp.where(jnp.logical_or(idx == 0, idx == 2), 0, 1)
         new_speed_idx = 0
-        vel_x, vel_y = get_ball_velocity(new_speed_idx, new_direction_idx, state.step_counter)
-        return (ball_start_x, ball_start_y, vel_x, vel_y, new_speed_idx, new_direction_idx,
-                jnp.array(0), jnp.array(True), jnp.array(False))
+        vel_x, vel_y = get_ball_velocity(
+            new_speed_idx, new_direction_idx, state.step_counter
+        )
+        return (
+            ball_start_x,
+            ball_start_y,
+            vel_x,
+            vel_y,
+            new_speed_idx,
+            new_direction_idx,
+            jnp.array(0),
+            jnp.array(True),
+            jnp.array(False),
+        )
 
     def started_fn(_):
         # Once the game has started, update ball position normally
@@ -288,27 +308,29 @@ def ball_step(state, game_started, player_x):
         left_collision = ball_x <= WALL_SIDE_WIDTH
         right_collision = ball_x >= 160 - WALL_SIDE_WIDTH - BALL_SIZE[0]
         ball_x = jnp.where(left_collision, WALL_SIDE_WIDTH, ball_x)
-        ball_x = jnp.where(right_collision, 160 - WALL_SIDE_WIDTH - BALL_SIZE[0], ball_x)
+        ball_x = jnp.where(
+            right_collision, 160 - WALL_SIDE_WIDTH - BALL_SIZE[0], ball_x
+        )
         ball_direction_idx = jnp.where(
             jnp.logical_or(left_collision, right_collision),
             REVERSE_X[ball_direction_idx],
-            ball_direction_idx
+            ball_direction_idx,
         )
 
         hit_side_wall = jnp.logical_or(left_collision, right_collision)
         ball_in_block_area = jnp.logical_and(
-            ball_y >= BLOCK_START_Y,
-            ball_y <= BLOCK_START_Y + NUM_ROWS * BLOCK_SIZE[1]
+            ball_y >= BLOCK_START_Y, ball_y <= BLOCK_START_Y + NUM_ROWS * BLOCK_SIZE[1]
         )
-        hit_wall_or_paddle = jnp.logical_or(hit_wall_or_paddle, jnp.logical_and(hit_side_wall, jnp.logical_not(ball_in_block_area)))
+        hit_wall_or_paddle = jnp.logical_or(
+            hit_wall_or_paddle,
+            jnp.logical_and(hit_side_wall, jnp.logical_not(ball_in_block_area)),
+        )
 
         # Collision handling with top wall
         top_collision = ball_y <= WALL_TOP_Y + WALL_TOP_HEIGHT
         ball_y = jnp.where(top_collision, WALL_TOP_Y + WALL_TOP_HEIGHT, ball_y)
         ball_direction_idx = jnp.where(
-            top_collision,
-            REVERSE_Y[ball_direction_idx],
-            ball_direction_idx
+            top_collision, REVERSE_Y[ball_direction_idx], ball_direction_idx
         )
 
         hit_wall_or_paddle = jnp.logical_or(hit_wall_or_paddle, top_collision)
@@ -321,111 +343,154 @@ def ball_step(state, game_started, player_x):
 
         hit_wall_or_paddle = jnp.logical_or(hit_wall_or_paddle, paddle_hit)
 
-        section_width = PLAYER_SIZE[0] / 5 # Divide section into 5 equal parts
+        section_width = PLAYER_SIZE[0] / 5  # Divide section into 5 equal parts
         hit_section = jnp.where(
             paddle_hit,
             jnp.floor((ball_x - player_x) / section_width).astype(jnp.int32),
-            -1
+            -1,
         )
 
         # hit_section 0, left
         ball_speed_idx = jax.lax.select(
-            jnp.logical_and(paddle_hit, jnp.logical_and(hit_section == 0, ball_speed_idx != 4)),
+            jnp.logical_and(
+                paddle_hit, jnp.logical_and(hit_section == 0, ball_speed_idx != 4)
+            ),
             1,
-            ball_speed_idx
+            ball_speed_idx,
         )
         ball_direction_idx = jax.lax.select(
             jnp.logical_and(paddle_hit, hit_section == 0),
             jnp.array(3, dtype=ball_direction_idx.dtype),
-            ball_direction_idx
+            ball_direction_idx,
         )
         # hit_section 1, middle-left
         ball_speed_idx = jax.lax.select(
-            jnp.logical_and(paddle_hit, jnp.logical_and(hit_section == 1, ball_speed_idx != 4)),
+            jnp.logical_and(
+                paddle_hit, jnp.logical_and(hit_section == 1, ball_speed_idx != 4)
+            ),
             2,
-            ball_speed_idx
+            ball_speed_idx,
         )
         ball_direction_idx = jax.lax.select(
             jnp.logical_and(paddle_hit, hit_section == 1),
             jnp.array(3, dtype=ball_direction_idx.dtype),
-            ball_direction_idx
+            ball_direction_idx,
         )
         # hit_section 2, middle (x direction maintains)
         new_dir_for_hit2 = jnp.where(state.ball_vel_x > 0, 2, 3)
         ball_speed_idx = jax.lax.select(
-            jnp.logical_and(paddle_hit, jnp.logical_and(hit_section == 2, ball_speed_idx != 4)),
+            jnp.logical_and(
+                paddle_hit, jnp.logical_and(hit_section == 2, ball_speed_idx != 4)
+            ),
             2,
-            ball_speed_idx
+            ball_speed_idx,
         )
         ball_direction_idx = jax.lax.select(
             jnp.logical_and(paddle_hit, hit_section == 2),
             new_dir_for_hit2,
-            ball_direction_idx
+            ball_direction_idx,
         )
         # hit_section 3, middle-right
         ball_speed_idx = jax.lax.select(
-            jnp.logical_and(paddle_hit, jnp.logical_and(hit_section == 3, ball_speed_idx != 4)),
+            jnp.logical_and(
+                paddle_hit, jnp.logical_and(hit_section == 3, ball_speed_idx != 4)
+            ),
             2,
-            ball_speed_idx
+            ball_speed_idx,
         )
         ball_direction_idx = jax.lax.select(
             jnp.logical_and(paddle_hit, hit_section == 3),
             jnp.array(2, dtype=ball_direction_idx.dtype),
-            ball_direction_idx
+            ball_direction_idx,
         )
         # hit_section 4, right
         ball_speed_idx = jax.lax.select(
-            jnp.logical_and(paddle_hit, jnp.logical_and(hit_section == 4, ball_speed_idx != 4)),
+            jnp.logical_and(
+                paddle_hit, jnp.logical_and(hit_section == 4, ball_speed_idx != 4)
+            ),
             1,
-            ball_speed_idx
+            ball_speed_idx,
         )
         ball_direction_idx = jax.lax.select(
             jnp.logical_and(paddle_hit, hit_section == 4),
             jnp.array(2, dtype=ball_direction_idx.dtype),
-            ball_direction_idx
+            ball_direction_idx,
         )
 
-        new_vel_x, new_vel_y = get_ball_velocity(ball_speed_idx, ball_direction_idx, state.step_counter)
+        new_vel_x, new_vel_y = get_ball_velocity(
+            ball_speed_idx, ball_direction_idx, state.step_counter
+        )
 
-        paddle_hit_for_hit_counter = jnp.logical_and(paddle_hit, jnp.logical_and(state.ball_vel_y > 0, new_vel_y < 0))
+        paddle_hit_for_hit_counter = jnp.logical_and(
+            paddle_hit, jnp.logical_and(state.ball_vel_y > 0, new_vel_y < 0)
+        )
 
         # update consecutive paddle hits counter
         new_consecutive_hits = jax.lax.cond(
             jnp.logical_and(paddle_hit_for_hit_counter, state.ball_vel_y > 0),
             lambda _: state.consecutive_paddle_hits + 1,
             lambda _: state.consecutive_paddle_hits,
-            operand=None
+            operand=None,
         )
         # if 12th consecutive hits, increase ball speed
         ball_speed_idx = jax.lax.cond(
             jnp.logical_and(new_consecutive_hits >= 12, ball_speed_idx != 4),
             lambda _: jnp.array(3, dtype=ball_speed_idx.dtype),
             lambda _: ball_speed_idx,
-            operand=None
+            operand=None,
         )
 
         # Update ball speed
-        new_vel_x, new_vel_y = get_ball_velocity(ball_speed_idx, ball_direction_idx, state.step_counter)
+        new_vel_x, new_vel_y = get_ball_velocity(
+            ball_speed_idx, ball_direction_idx, state.step_counter
+        )
 
         # Reset blocks_hittable if ball hit wall or paddle
         blocks_hittable = jnp.where(hit_wall_or_paddle, True, state.blocks_hittable)
 
-        return (ball_x, ball_y, new_vel_x, new_vel_y, ball_speed_idx, ball_direction_idx,
-                new_consecutive_hits, blocks_hittable, small_paddle)
+        return (
+            ball_x,
+            ball_y,
+            new_vel_x,
+            new_vel_y,
+            ball_speed_idx,
+            ball_direction_idx,
+            new_consecutive_hits,
+            blocks_hittable,
+            small_paddle,
+        )
 
     # Use a conditional: if game_started is true, run the normal update branch;
     # otherwise, use the spawn values.
-    (ball_x, ball_y, ball_vel_x, ball_vel_y, ball_speed_idx, ball_direction_idx,
-     new_consecutive_hits, blocks_hittable, small_paddle) = jax.lax.cond(
-        game_started, started_fn, not_started_fn, operand=None
-    )
+    (
+        ball_x,
+        ball_y,
+        ball_vel_x,
+        ball_vel_y,
+        ball_speed_idx,
+        ball_direction_idx,
+        new_consecutive_hits,
+        blocks_hittable,
+        small_paddle,
+    ) = jax.lax.cond(game_started, started_fn, not_started_fn, operand=None)
 
-    return (ball_x, ball_y, ball_vel_x, ball_vel_y, ball_speed_idx, ball_direction_idx,
-            new_consecutive_hits, blocks_hittable, small_paddle)
+    return (
+        ball_x,
+        ball_y,
+        ball_vel_x,
+        ball_vel_y,
+        ball_speed_idx,
+        ball_direction_idx,
+        new_consecutive_hits,
+        blocks_hittable,
+        small_paddle,
+    )
 
 
 @jax.jit
-def check_block_collision(state, ball_x, ball_y, ball_speed_idx, ball_direction_idx, consecutive_hits):
+def check_block_collision(
+    state, ball_x, ball_y, ball_speed_idx, ball_direction_idx, consecutive_hits
+):
     """Checks for block collisions and updates the state using vectorized operations."""
 
     # Get state variables
@@ -435,10 +500,23 @@ def check_block_collision(state, ball_x, ball_y, ball_speed_idx, ball_direction_
 
     # Define function to handle case when blocks are not hittable
     def no_hit_path(_):
-        new_vel_x, new_vel_y = get_ball_velocity(ball_speed_idx, ball_direction_idx, state.step_counter)
+        new_vel_x, new_vel_y = get_ball_velocity(
+            ball_speed_idx, ball_direction_idx, state.step_counter
+        )
         all_blocks_cleared = jnp.all(blocks == 0)
-        return (blocks, score, ball_x, ball_y, new_vel_x, new_vel_y,
-                ball_speed_idx, ball_direction_idx, consecutive_hits, blocks_hittable, all_blocks_cleared)
+        return (
+            blocks,
+            score,
+            ball_x,
+            ball_y,
+            new_vel_x,
+            new_vel_y,
+            ball_speed_idx,
+            ball_direction_idx,
+            consecutive_hits,
+            blocks_hittable,
+            all_blocks_cleared,
+        )
 
     # Define function to handle case when blocks are hittable
     def hit_path(_):
@@ -454,20 +532,17 @@ def check_block_collision(state, ball_x, ball_y, ball_speed_idx, ball_direction_
 
         # Check horizontal collision for all blocks
         x_collision = jnp.logical_and(
-            ball_x < block_xs + BLOCK_SIZE[0],
-            ball_x + BALL_SIZE[0] > block_xs
+            ball_x < block_xs + BLOCK_SIZE[0], ball_x + BALL_SIZE[0] > block_xs
         )
 
         # Check vertical collision for all blocks
         y_collision = jnp.logical_and(
-            ball_y <= block_ys + BLOCK_SIZE[1],
-            ball_y + BALL_SIZE[1] >= block_ys
+            ball_y <= block_ys + BLOCK_SIZE[1], ball_y + BALL_SIZE[1] >= block_ys
         )
 
         # Overall collision mask
         collision_mask = jnp.logical_and(
-            active_blocks,
-            jnp.logical_and(x_collision, y_collision)
+            active_blocks, jnp.logical_and(x_collision, y_collision)
         )
 
         # Check for bottom edge collision (for bounce)
@@ -485,7 +560,9 @@ def check_block_collision(state, ball_x, ball_y, ball_speed_idx, ball_direction_
         masked_priorities = jnp.where(
             bounce_mask,
             priority_grid,
-            jnp.full_like(priority_grid, NUM_ROWS * BLOCKS_PER_ROW + 1)  # High value for non-hits
+            jnp.full_like(
+                priority_grid, NUM_ROWS * BLOCKS_PER_ROW + 1
+            ),  # High value for non-hits
         )
 
         # Find the block with minimum priority value (highest priority)
@@ -504,84 +581,83 @@ def check_block_collision(state, ball_x, ball_y, ball_speed_idx, ball_direction_
         points = jnp.where(
             hit_row >= 4,
             1,  # Bottom rows
-            jnp.where(
-                hit_row >= 2,
-                4,  # Middle rows
-                7  # Top rows
-            )
+            jnp.where(hit_row >= 2, 4, 7),  # Middle rows  # Top rows
         )
 
         # Update blocks - clear the hit block
         updated_blocks = jnp.where(
             jnp.logical_and(any_hit, valid_hit),
             blocks.at[hit_row, hit_col].set(0),
-            blocks
+            blocks,
         )
 
         # Update score
         updated_score = jnp.where(
-            jnp.logical_and(any_hit, valid_hit),
-            score + points,
-            score
+            jnp.logical_and(any_hit, valid_hit), score + points, score
         )
 
         # Update ball direction for bounce
         updated_direction_idx = jnp.where(
             jnp.logical_and(any_hit, valid_hit),
             REVERSE_Y[ball_direction_idx],
-            ball_direction_idx
+            ball_direction_idx,
         )
 
         # Check if we need to accelerate the ball (upper three rows)
-        accelerate = jnp.logical_and(
-            jnp.logical_and(any_hit, valid_hit),
-            hit_row < 3
-        )
+        accelerate = jnp.logical_and(jnp.logical_and(any_hit, valid_hit), hit_row < 3)
 
         # Update ball speed
         updated_speed_idx = jnp.where(
             jnp.logical_and(accelerate, ball_speed_idx != 4),
             jnp.array(4, dtype=ball_speed_idx.dtype),
-            ball_speed_idx
+            ball_speed_idx,
         )
 
         # Calculate new velocities
-        new_vel_x, new_vel_y = get_ball_velocity(updated_speed_idx, updated_direction_idx, state.step_counter)
+        new_vel_x, new_vel_y = get_ball_velocity(
+            updated_speed_idx, updated_direction_idx, state.step_counter
+        )
 
         # Update blocks_hittable
         updated_blocks_hittable = jnp.where(
-            jnp.logical_and(any_hit, valid_hit),
-            False,
-            blocks_hittable
+            jnp.logical_and(any_hit, valid_hit), False, blocks_hittable
         )
 
         # Check if all blocks are cleared
         all_blocks_cleared = jnp.all(updated_blocks == 0)
 
-        return (updated_blocks, updated_score, ball_x, ball_y, new_vel_x, new_vel_y,
-                updated_speed_idx, updated_direction_idx, consecutive_hits,
-                updated_blocks_hittable, all_blocks_cleared)
+        return (
+            updated_blocks,
+            updated_score,
+            ball_x,
+            ball_y,
+            new_vel_x,
+            new_vel_y,
+            updated_speed_idx,
+            updated_direction_idx,
+            consecutive_hits,
+            updated_blocks_hittable,
+            all_blocks_cleared,
+        )
 
     # Execute the appropriate path based on blocks_hittable
-    return jax.lax.cond(
-        blocks_hittable,
-        hit_path,
-        no_hit_path,
-        operand=None
-    )
+    return jax.lax.cond(blocks_hittable, hit_path, no_hit_path, operand=None)
+
 
 class JaxBreakout(JaxEnvironment[State, BreakoutObservation, BreakoutInfo]):
     def __init__(self):
         super().__init__()
 
     @partial(jax.jit, static_argnums=(0,))
-    def reset(self, key = None) -> tuple[BreakoutObservation, State]:
+    def reset(self, key=None) -> tuple[BreakoutObservation, State]:
         """Initialize game state"""
         init_speed_idx = 0
         init_direction_idx = 0
-        init_vel_x, init_vel_y = get_ball_velocity(init_speed_idx, init_direction_idx, 0)
+        init_vel_x, init_vel_y = get_ball_velocity(
+            init_speed_idx, init_direction_idx, 0
+        )
 
-        state =  State(
+        state = State(
             player_x=jnp.array(PLAYER_START_X),
             player_speed=jnp.array(0),
             small_paddle=jnp.array(False),
@@ -606,8 +682,9 @@ class JaxBreakout(JaxEnvironment[State, BreakoutObservation, BreakoutInfo]):
         return self._get_observation(state), state
 
     @partial(jax.jit, static_argnums=(0,))
-    def step(self, state: State, action: chex.Array) -> Tuple[
-        BreakoutObservation, State, chex.Array, chex.Array, BreakoutInfo]:
+    def step(
+        self, state: State, action: chex.Array
+    ) -> Tuple[BreakoutObservation, State, chex.Array, chex.Array, BreakoutInfo]:
         prev_score = state.score
         new_state = self._step(state, action)
         obs = self._get_observation(new_state)
@@ -626,32 +703,58 @@ class JaxBreakout(JaxEnvironment[State, BreakoutObservation, BreakoutInfo]):
         game_started = jnp.logical_or(state.game_started, action == FIRE)
 
         # Update ball, check collisions, etc., as before, but now pass new_player_x
-        (ball_x, ball_y, ball_vel_x, ball_vel_y, ball_speed_idx, ball_direction_idx,
-         consecutive_hits, blocks_hittable, small_paddle) = ball_step(
-            state, game_started, new_player_x
-        )
+        (
+            ball_x,
+            ball_y,
+            ball_vel_x,
+            ball_vel_y,
+            ball_speed_idx,
+            ball_direction_idx,
+            consecutive_hits,
+            blocks_hittable,
+            small_paddle,
+        ) = ball_step(state, game_started, new_player_x)
 
         # Detect paddle hit (for resetting the wall)
         paddle_hit = detect_paddle_hit(ball_x, ball_y, new_player_x, small_paddle)
 
         # Check for block collisions
-        (new_blocks, new_score, ball_x, ball_y, ball_vel_x, ball_vel_y, ball_speed_idx,
-         ball_direction_idx, consecutive_hits, blocks_hittable, all_blocks_cleared) = check_block_collision(
-            state._replace(blocks_hittable=blocks_hittable), ball_x, ball_y, ball_speed_idx, ball_direction_idx, consecutive_hits
+        (
+            new_blocks,
+            new_score,
+            ball_x,
+            ball_y,
+            ball_vel_x,
+            ball_vel_y,
+            ball_speed_idx,
+            ball_direction_idx,
+            consecutive_hits,
+            blocks_hittable,
+            all_blocks_cleared,
+        ) = check_block_collision(
+            state._replace(blocks_hittable=blocks_hittable),
+            ball_x,
+            ball_y,
+            ball_speed_idx,
+            ball_direction_idx,
+            consecutive_hits,
         )
 
         # Reset wall if paddle hit occurs after all blocks were cleared and we haven't reset the wall already
         should_reset_wall = jnp.logical_and(
-            jnp.logical_and(state.all_blocks_cleared, paddle_hit),
-            state.wall_resets < 1
+            jnp.logical_and(state.all_blocks_cleared, paddle_hit), state.wall_resets < 1
         )
         new_blocks = jnp.where(should_reset_wall, jnp.ones_like(new_blocks), new_blocks)
-        new_wall_resets = jnp.where(should_reset_wall, state.wall_resets + 1, state.wall_resets)
+        new_wall_resets = jnp.where(
+            should_reset_wall, state.wall_resets + 1, state.wall_resets
+        )
 
         # Update all_blocks_cleared status
         new_all_blocks_cleared = jnp.logical_and(
             jnp.logical_or(state.all_blocks_cleared, all_blocks_cleared),
-            jnp.logical_not(should_reset_wall)  # Reset to False if we just reset the wall
+            jnp.logical_not(
+                should_reset_wall
+            ),  # Reset to False if we just reset the wall
         )
 
         # Handle life loss, etc.
@@ -660,7 +763,9 @@ class JaxBreakout(JaxEnvironment[State, BreakoutObservation, BreakoutInfo]):
         ball_y = jnp.where(life_lost, BALL_START_Y, ball_y)
         ball_speed_idx = jnp.where(life_lost, 0, ball_speed_idx)
         ball_direction_idx = jnp.where(life_lost, 0, ball_direction_idx)
-        ball_vel_x, ball_vel_y = get_ball_velocity(ball_speed_idx, ball_direction_idx, state.step_counter)
+        ball_vel_x, ball_vel_y = get_ball_velocity(
+            ball_speed_idx, ball_direction_idx, state.step_counter
+        )
         consecutive_hits = jnp.where(life_lost, 0, consecutive_hits)
         blocks_hittable = jnp.where(life_lost, True, blocks_hittable)
         game_started = jnp.where(life_lost, jnp.array(0), game_started)
@@ -691,7 +796,9 @@ class JaxBreakout(JaxEnvironment[State, BreakoutObservation, BreakoutInfo]):
 
     @partial(jax.jit, static_argnums=(0,))
     def _get_observation(self, state: State) -> BreakoutObservation:
-        paddle_width = jnp.where(state.small_paddle, PLAYER_SIZE_SMALL[0], PLAYER_SIZE[0])
+        paddle_width = jnp.where(
+            state.small_paddle, PLAYER_SIZE_SMALL[0], PLAYER_SIZE[0]
+        )
 
         player = EntityPosition(
             x=state.player_x,
@@ -717,13 +824,12 @@ class JaxBreakout(JaxEnvironment[State, BreakoutObservation, BreakoutInfo]):
 
     @partial(jax.jit, static_argnums=(0,))
     def _get_info(self, state: State) -> BreakoutInfo:
-        return BreakoutInfo(
-            time=state.step_counter,
-            wall_resets=state.wall_resets
-        )
+        return BreakoutInfo(time=state.step_counter, wall_resets=state.wall_resets)
 
     @partial(jax.jit, static_argnums=(0,))
-    def _get_reward(self, previous_score: chex.Array, current_score: chex.Array) -> chex.Array:
+    def _get_reward(
+        self, previous_score: chex.Array, current_score: chex.Array
+    ) -> chex.Array:
         return current_score - previous_score
 
     @partial(jax.jit, static_argnums=(0,))
@@ -836,12 +942,14 @@ if __name__ == "__main__":
                 if event.key == pygame.K_f:
                     frame_by_frame = not frame_by_frame
             elif event.type == pygame.KEYDOWN or (
-                    event.type == pygame.KEYUP and event.key == pygame.K_n
+                event.type == pygame.KEYUP and event.key == pygame.K_n
             ):
                 if event.key == pygame.K_n and frame_by_frame:
                     if counter % frameskip == 0:
                         action = get_human_action()
-                        obs, curr_state, reward, done, info = jitted_step(curr_state, action)
+                        obs, curr_state, reward, done, info = jitted_step(
+                            curr_state, action
+                        )
                         if done:
                             running = False
 

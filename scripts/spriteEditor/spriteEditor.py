@@ -81,11 +81,11 @@ class NPYImageEditor:
         self.selection_preset = None
 
     def on_key_press(self, event):
-        if event.keysym in ('Control_L', 'Control_R', 'Control'):
+        if event.keysym in ("Control_L", "Control_R", "Control"):
             self.cmd_pressed = True
 
     def on_key_release(self, event):
-        if event.keysym in ('Control_L', 'Control_R', 'Control'):
+        if event.keysym in ("Control_L", "Control_R", "Control"):
             self.cmd_pressed = False
 
     def create_widgets(self):
@@ -114,24 +114,42 @@ class NPYImageEditor:
         self.canvas_frame.pack(fill=tk.BOTH, expand=True)
 
         self.scroll_canvas = tk.Canvas(self.canvas_frame)
-        self.scroll_canvas.grid(row=0, column=0, sticky="nsew")  # Use grid layout for proper alignment
+        self.scroll_canvas.grid(
+            row=0, column=0, sticky="nsew"
+        )  # Use grid layout for proper alignment
 
-        self.h_scrollbar = tk.Scrollbar(self.canvas_frame, orient=tk.HORIZONTAL, command=self.scroll_canvas.xview)
-        self.h_scrollbar.grid(row=1, column=0, sticky="ew")  # Place the horizontal scrollbar at the bottom
+        self.h_scrollbar = tk.Scrollbar(
+            self.canvas_frame, orient=tk.HORIZONTAL, command=self.scroll_canvas.xview
+        )
+        self.h_scrollbar.grid(
+            row=1, column=0, sticky="ew"
+        )  # Place the horizontal scrollbar at the bottom
 
-        self.v_scrollbar = tk.Scrollbar(self.canvas_frame, orient=tk.VERTICAL, command=self.scroll_canvas.yview)
-        self.v_scrollbar.grid(row=0, column=1, sticky="ns")  # Place the vertical scrollbar on the right
+        self.v_scrollbar = tk.Scrollbar(
+            self.canvas_frame, orient=tk.VERTICAL, command=self.scroll_canvas.yview
+        )
+        self.v_scrollbar.grid(
+            row=0, column=1, sticky="ns"
+        )  # Place the vertical scrollbar on the right
 
-        self.canvas_frame.grid_rowconfigure(0, weight=1)  # Allow the canvas to expand vertically
-        self.canvas_frame.grid_columnconfigure(0, weight=1)  # Allow the canvas to expand horizontally
+        self.canvas_frame.grid_rowconfigure(
+            0, weight=1
+        )  # Allow the canvas to expand vertically
+        self.canvas_frame.grid_columnconfigure(
+            0, weight=1
+        )  # Allow the canvas to expand horizontally
 
-        self.scroll_canvas.configure(xscrollcommand=self.h_scrollbar.set, yscrollcommand=self.v_scrollbar.set)
+        self.scroll_canvas.configure(
+            xscrollcommand=self.h_scrollbar.set, yscrollcommand=self.v_scrollbar.set
+        )
 
         # Embed Matplotlib Figure in Scrollable Canvas
         self.figure, self.ax = plt.subplots()
         self.canvas = FigureCanvasTkAgg(self.figure, self.scroll_canvas)
         self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_window = self.scroll_canvas.create_window(0, 0, anchor=tk.NW, window=self.canvas_widget)
+        self.canvas_window = self.scroll_canvas.create_window(
+            0, 0, anchor=tk.NW, window=self.canvas_widget
+        )
 
         self.canvas.mpl_connect("button_press_event", self.on_mouse_press)
         self.canvas.mpl_connect("button_release_event", self.on_mouse_release)
@@ -139,7 +157,6 @@ class NPYImageEditor:
 
         # Update scroll region when the canvas size changes
         self.scroll_canvas.bind("<Configure>", self.update_scroll_region)
-
 
         # Tool Buttons
         tools_frame = tk.Frame(self.root)
@@ -149,8 +166,10 @@ class NPYImageEditor:
         tk.Button(tools_frame, text="Zoom Out", command=self.zoom_out).pack(
             side=tk.LEFT
         )
-        tk.Button(tools_frame, text="Reset Zoom", command=self.reset_zoom).pack(side=tk.LEFT)
-    
+        tk.Button(tools_frame, text="Reset Zoom", command=self.reset_zoom).pack(
+            side=tk.LEFT
+        )
+
         tk.Button(tools_frame, text="Pencil", command=self.activate_pencil).pack(
             side=tk.LEFT
         )
@@ -233,7 +252,13 @@ class NPYImageEditor:
             command=lambda: self.load_selection_preset(),
         ).pack(side=tk.LEFT)
 
-        status_bar = tk.Label(self.root, textvariable=self.current_mouse_position, bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar = tk.Label(
+            self.root,
+            textvariable=self.current_mouse_position,
+            bd=1,
+            relief=tk.SUNKEN,
+            anchor=tk.W,
+        )
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def set_selection_mode(self, mode):
@@ -418,7 +443,6 @@ class NPYImageEditor:
         else:
             messagebox.showwarning("Warning", "Invalid Path.")
 
-
     def save_full_image(self, _):
         file_path = filedialog.asksaveasfilename(
             defaultextension=".npy", filetypes=[("NumPy files", "*.npy")]
@@ -428,7 +452,6 @@ class NPYImageEditor:
             messagebox.showinfo("Saved", f"Image saved to {file_path}")
         else:
             messagebox.showwarning("Warning", "Invalid Path.")
-
 
     def select_all(self, _):
         if self.image is not None:
@@ -614,9 +637,18 @@ class NPYImageEditor:
             cur_y, cur_x = stack.pop()
 
             # Check the four adjacent pixels
-            for ny, nx in [(cur_y - 1, cur_x), (cur_y + 1, cur_x), (cur_y, cur_x - 1), (cur_y, cur_x + 1)]:
-                if (not (0 <= ny < self.image.shape[0] and 0 <= nx < self.image.shape[1])
-                        or (ny, nx) in processed):
+            for ny, nx in [
+                (cur_y - 1, cur_x),
+                (cur_y + 1, cur_x),
+                (cur_y, cur_x - 1),
+                (cur_y, cur_x + 1),
+            ]:
+                if (
+                    not (
+                        0 <= ny < self.image.shape[0] and 0 <= nx < self.image.shape[1]
+                    )
+                    or (ny, nx) in processed
+                ):
                     continue
 
                 processed.add((ny, nx))
@@ -654,7 +686,9 @@ class NPYImageEditor:
             self.canvas_widget.config(width=new_width, height=new_height)
 
             # Update scroll region
-            self.scroll_canvas.itemconfig(self.canvas_window, width=new_width, height=new_height)
+            self.scroll_canvas.itemconfig(
+                self.canvas_window, width=new_width, height=new_height
+            )
             self.scroll_canvas.config(scrollregion=(0, 0, new_width, new_height))
 
     def update_scroll_region(self, event=None):

@@ -8,11 +8,13 @@ EnvObs = TypeVar("EnvObs")
 EnvState = TypeVar("EnvState")
 EnvInfo = TypeVar("EnvInfo")
 
+
 class JAXAtariAction:
     """
     "Namespace" for Atari action integer constants.
     These are directly usable in JAX arrays.
     """
+
     NOOP: int = 0
     FIRE: int = 1
     UP: int = 2
@@ -35,12 +37,30 @@ class JAXAtariAction:
     @classmethod
     def get_all_values(cls) -> jnp.ndarray:
         # For fixed action sets, explicit listing is safest and clearest.
-        return jnp.array([
-            cls.NOOP, cls.FIRE, cls.UP, cls.RIGHT, cls.LEFT, cls.DOWN,
-            cls.UPRIGHT, cls.UPLEFT, cls.DOWNRIGHT, cls.DOWNLEFT,
-            cls.UPFIRE, cls.RIGHTFIRE, cls.LEFTFIRE, cls.DOWNFIRE,
-            cls.UPRIGHTFIRE, cls.UPLEFTFIRE, cls.DOWNRIGHTFIRE, cls.DOWNLEFTFIRE
-        ], dtype=jnp.int32)
+        return jnp.array(
+            [
+                cls.NOOP,
+                cls.FIRE,
+                cls.UP,
+                cls.RIGHT,
+                cls.LEFT,
+                cls.DOWN,
+                cls.UPRIGHT,
+                cls.UPLEFT,
+                cls.DOWNRIGHT,
+                cls.DOWNLEFT,
+                cls.UPFIRE,
+                cls.RIGHTFIRE,
+                cls.LEFTFIRE,
+                cls.DOWNFIRE,
+                cls.UPRIGHTFIRE,
+                cls.UPLEFTFIRE,
+                cls.DOWNRIGHTFIRE,
+                cls.DOWNLEFTFIRE,
+            ],
+            dtype=jnp.int32,
+        )
+
 
 class JaxEnvironment(Generic[EnvState, EnvObs, EnvInfo]):
     """
@@ -54,7 +74,7 @@ class JaxEnvironment(Generic[EnvState, EnvObs, EnvInfo]):
     def __init__(self):
         pass
 
-    def reset(self, key: jrandom.PRNGKey=None) -> Tuple[EnvObs, EnvState]:
+    def reset(self, key: jrandom.PRNGKey = None) -> Tuple[EnvObs, EnvState]:
         """
         Resets the environment to the initial state.
         Returns: The initial observation and the initial environment state.
