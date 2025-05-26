@@ -19,6 +19,106 @@ VERBOSE = True
 # Global variable to hold model for evaluate_model function
 model = None
 
+def render_trajectory(states, num_frames: int = 100, render_scale: int = 3, delay: int = 50):
+    """
+    Render a trajectory of states in a single window.
+    
+    Args:
+        states: PyTree containing the collected states to visualize
+        num_frames: Maximum number of frames to show
+        render_scale: Scaling factor for rendering
+        delay: Milliseconds to delay between frames
+    """
+    # Initialize pygame and create renderer
+    import pygame
+    import time
+    pygame.init()
+    
+    # Get renderer for the game
+    renderer = SeaquestRenderer()
+    
+    # Set up display
+    WIDTH = 160
+    HEIGHT = 210
+    WINDOW_WIDTH = WIDTH * render_scale
+    WINDOW_HEIGHT = HEIGHT * render_scale
+    
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("State Trajectory Visualization")
+    
+    # Prepare surface for rendering
+    surface = pygame.Surface((WIDTH, HEIGHT))
+    
+    # Create font for rendering text
+    font = pygame.font.SysFont(None, 24)
+    
+    # Determine how many states to render
+    if isinstance(states, dict) or hasattr(states, 'env_state'):
+        # Single state case
+        total_frames = 1
+    else:
+        # Get the size from the first field in the PyTree
+        first_field = jax.tree_util.tree_leaves(states)[0]
+        total_frames = first_field.shape[0] if hasattr(first_field, 'shape') else 1
+    
+    frames_to_show = min(total_frames, num_frames)
+    
+    print(f"Rendering trajectory with {frames_to_show} frames...")
+    
+    # Main loop
+    running = True
+    frame_idx = 0
+    
+    while running and frame_idx < frames_to_show:
+        # Handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+        
+        # Get the current state
+        if total_frames > 1:
+            # Extract the frame_idx'th state from the batch
+            current_state = jax.tree.map(lambda x: x[frame_idx] if hasattr(x, 'shape') and x.shape[0] > frame_idx else x, states)
+        else:
+            current_state = states
+        
+        # Render the state
+        try:
+            # Try to render the current state
+            raster = renderer.render(current_state)
+            img = np.array(raster * 255, dtype=np.uint8)
+            pygame.surfarray.blit_array(surface, img)
+            
+            # Scale and display
+            screen.fill((0, 0, 0))
+            scaled_surface = pygame.transform.scale(surface, (WIDTH * render_scale, HEIGHT * render_scale))
+            screen.blit(scaled_surface, (0, 0))
+            
+            # Add frame number indicator
+            frame_text = font.render(f"Frame: {frame_idx + 1}/{frames_to_show}", True, (255, 255, 255))
+            screen.blit(frame_text, (10, 10))
+            
+            # Update display
+            pygame.display.flip()
+            
+        except Exception as e:
+            print(f"Error rendering frame {frame_idx}: {e}")
+            # If there's an error, try the next frame
+            frame_idx += 1
+            continue
+        
+        # Delay between frames
+        pygame.time.wait(delay)
+        
+        frame_idx += 1
+    
+    # Keep window open for a brief moment at the end
+    if running:
+        pygame.time.wait(1000)
+    
+    pygame.quit()
+    print(f"Rendered {frame_idx} frames from trajectory")
+
 def build_world_model():
     def forward(state, action):
         # Flatten the state tree structure to a 1D vector
@@ -102,7 +202,7 @@ def collect_experience(env, num_episodes: int = 100,
     while total_episodes < num_episodes * num_envs:
         # Store the current state - AtariWrapper state structure is different
         # For AtariWrapper, the state contains the stacked frames directly
-        current_state_repr = jax.tree.map(lambda x: x, state.state)
+        current_state_repr = jax.tree.map(lambda x: x, state.env_state)
         
         # Generate random actions for all environments
         rng, action_rng = jax.random.split(rng)
@@ -184,6 +284,10 @@ def collect_experience(env, num_episodes: int = 100,
 def train_world_model(states, actions, next_states, rewards, 
                      learning_rate=3e-4, batch_size=256, num_epochs=10):
     
+
+    if VERBOSE:
+        render_trajectory(states, num_frames=100, render_scale=3, delay=50)
+
     # Initialize model and optimizer
     model = build_world_model()
     optimizer = optax.adam(learning_rate)
@@ -285,8 +389,11 @@ def train_world_model(states, actions, next_states, rewards,
         
         # Calculate mean loss for the epoch
         epoch_loss = jnp.mean(jnp.array(losses))
+
+        
       
-        if VERBOSE:
+        if VERBOSE and (epoch + 1) % 10 == 0:
+            print(losses)
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
     
     # Return both the trained parameters and the scaling factor for future use
@@ -559,7 +666,7 @@ if __name__ == "__main__":
         print("No existing model found. Training a new model...")
 
         # Define a file path for the experience data
-        experience_data_path = "experience_data_frames.pkl"
+        experience_data_path = "experience_data.pkl"
 
         # Check if experience data file exists
         if os.path.exists(experience_data_path):
@@ -577,7 +684,7 @@ if __name__ == "__main__":
                 env,  # Use wrapped environment
                 num_episodes=1,
                 max_steps_per_episode=10000,
-                num_envs=512
+                num_envs=1 # usually 512, but for debugging we use 1
             )
             
             # Save the collected experience data
@@ -602,12 +709,12 @@ if __name__ == "__main__":
         )
 
         # Save the model and scaling factor
-        with open(save_path, 'wb') as f:
-            pickle.dump({
-                'dynamics_params': dynamics_params,
-                'scale_factor': training_info['scale_factor']
-            }, f)
-        print(f"Model saved to {save_path}")
+        # with open(save_path, 'wb') as f:
+        #     pickle.dump({
+        #         'dynamics_params': dynamics_params,
+        #         'scale_factor': training_info['scale_factor']
+        #     }, f)
+        # print(f"Model saved to {save_path}")
 
-    # Compare real vs model
-    compare_real_vs_model(num_steps=5000, render_scale=6)
+    # # Compare real vs model
+    # compare_real_vs_model(num_steps=5000, render_scale=6)
