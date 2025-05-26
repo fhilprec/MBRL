@@ -147,9 +147,8 @@ def build_world_model():
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         
         # Feed through MLP - larger network since we now have 4x more input (4 stacked frames)
+        # Much larger network
         x = hk.Linear(1024)(inputs)
-        x = jax.nn.relu(x)
-        x = hk.Linear(1024)(x)
         x = jax.nn.relu(x)
         x = hk.Linear(1024)(x)
         x = jax.nn.relu(x)
@@ -290,7 +289,25 @@ def train_world_model(states, actions, next_states, rewards,
 
     # Initialize model and optimizer
     model = build_world_model()
-    optimizer = optax.adam(learning_rate)
+
+
+
+    # optimizer = optax.adam(learning_rate)
+
+    #TEST use different optimizer
+    # Add learning rate schedule
+    lr_schedule = optax.exponential_decay(
+        init_value=1e-4,
+        transition_steps=500,  # Faster decay
+        decay_rate=0.95  # Less aggressive per-step decay
+    )
+
+    # Use the schedule in your optimizer
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adam(learning_rate=lr_schedule)
+    )
+
     
     # Simple scaling for states to reduce the magnitude
     SCALE_FACTOR = 1/255.0
@@ -686,7 +703,7 @@ if __name__ == "__main__":
                 env,  # Use wrapped environment
                 num_episodes=1,
                 max_steps_per_episode=10000,
-                num_envs=2 # usually 512, but for debugging we use 1
+                num_envs=256 # usually 512, but for debugging we use 1
             )
             
             # Save the collected experience data
@@ -706,17 +723,17 @@ if __name__ == "__main__":
             next_states,
             rewards,
             learning_rate=3e-4,
-            batch_size=128, #usually 4096
-            num_epochs=100,
+            batch_size=4096, #usually 4096
+            num_epochs=10000,
         )
 
         # Save the model and scaling factor
-        # with open(save_path, 'wb') as f:
-        #     pickle.dump({
-        #         'dynamics_params': dynamics_params,
-        #         'scale_factor': training_info['scale_factor']
-        #     }, f)
-        # print(f"Model saved to {save_path}")
+        with open(save_path, 'wb') as f:
+            pickle.dump({
+                'dynamics_params': dynamics_params,
+                'scale_factor': training_info['scale_factor']
+            }, f)
+        print(f"Model saved to {save_path}")
 
     # # Compare real vs model
-    # compare_real_vs_model(num_steps=5000, render_scale=6)
+    compare_real_vs_model(num_steps=5000, render_scale=6)
