@@ -91,11 +91,16 @@ def render_trajectory(
     print(f"Rendered {frame_idx} frames from trajectory")
 
 
-def flatten_state(state):
+def flatten_state(state, single_state: bool = False) -> Tuple[jnp.ndarray, Any]:
     """
     Flatten the state PyTree into a single array.
     This is useful for debugging and visualization.
     """
+    #check whether it is a single state or a batch of states
+
+    if single_state:
+        flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
+        return flat_state, unflattener
     batch_shape = state.player_x.shape[0]
 
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
@@ -386,35 +391,6 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
 
     jitted_step = jax.jit(step_with_rng)
 
-    def predict_next_state(params, state, action, scale_factor=1 / 1):
-        """Predict next state using the world model with 4 stacked frames"""
-        scaled_state = jax.tree.map(lambda x: x * scale_factor, state.env_state)
-        if not isinstance(action, jnp.ndarray) or action.ndim == 0:
-            action = jnp.array([action])
-        pred_next_frame = world_model.apply(params, None, scaled_state, action)
-        flat_state, unflattener = jax.flatten_util.ravel_pytree(state.env_state)
-        new_flat_state = jnp.array(flat_state)
-        total_state_size = len(flat_state) - 2
-        single_frame_size = total_state_size // 4
-        pred_size = pred_next_frame.shape[1]
-        copy_size = min(single_frame_size, pred_size)
-        for i in range(3):
-            start_old = (i + 1) * single_frame_size
-            end_old = start_old + copy_size
-            start_new = i * single_frame_size
-            end_new = start_new + copy_size
-            new_flat_state = new_flat_state.at[start_new:end_new].set(
-                new_flat_state[start_old:end_old]
-            )
-        last_frame_start = 3 * single_frame_size
-        last_frame_end = last_frame_start + copy_size
-        new_flat_state = new_flat_state.at[last_frame_start:last_frame_end].set(
-            (pred_next_frame[0][:copy_size] / scale_factor)
-        )
-        new_env_state = unflattener(new_flat_state)
-        return state.replace(env_state=new_env_state)
-
-    jitted_predict = jax.jit(predict_next_state)
     running = True
     step_count = 0
     clock = pygame.time.Clock()
@@ -430,10 +406,25 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         real_obs, real_state, real_reward, real_done, real_info = jitted_step(
             step_rng, real_state, action
         )
-        model_state = jitted_predict(dynamics_params, model_state, action, scale_factor)
-        # model_state = jax.tree.map(
-        #     lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), model_state
-        # )
+        # model_state = jitted_predict(dynamics_params, model_state, action, scale_factor)
+        flattened_state, unflattener = flatten_state(model_state.env_state, single_state=True)
+        model_state_flattened = world_model.apply(
+            dynamics_params, None, flattened_state, jnp.array([action])
+        )
+        #extend model_state_flattened by 2 zeros to match the shape of real_state.env_state
+        model_state_flattened = jnp.concatenate(
+            [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
+            axis=-1,
+        )
+        print(model_state_flattened.shape)
+        model_state = model_state.replace(env_state=unflattener(model_state_flattened))
+        
+        # model_state = unflattener(model_state_flattened)
+
+
+
+
+
         if VERBOSE and step_count % 100 == 0:
             print(f"Step {step_count}: Real vs Model state comparison")
         real_base_state = real_state.env_state
@@ -486,54 +477,10 @@ if __name__ == "__main__":
 
     save_path = "world_model.pkl"
     model = build_world_model()
-    """
     
-    print("Analyzing state structure...")
-    rng = jax.random.PRNGKey(42)
-    rng, reset_key = jax.random.split(rng)
-    initial_obs, initial_state = env.reset(reset_key)
-    
-    print("AtariWrapper state structure:")
-    print(f"Full state: {initial_state}")
-    print(f"State type: {type(initial_state)}")
-    print(f"State env_state: {initial_state.env_state}")
-    print(f"env_state type: {type(initial_state.env_state)}")
-    
-    
-    state_leaves = jax.tree_util.tree_leaves(initial_state.env_state)
-    
-    
-    all_values = []
-    for leaf in state_leaves:
-        if isinstance(leaf, jnp.ndarray):
-            all_values.extend(leaf.flatten().tolist())
-        else:
-            all_values.append(leaf)
-    
-    print("All state values as a flat list:")
-    print(f"Number of values in the wrapped state: {len(all_values)}")
-    
-    
-    base_obs, base_state = game.reset(reset_key)
-    base_leaves = jax.tree_util.tree_leaves(base_state)
-    base_values = []
-    for leaf in base_leaves:
-        if isinstance(leaf, jnp.ndarray):
-            base_values.extend(leaf.flatten().tolist())
-        else:
-            base_values.append(leaf)
-    
-    print(f"Number of values in base game state: {len(base_values)}")
-    print(f"Frame stacking multiplier: {len(all_values) / len(base_values):.1f}")
-    """
-
-
-
-
-           
 
     states, actions, next_states, rewards = collect_experience(
-        env, num_episodes=1, max_steps_per_episode=10000, num_envs=1
+        env, num_episodes=1, max_steps_per_episode=10, num_envs=1
     )
     
     states = flatten_state(states)[0]  # Flatten the state for training
@@ -548,8 +495,8 @@ if __name__ == "__main__":
         next_states,
         rewards,
         learning_rate=3e-4,
-        batch_size=128,
-        num_epochs=10000,
+        batch_size=2,
+        num_epochs=5,
     )
     with open(save_path, "wb") as f:
         pickle.dump(
@@ -562,11 +509,11 @@ if __name__ == "__main__":
     print(f"Model saved to {save_path}")
 
 
-    print(next_states[300][:-2])
-    pred = model.apply(dynamics_params, None, states[300], actions[300])
-    print(pred)
+    # print(next_states[300][:-2])
+    # pred = model.apply(dynamics_params, None, states[300], actions[300])
+    # print(pred)
 
 
-    print(((next_states[300][:-2] - pred) ** 2))
+    # print(((next_states[300][:-2] - pred) ** 2))
 
-    # compare_real_vs_model(num_steps=5000, render_scale=6)
+    compare_real_vs_model(num_steps=5000, render_scale=6)
