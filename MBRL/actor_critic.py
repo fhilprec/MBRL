@@ -213,6 +213,9 @@ def make_train(config):
                     traj_batch, advantages, targets = batch_info
 
                     def _loss_fn(params, traj_batch, gae, targets):
+
+                        print(traj_batch.obs.shape)
+
                         # RERUN NETWORK
                         pi, value = network.apply(params, traj_batch.obs)
                         log_prob = pi.log_prob(traj_batch.action)
@@ -251,9 +254,12 @@ def make_train(config):
                         return total_loss, (value_loss, loss_actor, entropy)
 
                     grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
+
                     total_loss, grads = grad_fn(
                         train_state.params, traj_batch, advantages, targets
                     )
+                    print(total_loss)
+                    # CLIP GRADIENTS
                     train_state = train_state.apply_gradients(grads=grads)
                     return train_state, total_loss
 

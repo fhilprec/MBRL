@@ -91,28 +91,50 @@ def render_trajectory(
     print(f"Rendered {frame_idx} frames from trajectory")
 
 
+def flatten_state(state):
+    """
+    Flatten the state PyTree into a single array.
+    This is useful for debugging and visualization.
+    """
+    batch_shape = state.player_x.shape[0]
+
+    flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
+    flat_state = flat_state.reshape(
+        batch_shape, -1
+    )  
+    return flat_state, unflattener
+
 def build_world_model():
     def forward(state, action):
-        flat_state_raw = hk.Flatten()(jax.flatten_util.ravel_pytree(state)[0])
+        # print(state.shape)
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
-        if len(flat_state_raw.shape) == 1:
-            feature_size = flat_state_raw.shape[0]
-            flat_state_full = flat_state_raw.reshape(
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(
                 batch_size, feature_size // batch_size
             )
+            
         else:
-            flat_state_full = flat_state_raw
-        flat_state = flat_state_full[:, :-2]
+            flat_state_full = state
+        flat_state = flat_state_full[..., :-2]
+
+
+
+
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        if len(state.shape) == 1:
+            action_one_hot = action_one_hot.reshape(1,18)
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
-        x = hk.Linear(1024)(inputs)
-        x = jax.nn.relu(x)
-        x = hk.Linear(1024)(x)
+        x = hk.Linear(512)(inputs)
         x = jax.nn.relu(x)
         x = hk.Linear(512)(x)
         x = jax.nn.relu(x)
-        single_frame_size = flat_state.shape[1] // 4
-        flat_next_state = hk.Linear(single_frame_size)(x)
+        if len(state.shape) == 1:
+            flat_next_state = hk.Linear(state.shape[0]-2)(x)
+        else:
+            flat_next_state = hk.Linear(state.shape[1]-2)(x)
+        # print(flat_next_state.shape)
         return flat_next_state
 
     return hk.transform(forward)
@@ -121,8 +143,11 @@ def build_world_model():
 def collect_experience(
     env, num_episodes: int = 100, max_steps_per_episode: int = 1000, num_envs: int = 512
 ) -> Tuple[List, List, List]:
+
+    print(type(env))
+
     print(f"Collecting experience data from {num_envs} parallel environments...")
-    print("Note: AtariWrapper provides 4 stacked frames automatically")
+    # print("Note: AtariWrapper provides 4 stacked frames automatically")
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)
     )
@@ -210,14 +235,15 @@ def train_world_model(
     batch_size=256,
     num_epochs=10,
 ):
+    
     model = build_world_model()
     lr_schedule = optax.exponential_decay(
-        init_value=1e-4, transition_steps=500, decay_rate=0.95
+        init_value=1e-5, transition_steps=500, decay_rate=0.9
     )
     optimizer = optax.chain(
         optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr_schedule)
     )
-    SCALE_FACTOR = 1 / 255.0
+    SCALE_FACTOR = 1 / 1
     scaled_states = jax.tree.map(lambda x: x * SCALE_FACTOR, states)
     scaled_next_states = jax.tree.map(lambda x: x * SCALE_FACTOR, next_states)
     rng = jax.random.PRNGKey(42)
@@ -226,38 +252,65 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action)
     opt_state = optimizer.init(params)
 
-    def loss_fn(params, state_batch, action_batch, next_state_batch):
+
+
+
+    def loss_function(params, state_batch, action_batch, next_state_batch):
+
+
+
+
         pred_next_state = model.apply(params, None, state_batch, action_batch)
         flat_next_state_raw = jax.flatten_util.ravel_pytree(next_state_batch)[0]
-        batch_size = pred_next_state.shape[0]
-        pred_feature_size = pred_next_state.shape[1]
-        if hasattr(loss_fn, "first_call") == False:
-            print(f"Prediction shape: {pred_next_state.shape}")
-            print(f"Target shape before reshape: {flat_next_state_raw.shape}")
-            loss_fn.first_call = True
-        if len(flat_next_state_raw.shape) == 1:
-            total_size = flat_next_state_raw.shape[0]
-            full_feature_size = total_size // batch_size
-            flat_next_state_full = flat_next_state_raw.reshape(
-                batch_size, full_feature_size
-            )
-        else:
-            flat_next_state_full = flat_next_state_raw
-        flat_next_state = flat_next_state_full[:, :-2]
-        single_frame_size = flat_next_state.shape[1] // 4
-        target_single_frame = flat_next_state[:, -single_frame_size:]
-        if target_single_frame.shape[1] != pred_feature_size:
-            min_size = min(target_single_frame.shape[1], pred_feature_size)
-            target_single_frame = target_single_frame[:, :min_size]
-            pred_next_state = pred_next_state[:, :min_size]
-        mae = jnp.mean(jnp.abs(pred_next_state - target_single_frame))
-        return mae
 
-    loss_fn.first_call = False
+
+        flat_next_state_raw = flat_next_state_raw.reshape(
+            state_batch.shape[0], -1
+        )  
+
+        state_batch = state_batch[:, :-2]
+        mse = jnp.mean((state_batch - pred_next_state)**2)
+
+        return mse
+
+        # batch_size = pred_next_state.shape[0]
+        # pred_feature_size = pred_next_state.shape[1]
+        # if hasattr(loss_function, "first_call") == False:
+        #     print(f"Prediction shape: {pred_next_state.shape}")
+        #     print(f"Target shape before reshape: {flat_next_state_raw.shape}")
+        #     loss_function.first_call = True
+        # if len(flat_next_state_raw.shape) == 1:
+        #     total_size = flat_next_state_raw.shape[0]
+        #     full_feature_size = total_size // batch_size
+        #     flat_next_state_full = flat_next_state_raw.reshape(
+        #         batch_size, full_feature_size
+        #     )
+        # else:
+        #     flat_next_state_full = flat_next_state_raw
+        # flat_next_state = flat_next_state_full[:, :-2]
+        # single_frame_size = flat_next_state.shape[1] // 4
+        # target_single_frame = flat_next_state[:, -single_frame_size:]
+        # if target_single_frame.shape[1] != pred_feature_size:
+        #     min_size = min(target_single_frame.shape[1], pred_feature_size)
+        #     target_single_frame = target_single_frame[:, :min_size]
+        #     pred_next_state = pred_next_state[:, :min_size]
+        # mae = (jnp.abs(pred_next_state - target_single_frame))
+        # print(
+        #     f"MAE shape: {mae.shape}, first 5 values: {mae[:5]}"
+        # )
+        # print(
+        #     f"MAE shape: {pred_next_state.shape}, first 5 values: {mae[:5]}"
+        # )
+        # print(
+        #     f"MAE shape: {target_single_frame.shape}, first 5 values: {mae[:5]}"
+        # )
+        
+
+    loss_function.first_call = False
 
     @jax.jit
     def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
-        loss, grads = jax.value_and_grad(loss_fn)(
+        loss, grads = jax.value_and_grad(loss_function)(
             params, state_batch, action_batch, next_state_batch
         )
         updates, new_opt_state = optimizer.update(grads, opt_state)
@@ -276,9 +329,9 @@ def train_world_model(
         )
         batches.append((state_batch, action_batch, next_state_batch))
     batches = jax.device_put(batches)
-    for epoch in range(num_epochs):
+    for epoch in range(num_epochs): #SCAN 
         losses = []
-        for batch in batches:
+        for batch in batches: #maybe include in one scan
             state_batch, action_batch, next_state_batch = batch
             params, opt_state, loss = update_step(
                 params, opt_state, state_batch, action_batch, next_state_batch
@@ -307,7 +360,7 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
-        scale_factor = model_data.get("scale_factor", 1 / 255.0)
+        scale_factor = model_data.get("scale_factor", 1 / 1)
     world_model = build_world_model()
     import pygame
     import time
@@ -333,7 +386,7 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
 
     jitted_step = jax.jit(step_with_rng)
 
-    def predict_next_state(params, state, action, scale_factor=1 / 255.0):
+    def predict_next_state(params, state, action, scale_factor=1 / 1):
         """Predict next state using the world model with 4 stacked frames"""
         scaled_state = jax.tree.map(lambda x: x * scale_factor, state.env_state)
         if not isinstance(action, jnp.ndarray) or action.ndim == 0:
@@ -378,9 +431,9 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
             step_rng, real_state, action
         )
         model_state = jitted_predict(dynamics_params, model_state, action, scale_factor)
-        model_state = jax.tree.map(
-            lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), model_state
-        )
+        # model_state = jax.tree.map(
+        #     lambda x: jnp.clip(x, 0, 255).astype(jnp.int32), model_state
+        # )
         if VERBOSE and step_count % 100 == 0:
             print(f"Step {step_count}: Real vs Model state comparison")
         real_base_state = real_state.env_state
@@ -429,6 +482,8 @@ if __name__ == "__main__":
     env = AtariWrapper(
         game, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
+    env = FlattenObservationWrapper(env)
+
     save_path = "world_model.pkl"
     model = build_world_model()
     """
@@ -471,56 +526,47 @@ if __name__ == "__main__":
     print(f"Number of values in base game state: {len(base_values)}")
     print(f"Frame stacking multiplier: {len(all_values) / len(base_values):.1f}")
     """
-    if os.path.exists(save_path):
-        print(f"Loading existing model from {save_path}...")
-        with open(save_path, "rb") as f:
-            saved_data = pickle.load(f)
-            dynamics_params = saved_data["dynamics_params"]
-    else:
-        print("No existing model found. Training a new model...")
-        experience_data_path = "experience_data.pkl"
-        if os.path.exists(experience_data_path):
-            print(f"Loading existing experience data from {experience_data_path}...")
-            with open(experience_data_path, "rb") as f:
-                saved_data = pickle.load(f)
-                states = saved_data["states"]
-                actions = saved_data["actions"]
-                next_states = saved_data["next_states"]
-                rewards = saved_data["rewards"]
-        else:
-            print(
-                "No existing experience data found. Collecting new experience data..."
-            )
-            states, actions, next_states, rewards = collect_experience(
-                env, num_episodes=1, max_steps_per_episode=10000, num_envs=1
-            )
-            with open(experience_data_path, "wb") as f:
-                pickle.dump(
-                    {
-                        "states": states,
-                        "actions": actions,
-                        "next_states": next_states,
-                        "rewards": rewards,
-                    },
-                    f,
-                )
-            print(f"Experience data saved to {experience_data_path}")
-        dynamics_params, training_info = train_world_model(
-            states,
-            actions,
-            next_states,
-            rewards,
-            learning_rate=3e-4,
-            batch_size=128,
-            num_epochs=10000,
+
+
+
+
+           
+
+    states, actions, next_states, rewards = collect_experience(
+        env, num_episodes=1, max_steps_per_episode=10000, num_envs=1
+    )
+    
+    states = flatten_state(states)[0]  # Flatten the state for training
+    next_states = flatten_state(next_states)[0]  # Flatten the next states for training
+
+
+    
+
+    dynamics_params, training_info = train_world_model(
+        states,
+        actions,
+        next_states,
+        rewards,
+        learning_rate=3e-4,
+        batch_size=128,
+        num_epochs=10000,
+    )
+    with open(save_path, "wb") as f:
+        pickle.dump(
+            {
+                "dynamics_params": dynamics_params,
+                "scale_factor": training_info["scale_factor"],
+            },
+            f,
         )
-        with open(save_path, "wb") as f:
-            pickle.dump(
-                {
-                    "dynamics_params": dynamics_params,
-                    "scale_factor": training_info["scale_factor"],
-                },
-                f,
-            )
-        print(f"Model saved to {save_path}")
-    compare_real_vs_model(num_steps=5000, render_scale=6)
+    print(f"Model saved to {save_path}")
+
+
+    print(next_states[300][:-2])
+    pred = model.apply(dynamics_params, None, states[300], actions[300])
+    print(pred)
+
+
+    print(((next_states[300][:-2] - pred) ** 2))
+
+    # compare_real_vs_model(num_steps=5000, render_scale=6)
