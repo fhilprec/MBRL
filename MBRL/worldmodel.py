@@ -8,6 +8,7 @@ import haiku as hk
 from typing import Tuple, List, Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 from tqdm import tqdm
 import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
@@ -417,10 +418,18 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
             axis=-1,
         )
         print(model_state_flattened.shape)
-        model_state = model_state.replace(env_state=unflattener(model_state_flattened))
+        model_state_flattened_1d = model_state_flattened.reshape(-1)
+        print(model_state_flattened_1d.shape)
+        print(unflattener(model_state_flattened_1d))
+        model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         
-        # model_state = unflattener(model_state_flattened)
-
+        model_state_structure = jax.tree_util.tree_structure(real_state.env_state)
+        reconstructed_env_state = unflattener(model_state_flattened_1d)
+        reconstructed_env_state = reconstructed_env_state._replace(
+            step_counter=real_state.env_state.step_counter,
+            rng_key=real_state.env_state.rng_key
+        )
+        model_state = model_state.replace(env_state=reconstructed_env_state)
 
 
 
@@ -436,7 +445,7 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         print(
             "---------------------------------------------------------------Model State------------------------------------------------"
         )
-        print(model_base_state)
+        print(model_state)
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -469,6 +478,9 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
 
 
 if __name__ == "__main__":
+
+
+
     game = JaxSeaquest()
     env = AtariWrapper(
         game, sticky_actions=False, episodic_life=False, frame_stack_size=4
@@ -477,36 +489,6 @@ if __name__ == "__main__":
 
     save_path = "world_model.pkl"
     model = build_world_model()
-    
-
-    states, actions, next_states, rewards = collect_experience(
-        env, num_episodes=1, max_steps_per_episode=10, num_envs=1
-    )
-    
-    states = flatten_state(states)[0]  # Flatten the state for training
-    next_states = flatten_state(next_states)[0]  # Flatten the next states for training
-
-
-    
-
-    dynamics_params, training_info = train_world_model(
-        states,
-        actions,
-        next_states,
-        rewards,
-        learning_rate=3e-4,
-        batch_size=2,
-        num_epochs=5,
-    )
-    with open(save_path, "wb") as f:
-        pickle.dump(
-            {
-                "dynamics_params": dynamics_params,
-                "scale_factor": training_info["scale_factor"],
-            },
-            f,
-        )
-    print(f"Model saved to {save_path}")
 
 
     # print(next_states[300][:-2])
@@ -515,5 +497,64 @@ if __name__ == "__main__":
 
 
     # print(((next_states[300][:-2] - pred) ** 2))
+
+    if os.path.exists(save_path) and sys.argv[1] != 'retrain':
+        print(f"Loading existing model from {save_path}...")
+        with open(save_path, 'rb') as f:
+            saved_data = pickle.load(f)
+            dynamics_params = saved_data['dynamics_params']
+    else:
+        print("No existing model found. Training a new model...")
+
+        # Define a file path for the experience data
+        experience_data_path = "experience_data.pkl"
+
+        # Check if experience data file exists
+        if os.path.exists(experience_data_path) and sys.argv[1] != 'retrain':
+            print(f"Loading existing experience data from {experience_data_path}...")
+            with open(experience_data_path, 'rb') as f:
+                saved_data = pickle.load(f)
+                states = saved_data['states']
+                actions = saved_data['actions']
+                next_states = saved_data['next_states']
+                rewards = saved_data['rewards']
+        else:
+            print("No existing experience data found. Collecting new experience data...")
+            # Collect experience data (AtariWrapper handles frame stacking automatically)
+            states, actions, next_states, rewards = collect_experience(
+                env, num_episodes=1, max_steps_per_episode=1000, num_envs=1
+            )
+
+            states = flatten_state(states)[0]  # Flatten the state for training
+            next_states = flatten_state(next_states)[0]  # Flatten the next states for training
+            
+            # Save the collected experience data
+            with open(experience_data_path, 'wb') as f:
+                pickle.dump({
+                    'states': states,
+                    'actions': actions,
+                    'next_states': next_states,
+                    'rewards': rewards
+                }, f)
+            print(f"Experience data saved to {experience_data_path}")
+
+        # Train world model
+        dynamics_params, training_info = train_world_model(
+            states,
+            actions,
+            next_states,
+            rewards,
+            learning_rate=3e-4,
+            batch_size=2,
+            num_epochs=1000,
+        )
+
+        # Save the model and scaling factor
+        with open(save_path, 'wb') as f:
+            pickle.dump({
+                'dynamics_params': dynamics_params,
+                'scale_factor': training_info['scale_factor']
+            }, f)
+        print(f"Model saved to {save_path}")
 
     compare_real_vs_model(num_steps=5000, render_scale=6)
