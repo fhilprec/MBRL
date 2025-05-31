@@ -243,12 +243,17 @@ def train_world_model(
 ):
     
     model = build_world_model()
-    lr_schedule = optax.exponential_decay(
-        init_value=1e-5, transition_steps=500, decay_rate=0.9
-    )
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr_schedule)
-    )
+
+    # lr_schedule = optax.exponential_decay(
+    #     init_value=1e-5, transition_steps=500, decay_rate=1
+    # )
+    # optimizer = optax.chain(
+    #     optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr_schedule)
+    # )
+
+    #simple optimizer
+    optimizer = optax.adam(learning_rate=1e-5)
+
     SCALE_FACTOR = 1 / 1
     scaled_states = jax.tree.map(lambda x: x * SCALE_FACTOR, states)
     scaled_next_states = jax.tree.map(lambda x: x * SCALE_FACTOR, next_states)
@@ -412,15 +417,27 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
         model_state_flattened = world_model.apply(
             dynamics_params, None, flattened_state, jnp.array([action])
         )
+        # print("Model Loss:")
+        flattened_real_state, unflattener = flatten_state(real_state.env_state, single_state=True)
+        # print(flattened_real_state[:-2])
+        # print(model_state_flattened)
+        
+
+        print(jnp.mean((flattened_real_state[:-2] - model_state_flattened) ** 2))
+
         #extend model_state_flattened by 2 zeros to match the shape of real_state.env_state
         model_state_flattened = jnp.concatenate(
             [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
             axis=-1,
         )
-        print(model_state_flattened.shape)
+
+        
+
+
+        # print(model_state_flattened.shape)
         model_state_flattened_1d = model_state_flattened.reshape(-1)
-        print(model_state_flattened_1d.shape)
-        print(unflattener(model_state_flattened_1d))
+        # print(model_state_flattened_1d.shape)
+        # print(unflattener(model_state_flattened_1d))
         model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         
         model_state_structure = jax.tree_util.tree_structure(real_state.env_state)
@@ -438,14 +455,14 @@ def compare_real_vs_model(num_steps: int = 1000, render_scale: int = 2):
             print(f"Step {step_count}: Real vs Model state comparison")
         real_base_state = real_state.env_state
         model_base_state = model_state.env_state
-        print(
-            "---------------------------------------------------------------Real State-------------------------------------------------"
-        )
-        print(real_base_state)
-        print(
-            "---------------------------------------------------------------Model State------------------------------------------------"
-        )
-        print(model_state)
+        # print(
+        #     "---------------------------------------------------------------Real State-------------------------------------------------"
+        # )
+        # print(real_base_state)
+        # print(
+        #     "---------------------------------------------------------------Model State------------------------------------------------"
+        # )
+        # print(model_state)
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -498,7 +515,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-    if os.path.exists(save_path) and sys.argv[1] != 'retrain':
+    if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
         with open(save_path, 'rb') as f:
             saved_data = pickle.load(f)
@@ -510,7 +527,7 @@ if __name__ == "__main__":
         experience_data_path = "experience_data.pkl"
 
         # Check if experience data file exists
-        if os.path.exists(experience_data_path) and sys.argv[1] != 'retrain':
+        if os.path.exists(experience_data_path):
             print(f"Loading existing experience data from {experience_data_path}...")
             with open(experience_data_path, 'rb') as f:
                 saved_data = pickle.load(f)
@@ -522,7 +539,7 @@ if __name__ == "__main__":
             print("No existing experience data found. Collecting new experience data...")
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             states, actions, next_states, rewards = collect_experience(
-                env, num_episodes=1, max_steps_per_episode=1000, num_envs=1
+                env, num_episodes=1, max_steps_per_episode=1000, num_envs=128
             )
 
             states = flatten_state(states)[0]  # Flatten the state for training
@@ -545,8 +562,8 @@ if __name__ == "__main__":
             next_states,
             rewards,
             learning_rate=3e-4,
-            batch_size=2,
-            num_epochs=1000,
+            batch_size=1024,
+            num_epochs=500,
         )
 
         # Save the model and scaling factor
