@@ -94,12 +94,20 @@ def render_trajectory(
     print(f"Rendered {frame_idx} frames from trajectory")
 
 
-def flatten_state(state, single_state: bool = False) -> Tuple[jnp.ndarray, Any]:
+def flatten_state(state, single_state: bool = False, is_list = False) -> Tuple[jnp.ndarray, Any]:
     """
     Flatten the state PyTree into a single array.
     This is useful for debugging and visualization.
     """
     #check whether it is a single state or a batch of states
+
+    if type(state) == list:
+        flat_states = []
+        for s in state:
+            flat_state, _ = jax.flatten_util.ravel_pytree(s)
+            flat_states.append(flat_state)
+        flat_states = jnp.stack(flat_states, axis=0)  # Shape: (1626, 160)
+        return flat_states
 
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
@@ -147,6 +155,70 @@ def build_world_model():
 
     return hk.transform(forward)
 
+def collect_experience_sequential(
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000
+):
+    """Collect experience data sequentially to ensure proper transitions."""
+    states = []
+    next_states = []
+    actions = []
+    rewards = []
+    dones = []
+    
+    rng = jax.random.PRNGKey(42)
+    
+    for episode in range(num_episodes):
+        rng, reset_key = jax.random.split(rng)
+        _, state = env.reset(reset_key)
+        
+        for step in range(max_steps_per_episode):
+            current_state = jax.tree.map(lambda x: x, state.env_state)
+            
+            # Choose a random action
+            rng, action_key = jax.random.split(rng)
+            action = 5 if jax.random.uniform(action_key) < 0.2 else jax.random.randint(action_key, (), 0, 18)
+            
+            # Take a step in the environment
+            rng, step_key = jax.random.split(rng)
+            _, next_state, reward, done, _ = env.step(step_key, state, action)
+            
+            next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
+            
+            # Store the transition
+            states.append(current_state)
+            actions.append(action)
+            next_states.append(next_state_repr)
+            rewards.append(reward)
+            dones.append(done)
+            
+            # If episode is done, reset the environment
+            if done:
+                print(f"Episode {episode+1} done after {step+1} steps")
+                break
+                
+            # Update state for the next step
+            state = next_state
+    
+    # Convert to JAX arrays (but don't flatten the structure yet)
+    # Use tree_map to maintain structure with jnp arrays
+
+
+    # Stack states correctly to form batch
+    # Step 1: Stack states across time
+    batched_states = jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *states)
+
+    # Step 2: Flatten into a single vector per state
+    flat_states, unflattener = flatten_state(batched_states, single_state=False)
+
+    batched_next_states = jax.tree.map(lambda *xs: jnp.stack(xs), *next_states)
+    flat_next_states, _ = flatten_state(batched_next_states, single_state=False)
+
+    actions_array = jnp.array(actions)
+    rewards_array = jnp.array(rewards)
+    dones_array = jnp.array(dones)
+
+
+    return flatten_state(states, is_list=True), actions_array, states, rewards_array, dones_array
 
 def collect_experience(
     env, num_episodes: int = 100, max_steps_per_episode: int = 1000, num_envs: int = 512
@@ -286,38 +358,7 @@ def train_world_model(
 
         return mse
 
-        # batch_size = pred_next_state.shape[0]
-        # pred_feature_size = pred_next_state.shape[1]
-        # if hasattr(loss_function, "first_call") == False:
-        #     print(f"Prediction shape: {pred_next_state.shape}")
-        #     print(f"Target shape before reshape: {flat_next_state_raw.shape}")
-        #     loss_function.first_call = True
-        # if len(flat_next_state_raw.shape) == 1:
-        #     total_size = flat_next_state_raw.shape[0]
-        #     full_feature_size = total_size // batch_size
-        #     flat_next_state_full = flat_next_state_raw.reshape(
-        #         batch_size, full_feature_size
-        #     )
-        # else:
-        #     flat_next_state_full = flat_next_state_raw
-        # flat_next_state = flat_next_state_full[:, :-2]
-        # single_frame_size = flat_next_state.shape[1] // 4
-        # target_single_frame = flat_next_state[:, -single_frame_size:]
-        # if target_single_frame.shape[1] != pred_feature_size:
-        #     min_size = min(target_single_frame.shape[1], pred_feature_size)
-        #     target_single_frame = target_single_frame[:, :min_size]
-        #     pred_next_state = pred_next_state[:, :min_size]
-        # mae = (jnp.abs(pred_next_state - target_single_frame))
-        # print(
-        #     f"MAE shape: {mae.shape}, first 5 values: {mae[:5]}"
-        # )
-        # print(
-        #     f"MAE shape: {pred_next_state.shape}, first 5 values: {mae[:5]}"
-        # )
-        # print(
-        #     f"MAE shape: {target_single_frame.shape}, first 5 values: {mae[:5]}"
-        # )
-        
+
 
     loss_function.first_call = False
 
@@ -543,13 +584,32 @@ if __name__ == "__main__":
         else:
             print("No existing experience data found. Collecting new experience data...")
             # Collect experience data (AtariWrapper handles frame stacking automatically)
-            states, actions, next_states, rewards = collect_experience(
-                env, num_episodes=1, max_steps_per_episode=1000, num_envs=128
+            flattened_states, actions, _, rewards,_ = collect_experience_sequential(
+                env,
+                num_episodes=3,
+                max_steps_per_episode=1000
             )
+            next_states = flattened_states[1:]  # Next states are just the next frame in the sequence
+            states = flattened_states[:-1]  # Current states are all but the last frame
 
-            states = flatten_state(states)[0]  # Flatten the state for training
-            next_states = flatten_state(next_states)[0]  # Flatten the next states for training
+            # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
+            #I want to check whether the next_state is equal to the current state + 1
+            print(states.shape)
+            print(next_states.shape)
+
+            if VERBOSE:
+                print("Checking if next_state is equal to current state + 1...")
+                for i in range(100):
+                    if not jnp.allclose(states[i+1][:-2], next_states[i][:-2]):
+                        print(f"Mismatch at index {i}: {states[i][:-2]} != {next_states[i][:-2]}")
+                        print(states[i+1][:-2])
+                        print(next_states[i][:-2])
+                        print(states[i+1][:-2] - next_states[i][:-2])
+                        sys.exit(1)
+                print("All states match the expected transition.")
+
             
+          
             # Save the collected experience data
             with open(experience_data_path, 'wb') as f:
                 pickle.dump({
@@ -568,7 +628,7 @@ if __name__ == "__main__":
             rewards,
             learning_rate=3e-4,
             batch_size=1024,
-            num_epochs=500,
+            num_epochs=10000,
         )
 
         # Save the model and scaling factor
