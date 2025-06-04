@@ -397,7 +397,7 @@ def train_world_model(
     return params, {"final_loss": epoch_loss, "scale_factor": SCALE_FACTOR}
 
 
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
+def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None):
 
 
     # Add debugging to understand the model input/output formats
@@ -406,12 +406,10 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
             print(f"Step {step} debugging:")
             
             # Check ranges and statistics of the data
-            real_flat, _ = flatten_state(real_state.env_state, single_state=True)
-            real_flat = real_flat.reshape(-1)[:-2]  # Exclude last 2 elements (step_counter, rng_key)
-            print(f"Real state min/max/mean: {jnp.min(real_flat):.2f}/{jnp.max(real_flat):.2f}/{jnp.mean(real_flat):.2f}")
+            print(f"Real state min/max/mean: {jnp.min(real_state):.2f}/{jnp.max(real_state):.2f}/{jnp.mean(real_state):.2f}")
             print(f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}")
 
-            error = jnp.mean((real_flat - pred_state) ** 2)
+            error = jnp.mean((real_state - pred_state) ** 2)
             print(f"Step {step_count}, Error: {error:.2f}")
 
     base_game = JaxSeaquest()
@@ -439,52 +437,66 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
     pygame.display.set_caption(
         "Real Environment vs World Model (AtariWrapper Frame Stack)"
     )
-    rng = jax.random.PRNGKey(int(time.time()))
-    rng, reset_key = jax.random.split(rng)
-    real_obs, real_state = real_env.reset(reset_key)
-    model_state = real_state
+
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
-    def step_with_rng(rng, state, action):
-        return real_env.step(rng, state, action)
 
-    jitted_step = jax.jit(step_with_rng)
 
     running = True
     step_count = 0
     clock = pygame.time.Clock()
-    while running and step_count < num_steps:
+
+    #this part is only here to get the real_start and for the unflattener
+    base_game = JaxSeaquest()
+    real_env = AtariWrapper(
+        base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
+    )
+    rng = jax.random.PRNGKey(int(time.time()))
+    rng, reset_key = jax.random.split(rng)
+    real_obs, real_state = real_env.reset(reset_key)
 
 
+    first_state_flat = states[0]
+    _, unflattener = flatten_state(real_state.env_state, single_state=True)
+    first_state_raw = unflattener(first_state_flat)
+    real_state = real_state.replace(env_state=first_state_raw)
+    model_state = real_state  # Start identical
+    
+    while running and step_count < min(num_steps, len(states)-1):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-        rng, action_key = jax.random.split(rng)
-        action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)
-        if step_count % 4 == 0:
-            action = 5
-        rng, step_rng = jax.random.split(rng)
-        real_obs, real_state, real_reward, real_done, real_info = jitted_step(
-            step_rng, real_state, action
+                
+        # CHANGE #2: Use the saved action
+        action = actions[step_count]
+        
+        # CHANGE #3: Use the saved next state directly instead of environment stepping
+        next_real_state_flat = states[step_count + 1]
+        real_state = real_state.replace(env_state=unflattener(next_real_state_flat))
+        
+        # Get the flattened current state for the model
+        flattened_model_state, _ = flatten_state(model_state.env_state, single_state=True)
+        
+
+
+        # Apply model prediction
+        model_state_flattened = world_model.apply(
+            dynamics_params, None, flattened_model_state, jnp.array([action])
         )
 
-        flattened_state, unflattener = flatten_state(model_state.env_state, single_state=True)
-        model_state_flattened = world_model.apply(
-            dynamics_params, None, flattened_state, jnp.array([action])
-        )        
+        debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
 
         
-        debug_states(step_count, real_state, model_state_flattened)
-
-        #extend model_state_flattened by 2 zeros to match the shape of real_state.env_state
+        # Complete model state with additional fields
         model_state_flattened = jnp.concatenate(
             [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
             axis=-1,
         )
         model_state_flattened_1d = model_state_flattened.reshape(-1)
-        model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         
+        # Update model state
+        model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         reconstructed_env_state = unflattener(model_state_flattened_1d)
         reconstructed_env_state = reconstructed_env_state._replace(
             step_counter=real_state.env_state.step_counter,
@@ -493,11 +505,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
         model_state = model_state.replace(env_state=reconstructed_env_state)
 
 
-        # # Reset model to ground truth periodically to prevent error accumulation
-        # if step_count % 10 == 0:  # Reset every 10 steps to prevent error explosion
-        #     model_state = real_state
-        #     print("Resetting model state to ground truth")
-        #     continue
+
 
         if VERBOSE and step_count % 100 == 0:
             print(f"Step {step_count}: Real vs Model state comparison")
@@ -527,10 +535,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
-        if real_done:
-            rng, reset_key = jax.random.split(rng)
-            real_obs, real_state = real_env.reset(reset_key)
-            model_state = real_state
+       
         step_count += 1
         clock.tick(30)
         #rendering stuff end -------------------------------------------------------
@@ -551,13 +556,14 @@ if __name__ == "__main__":
     env = FlattenObservationWrapper(env)
 
     save_path = "world_model.pkl"
+    experience_data_path = "experience_data.pkl"
     model = build_world_model()
 
 
     # print(next_states[300][:-2])
     # pred = model.apply(dynamics_params, None, states[300], actions[300])
     # print(pred)
-
+    
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
@@ -570,7 +576,7 @@ if __name__ == "__main__":
         print("No existing model found. Training a new model...")
 
         # Define a file path for the experience data
-        experience_data_path = "experience_data.pkl"
+        
 
         # Check if experience data file exists
         if os.path.exists(experience_data_path):
@@ -586,7 +592,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             flattened_states, actions, _, rewards,_ = collect_experience_sequential(
                 env,
-                num_episodes=3,
+                num_episodes=1,
                 max_steps_per_episode=1000
             )
             next_states = flattened_states[1:]  # Next states are just the next frame in the sequence
@@ -627,7 +633,7 @@ if __name__ == "__main__":
             next_states,
             rewards,
             learning_rate=3e-4,
-            batch_size=1024,
+            batch_size=512,
             num_epochs=10000,
         )
 
@@ -639,4 +645,14 @@ if __name__ == "__main__":
             }, f)
         print(f"Model saved to {save_path}")
 
-    compare_real_vs_model(num_steps=5000, render_scale=2)
+    states, actions = None, None
+    if os.path.exists(experience_data_path):
+        print(f"Loading existing experience data from {experience_data_path}...")
+        with open(experience_data_path, 'rb') as f:
+            saved_data = pickle.load(f)
+            states = saved_data['states']
+            actions = saved_data['actions']
+            next_states = saved_data['next_states']
+            rewards = saved_data['rewards']
+
+    compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions)
