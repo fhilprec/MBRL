@@ -410,7 +410,14 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             print(f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}")
 
             error = jnp.mean((real_state - pred_state) ** 2)
+
             print(f"Step {step_count}, Error: {error:.2f}")
+            print("--------------------------------------------Real State----------------------------------")
+            print(real_state)
+            print("---------------------------------------------------------------------------------------------")
+            print("--------------------------------------------Predicted State----------------------------------")
+            print(pred_state)
+            print("---------------------------------------------------------------------------------------------")
 
     base_game = JaxSeaquest()
     real_env = AtariWrapper(
@@ -484,9 +491,10 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         model_state_flattened = world_model.apply(
             dynamics_params, None, flattened_model_state, jnp.array([action])
         )
-
+        print(step_count + 1)
         debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
-
+        if step_count == 0:
+            exit()
         
         # Complete model state with additional fields
         model_state_flattened = jnp.concatenate(
@@ -654,5 +662,17 @@ if __name__ == "__main__":
             actions = saved_data['actions']
             next_states = saved_data['next_states']
             rewards = saved_data['rewards']
+
+    world_model = build_world_model()
+    for i in range(len(states)):
+    
+        prediction = world_model.apply(
+                dynamics_params, None, states[0+i], jnp.array([actions[0+i]])
+            )
+        print(f"Loss : {jnp.mean((prediction - next_states[0+i][:-2])**2)}")
+        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+
+    exit()
+
 
     compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions)
