@@ -326,7 +326,7 @@ def train_world_model(
     # )
 
     #simple optimizer
-    optimizer = optax.adam(learning_rate=1e-5)
+    optimizer = optax.adam(learning_rate=1e-4)
 
     SCALE_FACTOR = 1 / 1
     scaled_states = jax.tree.map(lambda x: x * SCALE_FACTOR, states)
@@ -341,20 +341,16 @@ def train_world_model(
 
 
     def loss_function(params, state_batch, action_batch, next_state_batch):
-
-
-
-
         pred_next_state = model.apply(params, None, state_batch, action_batch)
         flat_next_state_raw = jax.flatten_util.ravel_pytree(next_state_batch)[0]
-
 
         flat_next_state_raw = flat_next_state_raw.reshape(
             state_batch.shape[0], -1
         )  
-
-        state_batch = state_batch[:, :-2]
-        mse = jnp.mean((state_batch - pred_next_state)**2)
+        
+        # Compare prediction to NEXT state (not current state)
+        target_next_state = flat_next_state_raw[:, :-2]  # Remove last 2 columns as in prediction
+        mse = jnp.mean((target_next_state - pred_next_state)**2)
 
         return mse
 
@@ -397,7 +393,9 @@ def train_world_model(
     return params, {"final_loss": epoch_loss, "scale_factor": SCALE_FACTOR}
 
 
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None):
+
+
+def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
 
 
     # Add debugging to understand the model input/output formats
@@ -406,18 +404,13 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             print(f"Step {step} debugging:")
             
             # Check ranges and statistics of the data
-            print(f"Real state min/max/mean: {jnp.min(real_state):.2f}/{jnp.max(real_state):.2f}/{jnp.mean(real_state):.2f}")
+            real_flat, _ = flatten_state(real_state.env_state, single_state=True)
+            real_flat = real_flat.reshape(-1)[:-2]  # Exclude last 2 elements (step_counter, rng_key)
+            print(f"Real state min/max/mean: {jnp.min(real_flat):.2f}/{jnp.max(real_flat):.2f}/{jnp.mean(real_flat):.2f}")
             print(f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}")
 
-            error = jnp.mean((real_state - pred_state) ** 2)
-
+            error = jnp.mean((real_flat - pred_state) ** 2)
             print(f"Step {step_count}, Error: {error:.2f}")
-            print("--------------------------------------------Real State----------------------------------")
-            print(real_state)
-            print("---------------------------------------------------------------------------------------------")
-            print("--------------------------------------------Predicted State----------------------------------")
-            print(pred_state)
-            print("---------------------------------------------------------------------------------------------")
 
     base_game = JaxSeaquest()
     real_env = AtariWrapper(
@@ -444,67 +437,52 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
     pygame.display.set_caption(
         "Real Environment vs World Model (AtariWrapper Frame Stack)"
     )
-
+    rng = jax.random.PRNGKey(int(time.time()))
+    rng, reset_key = jax.random.split(rng)
+    real_obs, real_state = real_env.reset(reset_key)
+    model_state = real_state
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
+    def step_with_rng(rng, state, action):
+        return real_env.step(rng, state, action)
 
+    jitted_step = jax.jit(step_with_rng)
 
     running = True
     step_count = 0
     clock = pygame.time.Clock()
-
-    #this part is only here to get the real_start and for the unflattener
-    base_game = JaxSeaquest()
-    real_env = AtariWrapper(
-        base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
-    )
-    rng = jax.random.PRNGKey(int(time.time()))
-    rng, reset_key = jax.random.split(rng)
-    real_obs, real_state = real_env.reset(reset_key)
+    while running and step_count < num_steps:
 
 
-    first_state_flat = states[0]
-    _, unflattener = flatten_state(real_state.env_state, single_state=True)
-    first_state_raw = unflattener(first_state_flat)
-    real_state = real_state.replace(env_state=first_state_raw)
-    model_state = real_state  # Start identical
-    
-    while running and step_count < min(num_steps, len(states)-1):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-                
-        # CHANGE #2: Use the saved action
-        action = actions[step_count]
-        
-        # CHANGE #3: Use the saved next state directly instead of environment stepping
-        next_real_state_flat = states[step_count + 1]
-        real_state = real_state.replace(env_state=unflattener(next_real_state_flat))
-        
-        # Get the flattened current state for the model
-        flattened_model_state, _ = flatten_state(model_state.env_state, single_state=True)
-        
-
-
-        # Apply model prediction
-        model_state_flattened = world_model.apply(
-            dynamics_params, None, flattened_model_state, jnp.array([action])
+        rng, action_key = jax.random.split(rng)
+        action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)
+        if step_count % 4 == 0:
+            action = 5
+        rng, step_rng = jax.random.split(rng)
+        real_obs, real_state, real_reward, real_done, real_info = jitted_step(
+            step_rng, real_state, action
         )
-        print(step_count + 1)
-        debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
-        if step_count == 0:
-            exit()
+
+        flattened_state, unflattener = flatten_state(model_state.env_state, single_state=True)
+        model_state_flattened = world_model.apply(
+            dynamics_params, None, flattened_state, jnp.array([action])
+        )        
+
         
-        # Complete model state with additional fields
+        debug_states(step_count, real_state, model_state_flattened)
+
+        #extend model_state_flattened by 2 zeros to match the shape of real_state.env_state
         model_state_flattened = jnp.concatenate(
             [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
             axis=-1,
         )
         model_state_flattened_1d = model_state_flattened.reshape(-1)
-        
-        # Update model state
         model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
+        
         reconstructed_env_state = unflattener(model_state_flattened_1d)
         reconstructed_env_state = reconstructed_env_state._replace(
             step_counter=real_state.env_state.step_counter,
@@ -513,7 +491,11 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         model_state = model_state.replace(env_state=reconstructed_env_state)
 
 
-
+        # # Reset model to ground truth periodically to prevent error accumulation
+        # if step_count % 10 == 0:  # Reset every 10 steps to prevent error explosion
+        #     model_state = real_state
+        #     print("Resetting model state to ground truth")
+        #     continue
 
         if VERBOSE and step_count % 100 == 0:
             print(f"Step {step_count}: Real vs Model state comparison")
@@ -543,7 +525,10 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
-       
+        if real_done:
+            rng, reset_key = jax.random.split(rng)
+            real_obs, real_state = real_env.reset(reset_key)
+            model_state = real_state
         step_count += 1
         clock.tick(30)
         #rendering stuff end -------------------------------------------------------
@@ -555,7 +540,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
 
 if __name__ == "__main__":
 
-
+    batch_size = 128
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -640,8 +625,7 @@ if __name__ == "__main__":
             actions,
             next_states,
             rewards,
-            learning_rate=3e-4,
-            batch_size=512,
+            batch_size=batch_size,
             num_epochs=10000,
         )
 
@@ -664,15 +648,58 @@ if __name__ == "__main__":
             rewards = saved_data['rewards']
 
     world_model = build_world_model()
+    losses = []
     for i in range(len(states)):
-    
         prediction = world_model.apply(
                 dynamics_params, None, states[0+i], jnp.array([actions[0+i]])
             )
-        print(f"Loss : {jnp.mean((prediction - next_states[0+i][:-2])**2)}")
+        
+        loss = jnp.mean((prediction - next_states[0+i][:-2])**2)
+        # print(loss)
+        losses.append(loss)
+        if loss > 1:
+            print('-----------------------------------------------------------------------------------------------------------------')
+
+            print(f"Step {i}:")
+            print(f"Loss : {loss}")
+            print("Indexes where difference > 3:")
+            for j in range(len(prediction[0])):
+                if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+                    print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+            # print(f"Difference: {prediction - states[1+i][:-2]}")
+            # print(f"State {states[i]}")
+            # print(f"Prediction: {prediction}")
+            # print(f"Actual Next State {states[i+1]}")
+            # print all indexes where the difference it greater than 10
+
+            
+        # if i == 30:
+        #     # exit()
+        #     break
         # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+    
+    
 
-    exit()
 
+    # In evaluation
+    # batch_size = batch_size
+    # num_batches = len(states) // batch_size
+    # total_loss = 0
 
-    compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions)
+    # for batch_idx in range(num_batches):
+    #     start_idx = batch_idx * batch_size
+    #     end_idx = start_idx + batch_size
+        
+    #     state_batch = states[start_idx:end_idx]
+    #     action_batch = actions[start_idx:end_idx]
+    #     next_state_batch = next_states[start_idx:end_idx]
+        
+    #     prediction = world_model.apply(
+    #         dynamics_params, None, state_batch, jnp.array(action_batch)
+    #     )
+        
+    #     loss = jnp.mean((prediction - next_state_batch[:,:-2])**2)
+    #     total_loss += loss
+
+    # # exit()
+    # compare_real_vs_model(num_steps=5000, render_scale=2)
