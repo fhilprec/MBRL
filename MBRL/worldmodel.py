@@ -660,14 +660,16 @@ if __name__ == "__main__":
         if loss > 1:
             print('-----------------------------------------------------------------------------------------------------------------')
 
-            print(f"Step {i}:")
-            print(f"Loss : {loss}")
-            print("Indexes where difference > 3:")
-            for j in range(len(prediction[0])):
-                if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-                    print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+            # print(f"Step {i}:")
+            # print(f"Loss : {loss}")
+            # print("Indexes where difference > 3:")
+            # for j in range(len(prediction[0])):
+            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
             # print(f"Difference: {prediction - states[1+i][:-2]}")
             # print(f"State {states[i]}")
+            # print("Negative values in state:")
+            # print(jnp.any(states[i][:-2] < -1))
             # print(f"Prediction: {prediction}")
             # print(f"Actual Next State {states[i+1]}")
             # print all indexes where the difference it greater than 10
@@ -681,25 +683,25 @@ if __name__ == "__main__":
     
 
 
-    # In evaluation
-    # batch_size = batch_size
-    # num_batches = len(states) // batch_size
-    # total_loss = 0
+    In evaluation
+    batch_size = batch_size
+    num_batches = len(states) // batch_size
+    total_loss = 0
 
-    # for batch_idx in range(num_batches):
-    #     start_idx = batch_idx * batch_size
-    #     end_idx = start_idx + batch_size
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = start_idx + batch_size
         
-    #     state_batch = states[start_idx:end_idx]
-    #     action_batch = actions[start_idx:end_idx]
-    #     next_state_batch = next_states[start_idx:end_idx]
+        state_batch = states[start_idx:end_idx]
+        action_batch = actions[start_idx:end_idx]
+        next_state_batch = next_states[start_idx:end_idx]
         
-    #     prediction = world_model.apply(
-    #         dynamics_params, None, state_batch, jnp.array(action_batch)
-    #     )
+        prediction = world_model.apply(
+            dynamics_params, None, state_batch, jnp.array(action_batch)
+        )
         
-    #     loss = jnp.mean((prediction - next_state_batch[:,:-2])**2)
-    #     total_loss += loss
+        loss = jnp.mean((prediction - next_state_batch[:,:-2])**2)
+        total_loss += loss
 
-    # # exit()
-    # compare_real_vs_model(num_steps=5000, render_scale=2)
+    # exit()
+    compare_real_vs_model(num_steps=5000, render_scale=2)
