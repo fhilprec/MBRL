@@ -683,7 +683,7 @@ if __name__ == "__main__":
     
 
 
-    In evaluation
+
     batch_size = batch_size
     num_batches = len(states) // batch_size
     total_loss = 0
