@@ -121,37 +121,52 @@ def flatten_state(state, single_state: bool = False, is_list = False) -> Tuple[j
     return flat_state, unflattener
 
 def build_world_model():
-    def forward(state, action):
-        # print(state.shape)
+    def forward(state, action, normalization_stats=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
 
         if len(state.shape) == 1:
             feature_size = state.shape[0]
-            flat_state_full = state.reshape(
-                batch_size, feature_size // batch_size
-            )
-            
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+            if normalization_stats is not None:
+                flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
         else:
             flat_state_full = state
+            if normalization_stats is not None:
+                flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
+            
+        # Extract the actual state features (excluding last 2 columns)
         flat_state = flat_state_full[..., :-2]
+        
+        # Apply normalization if normalization stats are provided
+        
 
-
-
-
+        # Process action as before
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
         if len(state.shape) == 1:
-            action_one_hot = action_one_hot.reshape(1,18)
+            action_one_hot = action_one_hot.reshape(1, 18)
+            
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
+        
+        # Neural network layers
         x = hk.Linear(512)(inputs)
         x = jax.nn.relu(x)
         x = hk.Linear(512)(x)
         x = jax.nn.relu(x)
+        
+        # Output layer
         if len(state.shape) == 1:
-            flat_next_state = hk.Linear(state.shape[0]-2)(x)
+            output = hk.Linear(state.shape[0]-2)(x)
         else:
-            flat_next_state = hk.Linear(state.shape[1]-2)(x)
-        # print(flat_next_state.shape)
-        return flat_next_state
+            output = hk.Linear(state.shape[1]-2)(x)
+        
+        # Add clipping to prevent extreme values
+        output = jnp.clip(output, -10.0, 10.0)
+        
+        # If normalization was used, denormalize the output
+        if normalization_stats is not None:
+            output = output * normalization_stats['std'][:-2] + normalization_stats['mean'][:-2]
+            
+        return output
 
     return hk.transform(forward)
 
@@ -315,48 +330,41 @@ def train_world_model(
     batch_size=256,
     num_epochs=10,
 ):
+    # Calculate normalization statistics from the flattened states
+    # States should be shape (num_samples, feature_dim)
+    state_mean = jnp.mean(states, axis=0)  # Shape (feature_dim,)
+    state_std = jnp.std(states, axis=0) + 1e-8  # Shape (feature_dim,)
     
+    # Store normalization stats for later use
+    normalization_stats = {'mean': state_mean, 'std': state_std}
+    
+    # Normalize states and next_states
+    normalized_states = (states - state_mean) / state_std
+    normalized_next_states = (next_states - state_mean) / state_std
+    
+
+
+    # Use normalized data for training
     model = build_world_model()
-
-    # lr_schedule = optax.exponential_decay(
-    #     init_value=1e-5, transition_steps=500, decay_rate=1
-    # )
-    # optimizer = optax.chain(
-    #     optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr_schedule)
-    # )
-
-    #simple optimizer
     optimizer = optax.adam(learning_rate=1e-4)
-
-    SCALE_FACTOR = 1 / 1
-    scaled_states = jax.tree.map(lambda x: x * SCALE_FACTOR, states)
-    scaled_next_states = jax.tree.map(lambda x: x * SCALE_FACTOR, next_states)
+    
     rng = jax.random.PRNGKey(42)
-    dummy_state = jax.tree.map(lambda x: x[:1], scaled_states)
+    dummy_state = normalized_states[:1]  # Take first normalized state as example
     dummy_action = actions[:1]
     params = model.init(rng, dummy_state, dummy_action)
     opt_state = optimizer.init(params)
 
-
-
-
+    # Update loss_function to work with normalized states
     def loss_function(params, state_batch, action_batch, next_state_batch):
+        # Model now works with normalized states
         pred_next_state = model.apply(params, None, state_batch, action_batch)
-        flat_next_state_raw = jax.flatten_util.ravel_pytree(next_state_batch)[0]
-
-        flat_next_state_raw = flat_next_state_raw.reshape(
-            state_batch.shape[0], -1
-        )  
         
-        # Compare prediction to NEXT state (not current state)
-        target_next_state = flat_next_state_raw[:, :-2]  # Remove last 2 columns as in prediction
+        # Next state is also normalized
+        target_next_state = next_state_batch[:, :-2]
+        
+        # Simple MSE loss on normalized values
         mse = jnp.mean((target_next_state - pred_next_state)**2)
-
         return mse
-
-
-
-    loss_function.first_call = False
 
     @jax.jit
     def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
@@ -372,11 +380,9 @@ def train_world_model(
     for batch_idx in range(num_batches):
         start_idx = batch_idx * batch_size
         end_idx = start_idx + batch_size
-        state_batch = jax.tree.map(lambda x: x[start_idx:end_idx], scaled_states)
+        state_batch = normalized_states[start_idx:end_idx]
         action_batch = actions[start_idx:end_idx]
-        next_state_batch = jax.tree.map(
-            lambda x: x[start_idx:end_idx], scaled_next_states
-        )
+        next_state_batch = normalized_next_states[start_idx:end_idx]
         batches.append((state_batch, action_batch, next_state_batch))
     batches = jax.device_put(batches)
     for epoch in range(num_epochs): #SCAN 
@@ -390,26 +396,23 @@ def train_world_model(
         epoch_loss = jnp.mean(jnp.array(losses))
         if VERBOSE and (epoch + 1) % 1 == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
-    return params, {"final_loss": epoch_loss, "scale_factor": SCALE_FACTOR}
+    return params, {
+        "final_loss": epoch_loss, 
+        "normalization_stats": normalization_stats
+    }
 
 
-
-
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
-
-
+def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None):
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
         if step % 1 == 0:
             print(f"Step {step} debugging:")
             
             # Check ranges and statistics of the data
-            real_flat, _ = flatten_state(real_state.env_state, single_state=True)
-            real_flat = real_flat.reshape(-1)[:-2]  # Exclude last 2 elements (step_counter, rng_key)
-            print(f"Real state min/max/mean: {jnp.min(real_flat):.2f}/{jnp.max(real_flat):.2f}/{jnp.mean(real_flat):.2f}")
+            print(f"Real state min/max/mean: {jnp.min(real_state):.2f}/{jnp.max(real_state):.2f}/{jnp.mean(real_state):.2f}")
             print(f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}")
 
-            error = jnp.mean((real_flat - pred_state) ** 2)
+            error = jnp.mean((real_state - pred_state) ** 2)
             print(f"Step {step_count}, Error: {error:.2f}")
 
     base_game = JaxSeaquest()
@@ -425,9 +428,9 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
         scale_factor = model_data.get("scale_factor", 1 / 1)
+        normalization_stats = model_data.get("normalization_stats", None)
     world_model = build_world_model()
     
-
     pygame.init()
     WIDTH = 160
     HEIGHT = 210
@@ -437,52 +440,73 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
     pygame.display.set_caption(
         "Real Environment vs World Model (AtariWrapper Frame Stack)"
     )
-    rng = jax.random.PRNGKey(int(time.time()))
-    rng, reset_key = jax.random.split(rng)
-    real_obs, real_state = real_env.reset(reset_key)
-    model_state = real_state
+
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
-
-    def step_with_rng(rng, state, action):
-        return real_env.step(rng, state, action)
-
-    jitted_step = jax.jit(step_with_rng)
 
     running = True
     step_count = 0
     clock = pygame.time.Clock()
-    while running and step_count < num_steps:
 
+    # This part is only here to get the real_start and for the unflattener
+    base_game = JaxSeaquest()
+    real_env = AtariWrapper(
+        base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
+    )
+    rng = jax.random.PRNGKey(int(time.time()))
+    rng, reset_key = jax.random.split(rng)
+    real_obs, real_state = real_env.reset(reset_key)
 
+    first_state_flat = states[0]
+    _, unflattener = flatten_state(real_state.env_state, single_state=True)
+    first_state_raw = unflattener(first_state_flat)
+    real_state = real_state.replace(env_state=first_state_raw)
+    model_state = real_state  # Start identical
+
+    # Add reset interval to prevent error accumulation
+    reset_interval = 10
+
+    while running and step_count < min(num_steps, len(states)-1):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-        rng, action_key = jax.random.split(rng)
-        action = jax.random.randint(action_key, shape=(), minval=0, maxval=18)
-        if step_count % 4 == 0:
-            action = 5
-        rng, step_rng = jax.random.split(rng)
-        real_obs, real_state, real_reward, real_done, real_info = jitted_step(
-            step_rng, real_state, action
-        )
-
-        flattened_state, unflattener = flatten_state(model_state.env_state, single_state=True)
-        model_state_flattened = world_model.apply(
-            dynamics_params, None, flattened_state, jnp.array([action])
-        )        
-
+                
+        # Reset model state periodically to prevent excessive error accumulation
+        if step_count % reset_interval == 0 and step_count > 0:
+            model_state = real_state
+            print(f"Reset model state at step {step_count}")
+                
+        # Use the saved action
+        action = actions[step_count]
         
-        debug_states(step_count, real_state, model_state_flattened)
+        # Use the saved next state directly instead of environment stepping
+        next_real_state_flat = states[step_count + 1]
+        real_state = real_state.replace(env_state=unflattener(next_real_state_flat))
+        
+        # Get the flattened current state for the model
+        flattened_model_state, _ = flatten_state(model_state.env_state, single_state=True)
+        
+        # Apply model prediction with normalization
+        if normalization_stats is not None:
+            model_state_flattened = world_model.apply(
+                dynamics_params, None, flattened_model_state, jnp.array([action]), normalization_stats
+            )
+        else:
+            model_state_flattened = world_model.apply(
+                dynamics_params, None, flattened_model_state, jnp.array([action])
+            )
 
-        #extend model_state_flattened by 2 zeros to match the shape of real_state.env_state
+        debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
+
+        # Complete model state with additional fields
         model_state_flattened = jnp.concatenate(
             [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
             axis=-1,
         )
         model_state_flattened_1d = model_state_flattened.reshape(-1)
-        model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         
+        # Update model state
+        model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         reconstructed_env_state = unflattener(model_state_flattened_1d)
         reconstructed_env_state = reconstructed_env_state._replace(
             step_counter=real_state.env_state.step_counter,
@@ -490,20 +514,12 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
         )
         model_state = model_state.replace(env_state=reconstructed_env_state)
 
-
-        # # Reset model to ground truth periodically to prevent error accumulation
-        # if step_count % 10 == 0:  # Reset every 10 steps to prevent error explosion
-        #     model_state = real_state
-        #     print("Resetting model state to ground truth")
-        #     continue
-
         if VERBOSE and step_count % 100 == 0:
             print(f"Step {step_count}: Real vs Model state comparison")
         real_base_state = real_state.env_state
         model_base_state = model_state.env_state
 
-
-        #rendering stuff -------------------------------------------------------
+        # Rendering stuff -------------------------------------------------------
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -525,14 +541,10 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2):
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
-        if real_done:
-            rng, reset_key = jax.random.split(rng)
-            real_obs, real_state = real_env.reset(reset_key)
-            model_state = real_state
+       
         step_count += 1
         clock.tick(30)
-        #rendering stuff end -------------------------------------------------------
-
+        # Rendering stuff end -------------------------------------------------------
 
     pygame.quit()
     print("Comparison completed")
@@ -626,14 +638,14 @@ if __name__ == "__main__":
             next_states,
             rewards,
             batch_size=batch_size,
-            num_epochs=10000,
+            num_epochs=1000,
         )
 
         # Save the model and scaling factor
         with open(save_path, 'wb') as f:
             pickle.dump({
                 'dynamics_params': dynamics_params,
-                'scale_factor': training_info['scale_factor']
+                'normalization_stats': training_info.get('normalization_stats', None)
             }, f)
         print(f"Model saved to {save_path}")
 
@@ -688,6 +700,13 @@ if __name__ == "__main__":
     num_batches = len(states) // batch_size
     total_loss = 0
 
+    # Load normalization stats if available
+    normalization_stats = None
+    if os.path.exists(save_path):
+        with open(save_path, 'rb') as f:
+            saved_data = pickle.load(f)
+            normalization_stats = saved_data.get('normalization_stats', None)
+
     for batch_idx in range(num_batches):
         start_idx = batch_idx * batch_size
         end_idx = start_idx + batch_size
@@ -697,11 +716,13 @@ if __name__ == "__main__":
         next_state_batch = next_states[start_idx:end_idx]
         
         prediction = world_model.apply(
-            dynamics_params, None, state_batch, jnp.array(action_batch)
+            dynamics_params, None, state_batch, jnp.array(action_batch), normalization_stats
         )
         
         loss = jnp.mean((prediction - next_state_batch[:,:-2])**2)
         total_loss += loss
 
+    print(f"Average batch evaluation loss: {total_loss/num_batches}")
+
     # exit()
-    compare_real_vs_model(num_steps=5000, render_scale=2)
+    compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions)
