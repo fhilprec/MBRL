@@ -147,17 +147,28 @@ def build_world_model():
             
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         
-        # Neural network layers
+        # First layer
         x = hk.Linear(512)(inputs)
         x = jax.nn.relu(x)
+        
+        # Residual block 1
+        residual = x
         x = hk.Linear(512)(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(512)(x)
+        x = x + residual  # Residual connection
+        x = jax.nn.relu(x)
+        
+        # Residual block 2
+        residual = x
+        x = hk.Linear(512)(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(512)(x)
+        x = x + residual  # Residual connection
         x = jax.nn.relu(x)
         
         # Output layer
-        if len(state.shape) == 1:
-            output = hk.Linear(state.shape[0]-2)(x)
-        else:
-            output = hk.Linear(state.shape[1]-2)(x)
+        output = hk.Linear(flat_state.shape[-1])(x)
         
         # Add clipping to prevent extreme values
         output = jnp.clip(output, -10.0, 10.0)
@@ -464,7 +475,6 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
     model_state = real_state  # Start identical
 
     # Add reset interval to prevent error accumulation
-    reset_interval = 10
 
     while running and step_count < min(num_steps, len(states)-1):
         for event in pygame.event.get():
@@ -472,9 +482,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
                 running = False
                 
         # Reset model state periodically to prevent excessive error accumulation
-        if step_count % reset_interval == 0 and step_count > 0:
-            model_state = real_state
-            print(f"Reset model state at step {step_count}")
+
                 
         # Use the saved action
         action = actions[step_count]
