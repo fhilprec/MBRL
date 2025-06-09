@@ -341,72 +341,132 @@ def train_world_model(
     batch_size=256,
     num_epochs=10,
 ):
-    # Calculate normalization statistics from the flattened states
-    # States should be shape (num_samples, feature_dim)
-    state_mean = jnp.mean(states, axis=0)  # Shape (feature_dim,)
-    state_std = jnp.std(states, axis=0) + 1e-8  # Shape (feature_dim,)
-    
-    # Store normalization stats for later use
+    # Calculate normalization statistics as before
+    state_mean = jnp.mean(states, axis=0)
+    state_std = jnp.std(states, axis=0) + 1e-8
     normalization_stats = {'mean': state_mean, 'std': state_std}
     
-    # Normalize states and next_states
-    normalized_states = (states - state_mean) / state_std
-    normalized_next_states = (next_states - state_mean) / state_std
-    
-
-
-    # Use normalized data for training
+    # Model initialization
     model = build_world_model()
     optimizer = optax.adam(learning_rate=1e-4)
     
     rng = jax.random.PRNGKey(42)
-    dummy_state = normalized_states[:1]  # Take first normalized state as example
+    dummy_state = states[:1]  # Take first state as example
     dummy_action = actions[:1]
-    params = model.init(rng, dummy_state, dummy_action)
+    params = model.init(rng, dummy_state, dummy_action, normalization_stats)
     opt_state = optimizer.init(params)
-
-    # Update loss_function to work with normalized states
-    def loss_function(params, state_batch, action_batch, next_state_batch):
-        # Model now works with normalized states
-        pred_next_state = model.apply(params, None, state_batch, action_batch)
+    
+    # Pre-compute valid sequence indices
+    sequence_length = 10  # Number of consecutive timesteps to use
+    states_len = len(states)
+    valid_indices = []
+    for i in range(states_len - sequence_length):
+        valid_indices.append(i)
+    valid_indices = jnp.array(valid_indices)
+    
+    # Define multi-step loss function (outside JIT scope)
+    def multi_step_loss_for_sequence(params, idx, horizon):
+        # Start with initial state
+        current_state = states[idx:idx+1]
+        total_loss = 0.0
+        decay = 0.9
+        weight_sum = 0.0
         
-        # Next state is also normalized
-        target_next_state = next_state_batch[:, :-2]
-        
-        # Simple MSE loss on normalized values
-        mse = jnp.mean((target_next_state - pred_next_state)**2)
-        return mse
-
+        for step in range(min(horizon, sequence_length)):
+            action = jnp.array([actions[idx + step]])
+            # Predict next state
+            pred_next_state = model.apply(
+                params, None, current_state, action, normalization_stats
+            )
+            
+            # Get target state
+            target_state = states[idx + step + 1][:-2]
+            
+            # Calculate loss
+            step_loss = jnp.mean((pred_next_state[0] - target_state)**2)
+            
+            # Add weighted loss
+            weight = decay ** step
+            total_loss += weight * step_loss
+            weight_sum += weight
+            
+            # Update current state
+            zeros = jnp.zeros((1, 2))
+            pred_next_state_full = jnp.concatenate([pred_next_state, zeros], axis=-1)
+            current_state = pred_next_state_full
+            
+        return total_loss / max(weight_sum, 1e-8)
+    
+    # Single-step loss update (JIT-friendly)
     @jax.jit
-    def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
-        loss, grads = jax.value_and_grad(loss_function)(
-            params, state_batch, action_batch, next_state_batch
-        )
+    def update_step_single(params, opt_state, state_batch, action_batch, next_state_batch):
+        def loss_fn(p):
+            # Standard single-step prediction loss
+            preds = model.apply(p, None, state_batch, action_batch, normalization_stats)
+            targets = next_state_batch[:, :-2]
+            loss = jnp.mean((preds - targets)**2)
+            return loss
+            
+        loss, grads = jax.value_and_grad(loss_fn)(params)
         updates, new_opt_state = optimizer.update(grads, opt_state)
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
-
-    num_batches = len(actions) // batch_size
-    batches = []
-    for batch_idx in range(num_batches):
-        start_idx = batch_idx * batch_size
-        end_idx = start_idx + batch_size
-        state_batch = normalized_states[start_idx:end_idx]
-        action_batch = actions[start_idx:end_idx]
-        next_state_batch = normalized_next_states[start_idx:end_idx]
-        batches.append((state_batch, action_batch, next_state_batch))
-    batches = jax.device_put(batches)
-    for epoch in range(num_epochs): #SCAN 
+    
+    # Training loop
+    for epoch in range(num_epochs):
+        # Single-step training phase
         losses = []
-        for batch in batches: #maybe include in one scan
-            state_batch, action_batch, next_state_batch = batch
-            params, opt_state, loss = update_step(
+        for batch_idx in range(states_len // batch_size):
+            start_idx = batch_idx * batch_size
+            end_idx = start_idx + batch_size
+            
+            if end_idx > states_len:
+                continue
+                
+            state_batch = states[start_idx:end_idx]
+            action_batch = actions[start_idx:end_idx]
+            next_state_batch = next_states[start_idx:end_idx]
+            
+            params, opt_state, loss = update_step_single(
                 params, opt_state, state_batch, action_batch, next_state_batch
             )
             losses.append(loss)
+            
+        # Multi-step training phase (every 5 epochs)
+        if epoch % 5 == 0 and epoch > 0:
+            # Determine horizon based on training progress
+            horizon = max(1, min(5, int(1 + (epoch / num_epochs) * 4)))
+            
+            # Sample sequence start indices
+            rng, key = jax.random.split(jax.random.PRNGKey(epoch))
+            perm_indices = jax.random.permutation(key, len(valid_indices))
+            seq_indices = valid_indices[perm_indices][:min(batch_size, len(valid_indices))]
+            
+            # Compute multi-step loss for these sequences
+            multi_losses = []
+            for idx in seq_indices:
+                if idx + sequence_length < states_len:
+                    seq_loss = multi_step_loss_for_sequence(params, idx, horizon)
+                    multi_losses.append(seq_loss)
+            
+            if multi_losses:
+                # Create a training step for multi-step loss
+                multi_loss = jnp.mean(jnp.array(multi_losses))
+                
+                def multi_loss_fn(p):
+                    return multi_loss
+                
+                # Update with multi-step loss
+                loss, grads = jax.value_and_grad(multi_loss_fn)(params)
+                updates, opt_state = optimizer.update(grads, opt_state)
+                params = optax.apply_updates(params, updates)
+                
+                losses.append(loss)
+                
         epoch_loss = jnp.mean(jnp.array(losses))
-        if VERBOSE and (epoch + 1) % 1 == 0:
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
+        if VERBOSE and (epoch + 1) % 10 == 0:
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}, Horizon: {max(1, min(5, int(1 + (epoch / num_epochs) * 4)))}")
+    
     return params, {
         "final_loss": epoch_loss, 
         "normalization_stats": normalization_stats
