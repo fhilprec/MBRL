@@ -148,22 +148,22 @@ def build_world_model():
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         
         # First layer
-        x = hk.Linear(512)(inputs)
+        x = hk.Linear(1024)(inputs)
         x = jax.nn.relu(x)
         
         # Residual block 1
         residual = x
-        x = hk.Linear(512)(x)
+        x = hk.Linear(1024)(x)
         x = jax.nn.relu(x)
-        x = hk.Linear(512)(x)
+        x = hk.Linear(1024)(x)
         x = x + residual  # Residual connection
         x = jax.nn.relu(x)
         
         # Residual block 2
         residual = x
-        x = hk.Linear(512)(x)
+        x = hk.Linear(1024)(x)
         x = jax.nn.relu(x)
-        x = hk.Linear(512)(x)
+        x = hk.Linear(1024)(x)
         x = x + residual  # Residual connection
         x = jax.nn.relu(x)
         
@@ -405,7 +405,7 @@ def train_world_model(
             )
             losses.append(loss)
         epoch_loss = jnp.mean(jnp.array(losses))
-        if VERBOSE and (epoch + 1) % 1 == 0:
+        if VERBOSE and (epoch + 1) % (num_epochs/10) == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
     return params, {
         "final_loss": epoch_loss, 
@@ -571,6 +571,7 @@ if __name__ == "__main__":
     save_path = "world_model.pkl"
     experience_data_path = "experience_data.pkl"
     model = build_world_model()
+    normalization_stats = None
 
 
     # print(next_states[300][:-2])
@@ -585,6 +586,7 @@ if __name__ == "__main__":
         with open(save_path, 'rb') as f:
             saved_data = pickle.load(f)
             dynamics_params = saved_data['dynamics_params']
+            normalization_stats = saved_data.get('normalization_stats', None)
     else:
         print("No existing model found. Training a new model...")
 
@@ -646,8 +648,9 @@ if __name__ == "__main__":
             next_states,
             rewards,
             batch_size=batch_size,
-            num_epochs=1000,
+            num_epochs=10000,
         )
+        normalization_stats = training_info.get('normalization_stats', None)
 
         # Save the model and scaling factor
         with open(save_path, 'wb') as f:
@@ -671,27 +674,28 @@ if __name__ == "__main__":
     losses = []
     for i in range(len(states)):
         prediction = world_model.apply(
-                dynamics_params, None, states[0+i], jnp.array([actions[0+i]])
+                dynamics_params, None, states[0+i], jnp.array([actions[0+i]]), normalization_stats
             )
+        prediction
         
         loss = jnp.mean((prediction - next_states[0+i][:-2])**2)
         # print(loss)
         losses.append(loss)
-        if loss > 1:
+        if i == 426:
             print('-----------------------------------------------------------------------------------------------------------------')
 
-            # print(f"Step {i}:")
-            # print(f"Loss : {loss}")
-            # print("Indexes where difference > 3:")
-            # for j in range(len(prediction[0])):
-            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
-            # print(f"Difference: {prediction - states[1+i][:-2]}")
-            # print(f"State {states[i]}")
-            # print("Negative values in state:")
-            # print(jnp.any(states[i][:-2] < -1))
-            # print(f"Prediction: {prediction}")
-            # print(f"Actual Next State {states[i+1]}")
+            print(f"Step {i}:")
+            print(f"Loss : {loss}")
+            print("Indexes where difference > 3:")
+            for j in range(len(prediction[0])):
+                if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+                    print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+            print(f"Difference: {prediction - states[1+i][:-2]}")
+            print(f"State {states[i]}")
+            print("Negative values in state:")
+            print(jnp.any(states[i][:-2] < -1))
+            print(f"Prediction: {prediction}")
+            print(f"Actual Next State {states[i+1]}")
             # print all indexes where the difference it greater than 10
 
             
@@ -732,5 +736,5 @@ if __name__ == "__main__":
 
     print(f"Average batch evaluation loss: {total_loss/num_batches}")
 
-    # exit()
+    exit()
     compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions)
