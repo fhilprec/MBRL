@@ -121,18 +121,18 @@ def flatten_state(state, single_state: bool = False, is_list = False) -> Tuple[j
     return flat_state, unflattener
 
 def build_world_model():
-    def forward(state, action, normalization_stats=None):
+    def forward(state, action):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
 
         if len(state.shape) == 1:
             feature_size = state.shape[0]
             flat_state_full = state.reshape(batch_size, feature_size // batch_size)
-            if normalization_stats is not None:
-                flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
+            # if normalization_stats is not None:
+            #     flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
         else:
             flat_state_full = state
-            if normalization_stats is not None:
-                flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
+            # if normalization_stats is not None:
+            #     flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
             
         # Extract the actual state features (excluding last 2 columns)
         flat_state = flat_state_full[..., :-2]
@@ -174,8 +174,8 @@ def build_world_model():
         output = jnp.clip(output, -10.0, 10.0)
         
         # If normalization was used, denormalize the output
-        if normalization_stats is not None:
-            output = output * normalization_stats['std'][:-2] + normalization_stats['mean'][:-2]
+        # if normalization_stats is not None:
+        #     output = output * normalization_stats['std'][:-2] + normalization_stats['mean'][:-2]
             
         return output
 
@@ -350,9 +350,12 @@ def train_world_model(
     normalization_stats = {'mean': state_mean, 'std': state_std}
     
     # Normalize states and next_states
+    # normalized_states = states
+    # normalized_next_states = next_states
+    # Normalize states and next_states
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
-    
+
 
 
     # Use normalized data for training
@@ -375,6 +378,9 @@ def train_world_model(
         
         # Simple MSE loss on normalized values
         mse = jnp.mean((target_next_state - pred_next_state)**2)
+        # jax.debug.print(
+        #     "Loss: {mse:.6f}", mse=mse
+        # )
         return mse
 
     @jax.jit
@@ -382,6 +388,7 @@ def train_world_model(
         loss, grads = jax.value_and_grad(loss_function)(
             params, state_batch, action_batch, next_state_batch
         )
+        
         updates, new_opt_state = optimizer.update(grads, opt_state)
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
@@ -413,7 +420,7 @@ def train_world_model(
     }
 
 
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None):
+def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None, normalization_stats=None):
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
         if step % 1 == 0:
@@ -425,6 +432,14 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
 
             error = jnp.mean((real_state - pred_state) ** 2)
             print(f"Step {step_count}, Error: {error:.2f}")
+
+    state_mean = normalization_stats['mean']
+    state_std = normalization_stats['std']
+
+    normalized_states = (states - state_mean) / state_std
+    normalized_next_states = (next_states - state_mean) / state_std
+
+
 
     base_game = JaxSeaquest()
     real_env = AtariWrapper(
@@ -495,14 +510,15 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         flattened_model_state, _ = flatten_state(model_state.env_state, single_state=True)
         
         # Apply model prediction with normalization
-        if normalization_stats is not None:
-            model_state_flattened = world_model.apply(
-                dynamics_params, None, flattened_model_state, jnp.array([action]), normalization_stats
-            )
-        else:
-            model_state_flattened = world_model.apply(
-                dynamics_params, None, flattened_model_state, jnp.array([action])
-            )
+
+        normalized_flattened_model_state = (flattened_model_state - state_mean) / state_std
+
+        normalized_model_state_flattened = world_model.apply(
+            dynamics_params, None, normalized_flattened_model_state, jnp.array([action])
+        )
+
+        model_state_flattened = normalized_model_state_flattened * state_std[:-2] + state_mean[:-2]
+
 
         debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
 
@@ -648,7 +664,7 @@ if __name__ == "__main__":
             next_states,
             rewards,
             batch_size=batch_size,
-            num_epochs=10000,
+            num_epochs=5000,
         )
         normalization_stats = training_info.get('normalization_stats', None)
 
@@ -672,30 +688,40 @@ if __name__ == "__main__":
 
     world_model = build_world_model()
     losses = []
+
+
+    state_mean = normalization_stats['mean']
+    state_std = normalization_stats['std']
+
+    normalized_states = (states - state_mean) / state_std
+    normalized_next_states = (next_states - state_mean) / state_std
+
+
+
     for i in range(len(states)):
         prediction = world_model.apply(
-                dynamics_params, None, states[0+i], jnp.array([actions[0+i]]), normalization_stats
+                dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
             )
         prediction
         
-        loss = jnp.mean((prediction - next_states[0+i][:-2])**2)
+        loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
         # print(loss)
         losses.append(loss)
-        if i == 426:
-            print('-----------------------------------------------------------------------------------------------------------------')
-
+        if loss > 10 and i < 20:
+            # print('-----------------------------------------------------------------------------------------------------------------')
+            pass
             print(f"Step {i}:")
             print(f"Loss : {loss}")
-            print("Indexes where difference > 3:")
-            for j in range(len(prediction[0])):
-                if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-                    print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
-            print(f"Difference: {prediction - states[1+i][:-2]}")
-            print(f"State {states[i]}")
-            print("Negative values in state:")
-            print(jnp.any(states[i][:-2] < -1))
-            print(f"Prediction: {prediction}")
-            print(f"Actual Next State {states[i+1]}")
+            # print("Indexes where difference > 3:")
+            # for j in range(len(prediction[0])):
+            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+            # print(f"Difference: {prediction - states[1+i][:-2]}")
+            # print(f"State {states[i]}")
+            # print("Negative values in state:")
+            # print(jnp.any(states[i][:-2] < -1))
+            # print(f"Prediction: {prediction}")
+            # print(f"Actual Next State {states[i+1]}")
             # print all indexes where the difference it greater than 10
 
             
@@ -704,37 +730,8 @@ if __name__ == "__main__":
         #     break
         # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
     
-    
 
+    print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
-
-    batch_size = batch_size
-    num_batches = len(states) // batch_size
-    total_loss = 0
-
-    # Load normalization stats if available
-    normalization_stats = None
-    if os.path.exists(save_path):
-        with open(save_path, 'rb') as f:
-            saved_data = pickle.load(f)
-            normalization_stats = saved_data.get('normalization_stats', None)
-
-    for batch_idx in range(num_batches):
-        start_idx = batch_idx * batch_size
-        end_idx = start_idx + batch_size
-        
-        state_batch = states[start_idx:end_idx]
-        action_batch = actions[start_idx:end_idx]
-        next_state_batch = next_states[start_idx:end_idx]
-        
-        prediction = world_model.apply(
-            dynamics_params, None, state_batch, jnp.array(action_batch), normalization_stats
-        )
-        
-        loss = jnp.mean((prediction - next_state_batch[:,:-2])**2)
-        total_loss += loss
-
-    print(f"Average batch evaluation loss: {total_loss/num_batches}")
-
-    exit()
-    compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions)
+    # exit()
+    compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions, normalization_stats=normalization_stats)
