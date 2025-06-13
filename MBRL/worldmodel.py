@@ -127,56 +127,40 @@ def build_world_model():
         if len(state.shape) == 1:
             feature_size = state.shape[0]
             flat_state_full = state.reshape(batch_size, feature_size // batch_size)
-            # if normalization_stats is not None:
-            #     flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
         else:
             flat_state_full = state
-            # if normalization_stats is not None:
-            #     flat_state_full = (flat_state_full - normalization_stats['mean']) / normalization_stats['std']
             
         # Extract the actual state features (excluding last 2 columns)
         flat_state = flat_state_full[..., :-2]
         
-        # Apply normalization if normalization stats are provided
-        
-
         # Process action as before
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
         if len(state.shape) == 1:
             action_one_hot = action_one_hot.reshape(1, 18)
             
+        # Concatenate state and action as input
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         
-        # First layer
-        x = hk.Linear(1024)(inputs)
+        # Input projection layer
+        x = hk.Linear(512)(inputs)
         x = jax.nn.relu(x)
         
-        # Residual block 1
-        residual = x
-        x = hk.Linear(1024)(x)
-        x = jax.nn.relu(x)
-        x = hk.Linear(1024)(x)
-        x = x + residual  # Residual connection
-        x = jax.nn.relu(x)
+        # LSTM layer
+        lstm = hk.LSTM(1024)
+        # Initialize LSTM state (hidden state and cell state)
+        batch_size = inputs.shape[0]
+        lstm_state = lstm.initial_state(batch_size)
+        output, lstm_state = lstm(x, lstm_state)
         
-        # Residual block 2
-        residual = x
-        x = hk.Linear(1024)(x)
-        x = jax.nn.relu(x)
-        x = hk.Linear(1024)(x)
-        x = x + residual  # Residual connection
-        x = jax.nn.relu(x)
+        # Additional processing after LSTM
+        output = jax.nn.relu(output)
         
         # Output layer
-        output = hk.Linear(flat_state.shape[-1])(x)
+        output = hk.Linear(flat_state.shape[-1])(output)
         
         # Add clipping to prevent extreme values
         output = jnp.clip(output, -10.0, 10.0)
         
-        # If normalization was used, denormalize the output
-        # if normalization_stats is not None:
-        #     output = output * normalization_stats['std'][:-2] + normalization_stats['mean'][:-2]
-            
         return output
 
     return hk.transform(forward)
@@ -576,7 +560,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
 
 if __name__ == "__main__":
 
-    batch_size = 128
+    batch_size = 4096
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -623,7 +607,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             flattened_states, actions, _, rewards,_ = collect_experience_sequential(
                 env,
-                num_episodes=1,
+                num_episodes=100,
                 max_steps_per_episode=1000
             )
             next_states = flattened_states[1:]  # Next states are just the next frame in the sequence
@@ -681,10 +665,24 @@ if __name__ == "__main__":
         print(f"Loading existing experience data from {experience_data_path}...")
         with open(experience_data_path, 'rb') as f:
             saved_data = pickle.load(f)
-            states = saved_data['states']
-            actions = saved_data['actions']
-            next_states = saved_data['next_states']
-            rewards = saved_data['rewards']
+            # Load all data
+            full_states = saved_data['states']
+            full_actions = saved_data['actions']
+            full_next_states = saved_data['next_states']
+            full_rewards = saved_data['rewards']
+            
+            # Calculate the number of samples to keep (10%)
+            total_samples = len(full_states)
+            samples_to_keep = max(1, int(total_samples * 0.1))
+            
+            # Take every 10th sample
+            stride = max(1, total_samples // samples_to_keep)
+            states = full_states[::stride]
+            actions = full_actions[::stride]
+            next_states = full_next_states[::stride]
+            rewards = full_rewards[::stride]
+            
+            print(f"Loaded {len(states)} samples (10% of {total_samples})")
 
     world_model = build_world_model()
     losses = []
@@ -698,40 +696,40 @@ if __name__ == "__main__":
 
 
 
-    for i in range(len(states)):
-        prediction = world_model.apply(
-                dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
-            )
-        prediction
+    # for i in range(len(states)):
+    #     prediction = world_model.apply(
+    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
+    #         )
+    #     prediction
         
-        loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-        # print(loss)
-        losses.append(loss)
-        if loss > 10 and i < 20:
-            # print('-----------------------------------------------------------------------------------------------------------------')
-            pass
-            print(f"Step {i}:")
-            print(f"Loss : {loss}")
-            # print("Indexes where difference > 3:")
-            # for j in range(len(prediction[0])):
-            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
-            # print(f"Difference: {prediction - states[1+i][:-2]}")
-            # print(f"State {states[i]}")
-            # print("Negative values in state:")
-            # print(jnp.any(states[i][:-2] < -1))
-            # print(f"Prediction: {prediction}")
-            # print(f"Actual Next State {states[i+1]}")
-            # print all indexes where the difference it greater than 10
+    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
+    #     # print(loss)
+    #     losses.append(loss)
+    #     if loss > 10 and i < 20:
+    #         # print('-----------------------------------------------------------------------------------------------------------------')
+    #         pass
+    #         print(f"Step {i}:")
+    #         print(f"Loss : {loss}")
+    #         # print("Indexes where difference > 3:")
+    #         # for j in range(len(prediction[0])):
+    #         #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+    #         #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+    #         # print(f"Difference: {prediction - states[1+i][:-2]}")
+    #         # print(f"State {states[i]}")
+    #         # print("Negative values in state:")
+    #         # print(jnp.any(states[i][:-2] < -1))
+    #         # print(f"Prediction: {prediction}")
+    #         # print(f"Actual Next State {states[i+1]}")
+    #         # print all indexes where the difference it greater than 10
 
             
-        # if i == 30:
-        #     # exit()
-        #     break
-        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+    #     # if i == 30:
+    #     #     # exit()
+    #     #     break
+    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
     
 
-    print(f"Average loss: {jnp.mean(jnp.array(losses))}")
+    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
     # exit()
     compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions, normalization_stats=normalization_stats)
