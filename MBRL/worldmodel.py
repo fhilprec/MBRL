@@ -94,12 +94,14 @@ def render_trajectory(
     print(f"Rendered {frame_idx} frames from trajectory")
 
 
-def flatten_state(state, single_state: bool = False, is_list = False) -> Tuple[jnp.ndarray, Any]:
+def flatten_state(
+    state, single_state: bool = False, is_list=False
+) -> Tuple[jnp.ndarray, Any]:
     """
     Flatten the state PyTree into a single array.
     This is useful for debugging and visualization.
     """
-    #check whether it is a single state or a batch of states
+    # check whether it is a single state or a batch of states
 
     if type(state) == list:
         flat_states = []
@@ -115,13 +117,12 @@ def flatten_state(state, single_state: bool = False, is_list = False) -> Tuple[j
     batch_shape = state.player_x.shape[0]
 
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
-    flat_state = flat_state.reshape(
-        batch_shape, -1
-    )  
+    flat_state = flat_state.reshape(batch_shape, -1)
     return flat_state, unflattener
 
+
 def build_world_model():
-    def forward(state, action):
+    def forward(state, action, lstm_state=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
 
         if len(state.shape) == 1:
@@ -129,41 +130,31 @@ def build_world_model():
             flat_state_full = state.reshape(batch_size, feature_size // batch_size)
         else:
             flat_state_full = state
-            
-        # Extract the actual state features (excluding last 2 columns)
+
         flat_state = flat_state_full[..., :-2]
-        
-        # Process action as before
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
         if len(state.shape) == 1:
             action_one_hot = action_one_hot.reshape(1, 18)
-            
-        # Concatenate state and action as input
+
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
-        
-        # Input projection layer
         x = hk.Linear(512)(inputs)
         x = jax.nn.relu(x)
-        
-        # LSTM layer
+
         lstm = hk.LSTM(1024)
-        # Initialize LSTM state (hidden state and cell state)
-        batch_size = inputs.shape[0]
-        lstm_state = lstm.initial_state(batch_size)
-        output, lstm_state = lstm(x, lstm_state)
-        
-        # Additional processing after LSTM
+
+        # Use provided lstm_state or initialize if None
+        if lstm_state is None:
+            lstm_state = lstm.initial_state(batch_size)
+
+        output, new_lstm_state = lstm(x, lstm_state)
         output = jax.nn.relu(output)
-        
-        # Output layer
         output = hk.Linear(flat_state.shape[-1])(output)
-        
-        # Add clipping to prevent extreme values
         output = jnp.clip(output, -10.0, 10.0)
-        
-        return output
+
+        return output, new_lstm_state  # Return both prediction and new state
 
     return hk.transform(forward)
+
 
 def collect_experience_sequential(
     env, num_episodes: int = 1, max_steps_per_episode: int = 1000
@@ -174,44 +165,52 @@ def collect_experience_sequential(
     actions = []
     rewards = []
     dones = []
-    
+    boundaries = []
+
     rng = jax.random.PRNGKey(42)
-    
+
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
         _, state = env.reset(reset_key)
-        
+
         for step in range(max_steps_per_episode):
             current_state = jax.tree.map(lambda x: x, state.env_state)
-            
+
             # Choose a random action
             rng, action_key = jax.random.split(rng)
-            action = 5 if jax.random.uniform(action_key) < 0.2 else jax.random.randint(action_key, (), 0, 18)
-            
+            action = (
+                5
+                if jax.random.uniform(action_key) < 0.2
+                else jax.random.randint(action_key, (), 0, 18)
+            )
+
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)
             _, next_state, reward, done, _ = env.step(step_key, state, action)
-            
+
             next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
-            
+
             # Store the transition
             states.append(current_state)
             actions.append(action)
             next_states.append(next_state_repr)
             rewards.append(reward)
             dones.append(done)
-            
+
             # If episode is done, reset the environment
             if done:
                 print(f"Episode {episode+1} done after {step+1} steps")
+                if len(boundaries) == 0:
+                    boundaries.append(step)
+                else:
+                    boundaries.append(boundaries[-1] + step + 1)
                 break
-                
+
             # Update state for the next step
             state = next_state
-    
+
     # Convert to JAX arrays (but don't flatten the structure yet)
     # Use tree_map to maintain structure with jnp arrays
-
 
     # Stack states correctly to form batch
     # Step 1: Stack states across time
@@ -227,8 +226,15 @@ def collect_experience_sequential(
     rewards_array = jnp.array(rewards)
     dones_array = jnp.array(dones)
 
+    return (
+        flatten_state(states, is_list=True),
+        actions_array,
+        states,
+        rewards_array,
+        dones_array,
+        boundaries,
+    )
 
-    return flatten_state(states, is_list=True), actions_array, states, rewards_array, dones_array
 
 def collect_experience(
     env, num_episodes: int = 100, max_steps_per_episode: int = 1000, num_envs: int = 512
@@ -324,106 +330,183 @@ def train_world_model(
     learning_rate=3e-4,
     batch_size=256,
     num_epochs=10,
+    sequence_length=32,
+    episode_boundaries=None,
 ):
     # Calculate normalization statistics from the flattened states
-    # States should be shape (num_samples, feature_dim)
-    state_mean = jnp.mean(states, axis=0)  # Shape (feature_dim,)
-    state_std = jnp.std(states, axis=0) + 1e-8  # Shape (feature_dim,)
-    
+    state_mean = jnp.mean(states, axis=0)
+    state_std = jnp.std(states, axis=0) + 1e-8
+
     # Store normalization stats for later use
-    normalization_stats = {'mean': state_mean, 'std': state_std}
-    
-    # Normalize states and next_states
-    # normalized_states = states
-    # normalized_next_states = next_states
+    normalization_stats = {"mean": state_mean, "std": state_std}
+
     # Normalize states and next_states
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
 
+    # Create sequential batches that respect episode boundaries
+    def create_sequential_batches():
 
+        batches = []
+        current_batch_states = []
+        current_batch_actions = []
+        current_batch_next_states = []
 
-    # Use normalized data for training
+        # Process each episode separately
+        episode_start = 0
+        for episode_end in episode_boundaries:
+            episode_length = episode_end - episode_start
+
+            # Skip episodes that are too short for our sequence length
+            if episode_length < sequence_length:
+                episode_start = episode_end
+                continue
+
+            # Create sequences within this episode only
+            for start_idx in range(
+                episode_start, episode_end - sequence_length + 1, sequence_length // 2
+            ):
+                end_idx = start_idx + sequence_length
+                if end_idx <= episode_end:  # Ensure we don't cross episode boundary
+                    seq_states = normalized_states[start_idx:end_idx]
+                    seq_actions = actions[start_idx:end_idx]
+                    seq_next_states = normalized_next_states[start_idx:end_idx]
+
+                    current_batch_states.append(seq_states)
+                    current_batch_actions.append(seq_actions)
+                    current_batch_next_states.append(seq_next_states)
+
+                    # If batch is full, save it and start new batch
+                    if len(current_batch_states) >= batch_size:
+                        batch_states = jnp.stack(current_batch_states)
+                        batch_actions = jnp.stack(current_batch_actions)
+                        batch_next_states = jnp.stack(current_batch_next_states)
+                        batches.append((batch_states, batch_actions, batch_next_states))
+
+                        current_batch_states = []
+                        current_batch_actions = []
+                        current_batch_next_states = []
+
+            episode_start = episode_end
+
+        # Add any remaining sequences as final batch
+        if len(current_batch_states) > 0:
+            batch_states = jnp.stack(current_batch_states)
+            batch_actions = jnp.stack(current_batch_actions)
+            batch_next_states = jnp.stack(current_batch_next_states)
+            batches.append((batch_states, batch_actions, batch_next_states))
+
+        return batches
+
     model = build_world_model()
     optimizer = optax.adam(learning_rate=1e-4)
-    
+
     rng = jax.random.PRNGKey(42)
-    dummy_state = normalized_states[:1]  # Take first normalized state as example
+    dummy_state = normalized_states[:1]
     dummy_action = actions[:1]
-    params = model.init(rng, dummy_state, dummy_action)
+    params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    # Update loss_function to work with normalized states
     def loss_function(params, state_batch, action_batch, next_state_batch):
-        # Model now works with normalized states
-        pred_next_state = model.apply(params, None, state_batch, action_batch)
-        
-        # Next state is also normalized
-        target_next_state = next_state_batch[:, :-2]
-        
-        # Simple MSE loss on normalized values
-        mse = jnp.mean((target_next_state - pred_next_state)**2)
-        # jax.debug.print(
-        #     "Loss: {mse:.6f}", mse=mse
-        # )
-        return mse
+        """
+        Compute loss over sequences maintaining LSTM state
+        Args:
+            state_batch: (batch_size, seq_len, state_dim)
+            action_batch: (batch_size, seq_len)
+            next_state_batch: (batch_size, seq_len, state_dim)
+        """
+        batch_size, seq_len, state_dim = state_batch.shape
+        total_loss = 0.0
+
+        # Process each sequence in the batch
+        for batch_idx in range(batch_size):
+            lstm_state = None  # Start with fresh state for each sequence
+            sequence_loss = 0.0
+
+            for t in range(seq_len):
+                current_state = state_batch[
+                    batch_idx, t : t + 1
+                ]  # Keep batch dimension
+                current_action = action_batch[batch_idx, t : t + 1]
+                target_next_state = next_state_batch[
+                    batch_idx, t, :-2
+                ]  # Remove last 2 features
+
+                # Forward pass
+                pred_next_state, lstm_state = model.apply(
+                    params, None, current_state, current_action, lstm_state
+                )
+
+                # Compute loss for this timestep
+                step_loss = jnp.mean(
+                    (target_next_state - pred_next_state.squeeze()) ** 2
+                )
+                sequence_loss += step_loss
+
+            total_loss += sequence_loss / seq_len
+
+        return total_loss / batch_size
 
     @jax.jit
     def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
         loss, grads = jax.value_and_grad(loss_function)(
             params, state_batch, action_batch, next_state_batch
         )
-        
+
         updates, new_opt_state = optimizer.update(grads, opt_state)
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
 
-    num_batches = len(actions) // batch_size
-    batches = []
-    for batch_idx in range(num_batches):
-        start_idx = batch_idx * batch_size
-        end_idx = start_idx + batch_size
-        state_batch = normalized_states[start_idx:end_idx]
-        action_batch = actions[start_idx:end_idx]
-        next_state_batch = normalized_next_states[start_idx:end_idx]
-        batches.append((state_batch, action_batch, next_state_batch))
-    batches = jax.device_put(batches)
-    for epoch in range(num_epochs): #SCAN 
+    # Create sequential batches
+    batches = create_sequential_batches()
+    print(f"Created {len(batches)} sequential batches")
+
+    for epoch in range(num_epochs):
         losses = []
-        for batch in batches: #maybe include in one scan
+        for batch in batches:
             state_batch, action_batch, next_state_batch = batch
             params, opt_state, loss = update_step(
                 params, opt_state, state_batch, action_batch, next_state_batch
             )
             losses.append(loss)
         epoch_loss = jnp.mean(jnp.array(losses))
-        if VERBOSE and (epoch + 1) % (num_epochs/10) == 0:
+        if VERBOSE and (epoch + 1) % (num_epochs / 10) == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
+
     return params, {
-        "final_loss": epoch_loss, 
-        "normalization_stats": normalization_stats
+        "final_loss": epoch_loss,
+        "normalization_stats": normalization_stats,
     }
 
 
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None, normalization_stats=None):
+def compare_real_vs_model(
+    num_steps: int = 10,
+    render_scale: int = 2,
+    states=None,
+    actions=None,
+    normalization_stats=None,
+):
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
         if step % 1 == 0:
             print(f"Step {step} debugging:")
-            
+
             # Check ranges and statistics of the data
-            print(f"Real state min/max/mean: {jnp.min(real_state):.2f}/{jnp.max(real_state):.2f}/{jnp.mean(real_state):.2f}")
-            print(f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}")
+            print(
+                f"Real state min/max/mean: {jnp.min(real_state):.2f}/{jnp.max(real_state):.2f}/{jnp.mean(real_state):.2f}"
+            )
+            print(
+                f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}"
+            )
 
             error = jnp.mean((real_state - pred_state) ** 2)
             print(f"Step {step_count}, Error: {error:.2f}")
 
-    state_mean = normalization_stats['mean']
-    state_std = normalization_stats['std']
+    state_mean = normalization_stats["mean"]
+    state_std = normalization_stats["std"]
 
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
-
-
 
     base_game = JaxSeaquest()
     real_env = AtariWrapper(
@@ -440,7 +523,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         scale_factor = model_data.get("scale_factor", 1 / 1)
         normalization_stats = model_data.get("normalization_stats", None)
     world_model = build_world_model()
-    
+
     pygame.init()
     WIDTH = 160
     HEIGHT = 210
@@ -473,36 +556,43 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
     real_state = real_state.replace(env_state=first_state_raw)
     model_state = real_state  # Start identical
 
-    # Add reset interval to prevent error accumulation
+    # Initialize LSTM state for model predictions
+    lstm_state = None
 
-    while running and step_count < min(num_steps, len(states)-1):
+    while running and step_count < min(num_steps, len(states) - 1):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-                
-        # Reset model state periodically to prevent excessive error accumulation
 
-                
         # Use the saved action
         action = actions[step_count]
-        
+
         # Use the saved next state directly instead of environment stepping
         next_real_state_flat = states[step_count + 1]
         real_state = real_state.replace(env_state=unflattener(next_real_state_flat))
-        
+
         # Get the flattened current state for the model
-        flattened_model_state, _ = flatten_state(model_state.env_state, single_state=True)
-        
-        # Apply model prediction with normalization
-
-        normalized_flattened_model_state = (flattened_model_state - state_mean) / state_std
-
-        normalized_model_state_flattened = world_model.apply(
-            dynamics_params, None, normalized_flattened_model_state, jnp.array([action])
+        flattened_model_state, _ = flatten_state(
+            model_state.env_state, single_state=True
         )
 
-        model_state_flattened = normalized_model_state_flattened * state_std[:-2] + state_mean[:-2]
+        # Apply model prediction with normalization and LSTM state
+        normalized_flattened_model_state = (
+            flattened_model_state - state_mean
+        ) / state_std
 
+        # Use the stateful model (returns both prediction and new LSTM state)
+        normalized_model_state_flattened, lstm_state = world_model.apply(
+            dynamics_params,
+            None,
+            normalized_flattened_model_state,
+            jnp.array([action]),
+            lstm_state,
+        )
+
+        model_state_flattened = (
+            normalized_model_state_flattened * state_std[:-2] + state_mean[:-2]
+        )
 
         debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
 
@@ -512,13 +602,15 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             axis=-1,
         )
         model_state_flattened_1d = model_state_flattened.reshape(-1)
-        
+
         # Update model state
-        model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
+        model_state = model_state.replace(
+            env_state=unflattener(model_state_flattened_1d)
+        )
         reconstructed_env_state = unflattener(model_state_flattened_1d)
         reconstructed_env_state = reconstructed_env_state._replace(
             step_counter=real_state.env_state.step_counter,
-            rng_key=real_state.env_state.rng_key
+            rng_key=real_state.env_state.rng_key,
         )
         model_state = model_state.replace(env_state=reconstructed_env_state)
 
@@ -549,7 +641,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
-       
+
         step_count += 1
         clock.tick(30)
         # Rendering stuff end -------------------------------------------------------
@@ -573,73 +665,80 @@ if __name__ == "__main__":
     model = build_world_model()
     normalization_stats = None
 
-
     # print(next_states[300][:-2])
     # pred = model.apply(dynamics_params, None, states[300], actions[300])
     # print(pred)
-    
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
-        with open(save_path, 'rb') as f:
+        with open(save_path, "rb") as f:
             saved_data = pickle.load(f)
-            dynamics_params = saved_data['dynamics_params']
-            normalization_stats = saved_data.get('normalization_stats', None)
+            dynamics_params = saved_data["dynamics_params"]
+            normalization_stats = saved_data.get("normalization_stats", None)
     else:
         print("No existing model found. Training a new model...")
 
         # Define a file path for the experience data
-        
 
         # Check if experience data file exists
         if os.path.exists(experience_data_path):
             print(f"Loading existing experience data from {experience_data_path}...")
-            with open(experience_data_path, 'rb') as f:
+            with open(experience_data_path, "rb") as f:
                 saved_data = pickle.load(f)
-                states = saved_data['states']
-                actions = saved_data['actions']
-                next_states = saved_data['next_states']
-                rewards = saved_data['rewards']
+                states = saved_data["states"]
+                actions = saved_data["actions"]
+                next_states = saved_data["next_states"]
+                rewards = saved_data["rewards"]
+                boundaries = saved_data["boundaries"]
         else:
-            print("No existing experience data found. Collecting new experience data...")
-            # Collect experience data (AtariWrapper handles frame stacking automatically)
-            flattened_states, actions, _, rewards,_ = collect_experience_sequential(
-                env,
-                num_episodes=100,
-                max_steps_per_episode=1000
+            print(
+                "No existing experience data found. Collecting new experience data..."
             )
-            next_states = flattened_states[1:]  # Next states are just the next frame in the sequence
+            # Collect experience data (AtariWrapper handles frame stacking automatically)
+            flattened_states, actions, _, rewards, _, boundaries = (
+                collect_experience_sequential(
+                    env, num_episodes=5, max_steps_per_episode=1000
+                )
+            )
+            next_states = flattened_states[
+                1:
+            ]  # Next states are just the next frame in the sequence
             states = flattened_states[:-1]  # Current states are all but the last frame
 
             # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
-            #I want to check whether the next_state is equal to the current state + 1
+            # I want to check whether the next_state is equal to the current state + 1
             print(states.shape)
             print(next_states.shape)
 
             if VERBOSE:
                 print("Checking if next_state is equal to current state + 1...")
                 for i in range(100):
-                    if not jnp.allclose(states[i+1][:-2], next_states[i][:-2]):
-                        print(f"Mismatch at index {i}: {states[i][:-2]} != {next_states[i][:-2]}")
-                        print(states[i+1][:-2])
+                    if not jnp.allclose(states[i + 1][:-2], next_states[i][:-2]):
+                        print(
+                            f"Mismatch at index {i}: {states[i][:-2]} != {next_states[i][:-2]}"
+                        )
+                        print(states[i + 1][:-2])
                         print(next_states[i][:-2])
-                        print(states[i+1][:-2] - next_states[i][:-2])
-                        sys.exit(1)
+                        print(states[i + 1][:-2] - next_states[i][:-2])
+                        exit(1)
                 print("All states match the expected transition.")
 
-            
-          
             # Save the collected experience data
-            with open(experience_data_path, 'wb') as f:
-                pickle.dump({
-                    'states': states,
-                    'actions': actions,
-                    'next_states': next_states,
-                    'rewards': rewards
-                }, f)
+            with open(experience_data_path, "wb") as f:
+                pickle.dump(
+                    {
+                        "states": states,
+                        "actions": actions,
+                        "next_states": next_states,
+                        "rewards": rewards,
+                        "boundaries": boundaries,
+                    },
+                    f,
+                )
             print(f"Experience data saved to {experience_data_path}")
+            print(boundaries)
 
         # Train world model
         dynamics_params, training_info = train_world_model(
@@ -650,58 +749,46 @@ if __name__ == "__main__":
             batch_size=batch_size,
             num_epochs=5000,
         )
-        normalization_stats = training_info.get('normalization_stats', None)
+        normalization_stats = training_info.get("normalization_stats", None)
 
         # Save the model and scaling factor
-        with open(save_path, 'wb') as f:
-            pickle.dump({
-                'dynamics_params': dynamics_params,
-                'normalization_stats': training_info.get('normalization_stats', None)
-            }, f)
+        with open(save_path, "wb") as f:
+            pickle.dump(
+                {
+                    "dynamics_params": dynamics_params,
+                    "normalization_stats": training_info.get(
+                        "normalization_stats", None
+                    ),
+                },
+                f,
+            )
         print(f"Model saved to {save_path}")
 
-    states, actions = None, None
+    states, actions, boundaries = None, None, None
     if os.path.exists(experience_data_path):
-        print(f"Loading existing experience data from {experience_data_path}...")
-        with open(experience_data_path, 'rb') as f:
+        with open(experience_data_path, "rb") as f:
             saved_data = pickle.load(f)
-            # Load all data
-            full_states = saved_data['states']
-            full_actions = saved_data['actions']
-            full_next_states = saved_data['next_states']
-            full_rewards = saved_data['rewards']
-            
-            # Calculate the number of samples to keep (10%)
-            total_samples = len(full_states)
-            samples_to_keep = max(1, int(total_samples * 0.1))
-            
-            # Take every 10th sample
-            stride = max(1, total_samples // samples_to_keep)
-            states = full_states[::stride]
-            actions = full_actions[::stride]
-            next_states = full_next_states[::stride]
-            rewards = full_rewards[::stride]
-            
-            print(f"Loaded {len(states)} samples (10% of {total_samples})")
+            states = saved_data["states"]
+            actions = saved_data["actions"]
+            next_states = saved_data["next_states"]
+            rewards = saved_data["rewards"]
+            boundaries = saved_data["boundaries"]
 
     world_model = build_world_model()
     losses = []
 
-
-    state_mean = normalization_stats['mean']
-    state_std = normalization_stats['std']
+    state_mean = normalization_stats["mean"]
+    state_std = normalization_stats["std"]
 
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
-
-
 
     # for i in range(len(states)):
     #     prediction = world_model.apply(
     #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
     #         )
     #     prediction
-        
+
     #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
     #     # print(loss)
     #     losses.append(loss)
@@ -722,14 +809,18 @@ if __name__ == "__main__":
     #         # print(f"Actual Next State {states[i+1]}")
     #         # print all indexes where the difference it greater than 10
 
-            
     #     # if i == 30:
     #     #     # exit()
     #     #     break
     #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
-    
 
     # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
     # exit()
-    compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions, normalization_stats=normalization_stats)
+    compare_real_vs_model(
+        num_steps=5000,
+        render_scale=2,
+        states=states,
+        actions=actions,
+        normalization_stats=normalization_stats,
+    )
