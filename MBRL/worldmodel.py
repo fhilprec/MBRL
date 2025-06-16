@@ -236,90 +236,7 @@ def collect_experience_sequential(
     )
 
 
-def collect_experience(
-    env, num_episodes: int = 100, max_steps_per_episode: int = 1000, num_envs: int = 512
-) -> Tuple[List, List, List]:
 
-    print(type(env))
-
-    print(f"Collecting experience data from {num_envs} parallel environments...")
-    # print("Note: AtariWrapper provides 4 stacked frames automatically")
-    vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
-        jax.random.split(rng, n_envs)
-    )
-    vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(env.step)(
-        jax.random.split(rng, n_envs), env_state, action
-    )
-    states = []
-    next_states = []
-    actions = []
-    rewards = []
-    rng = jax.random.PRNGKey(42)
-    jitted_reset = jax.jit(vmap_reset(num_envs))
-    jitted_step = jax.jit(vmap_step(num_envs))
-    rng, reset_rng = jax.random.split(rng)
-    _, state = jitted_reset(reset_rng)
-    total_steps = 0
-    total_episodes = 0
-    while total_episodes < num_episodes * num_envs:
-        current_state_repr = jax.tree.map(lambda x: x, state.env_state)
-        rng, action_rng = jax.random.split(rng)
-        action_batch = jax.random.randint(action_rng, (num_envs,), 0, 18)
-        rng, step_rng = jax.random.split(rng)
-        _, next_state, reward_batch, done_batch, _ = jitted_step(
-            step_rng, state, action_batch
-        )
-        if jnp.any(done_batch):
-            rng, reset_rng = jax.random.split(rng)
-            _, reset_states = jitted_reset(reset_rng)
-
-            def update_where_done(old_state, new_state, done_mask):
-                """Update states only where done_mask is True."""
-
-                def where_with_correct_broadcasting(x, y, mask):
-                    if hasattr(x, "shape") and hasattr(y, "shape"):
-                        if x.ndim > 1:
-                            new_shape = (mask.shape[0],) + (1,) * (x.ndim - 1)
-                            reshaped_mask = mask.reshape(new_shape)
-                            return jnp.where(reshaped_mask, y, x)
-                        else:
-                            return jnp.where(mask, y, x)
-                    else:
-                        return x
-
-                return jax.tree.map(
-                    lambda x, y: where_with_correct_broadcasting(x, y, done_mask),
-                    old_state,
-                    new_state,
-                )
-
-            next_state = update_where_done(next_state, reset_states, done_batch)
-        next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
-        states.append(current_state_repr)
-        actions.append(action_batch)
-        next_states.append(next_state_repr)
-        rewards.append(reward_batch)
-        newly_completed = jnp.sum(done_batch)
-        total_episodes += newly_completed
-        total_steps += num_envs
-        state = next_state
-        if total_episodes >= num_episodes * num_envs:
-            break
-    if VERBOSE:
-        print(f"Experience collection completed:")
-        print(f"- Total steps: {total_steps}")
-        print(f"- Total episodes: {total_episodes}")
-        print(f"- Total transitions: {len(states)}")
-    states = jax.tree.map(lambda *xs: jnp.concatenate(xs, axis=0), *states)
-    actions = jnp.concatenate(actions, axis=0)
-    next_states = jax.tree.map(lambda *xs: jnp.concatenate(xs, axis=0), *next_states)
-    rewards = jnp.concatenate(rewards, axis=0)
-    if VERBOSE:
-        print(
-            f"Final flattened shape: states: {jax.tree.map(lambda x: x.shape, states)}"
-        )
-        print(f"Actions shape: {actions.shape}, Rewards shape: {rewards.shape}")
-    return states, actions, next_states, rewards
 
 
 def train_world_model(
@@ -328,8 +245,8 @@ def train_world_model(
     next_states,
     rewards,
     learning_rate=3e-4,
-    batch_size=256,
-    num_epochs=10,
+    batch_size=4,
+    num_epochs=1000,
     sequence_length=32,
     episode_boundaries=None,
 ):
@@ -345,58 +262,44 @@ def train_world_model(
     normalized_next_states = (next_states - state_mean) / state_std
 
     # Create sequential batches that respect episode boundaries
-    def create_sequential_batches():
+    def create_sequential_batches(batch_size=32):
+        """
+        Create batches of sequential data for training
+        Args:
+            batch_size: Number of sequences per batch
+        Returns:
+            List of batches, each containing (state_batch, action_batch, next_state_batch)
+            where each has shape (batch_size, seq_len, feature_dim)
+        """
+        sequences = []
+        
+        # First, collect all sequences
+        for i in range(len(episode_boundaries)-1):
+            if i == 0:
+                start_idx = 0
+                end_idx = episode_boundaries[0]
+            else:
+                start_idx = episode_boundaries[i - 1]
+                end_idx = episode_boundaries[i]
+            
+            # Create sequences within this episode
+            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length//4):
+                if start_idx + j + sequence_length > end_idx:
+                    break
+                    
+                sequences.append((
+                    normalized_states[start_idx + j : start_idx + j + sequence_length],
+                    actions[start_idx + j : start_idx + j + sequence_length], 
+                    normalized_next_states[start_idx + j : start_idx + j + sequence_length]
+                ))
+        
+        return sequences
 
-        batches = []
-        current_batch_states = []
-        current_batch_actions = []
-        current_batch_next_states = []
+    
+    # Create sequential batches
+    batches = create_sequential_batches()
 
-        # Process each episode separately
-        episode_start = 0
-        for episode_end in episode_boundaries:
-            episode_length = episode_end - episode_start
 
-            # Skip episodes that are too short for our sequence length
-            if episode_length < sequence_length:
-                episode_start = episode_end
-                continue
-
-            # Create sequences within this episode only
-            for start_idx in range(
-                episode_start, episode_end - sequence_length + 1, sequence_length // 2
-            ):
-                end_idx = start_idx + sequence_length
-                if end_idx <= episode_end:  # Ensure we don't cross episode boundary
-                    seq_states = normalized_states[start_idx:end_idx]
-                    seq_actions = actions[start_idx:end_idx]
-                    seq_next_states = normalized_next_states[start_idx:end_idx]
-
-                    current_batch_states.append(seq_states)
-                    current_batch_actions.append(seq_actions)
-                    current_batch_next_states.append(seq_next_states)
-
-                    # If batch is full, save it and start new batch
-                    if len(current_batch_states) >= batch_size:
-                        batch_states = jnp.stack(current_batch_states)
-                        batch_actions = jnp.stack(current_batch_actions)
-                        batch_next_states = jnp.stack(current_batch_next_states)
-                        batches.append((batch_states, batch_actions, batch_next_states))
-
-                        current_batch_states = []
-                        current_batch_actions = []
-                        current_batch_next_states = []
-
-            episode_start = episode_end
-
-        # Add any remaining sequences as final batch
-        if len(current_batch_states) > 0:
-            batch_states = jnp.stack(current_batch_states)
-            batch_actions = jnp.stack(current_batch_actions)
-            batch_next_states = jnp.stack(current_batch_next_states)
-            batches.append((batch_states, batch_actions, batch_next_states))
-
-        return batches
 
     model = build_world_model()
     optimizer = optax.adam(learning_rate=1e-4)
@@ -415,37 +318,38 @@ def train_world_model(
             action_batch: (batch_size, seq_len)
             next_state_batch: (batch_size, seq_len, state_dim)
         """
-        batch_size, seq_len, state_dim = state_batch.shape
+        print(state_batch.shape)
+        seq_len, state_dim = state_batch.shape
         total_loss = 0.0
 
         # Process each sequence in the batch
-        for batch_idx in range(batch_size):
-            lstm_state = None  # Start with fresh state for each sequence
-            sequence_loss = 0.0
 
-            for t in range(seq_len):
-                current_state = state_batch[
-                    batch_idx, t : t + 1
-                ]  # Keep batch dimension
-                current_action = action_batch[batch_idx, t : t + 1]
-                target_next_state = next_state_batch[
-                    batch_idx, t, :-2
-                ]  # Remove last 2 features
+        lstm_state = None  # Start with fresh state for each sequence
+        sequence_loss = 0.0
 
-                # Forward pass
-                pred_next_state, lstm_state = model.apply(
-                    params, None, current_state, current_action, lstm_state
-                )
+        for t in range(seq_len):
+            current_state = state_batch[
+                 t : t + 1
+            ]  # Keep batch dimension
+            current_action = action_batch[ t : t + 1]
+            target_next_state = next_state_batch[
+                t, :-2
+            ]  # Remove last 2 features
 
-                # Compute loss for this timestep
-                step_loss = jnp.mean(
-                    (target_next_state - pred_next_state.squeeze()) ** 2
-                )
-                sequence_loss += step_loss
+            # Forward pass
+            pred_next_state, lstm_state = model.apply(
+                params, None, current_state, current_action, lstm_state
+            )
 
-            total_loss += sequence_loss / seq_len
+            # Compute loss for this timestep
+            step_loss = jnp.mean(
+                (target_next_state - pred_next_state.squeeze()) ** 2
+            )
+            sequence_loss += step_loss
 
-        return total_loss / batch_size
+        total_loss += sequence_loss / seq_len
+
+        return total_loss
 
     @jax.jit
     def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
@@ -457,9 +361,7 @@ def train_world_model(
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
 
-    # Create sequential batches
-    batches = create_sequential_batches()
-    print(f"Created {len(batches)} sequential batches")
+    
 
     for epoch in range(num_epochs):
         losses = []
@@ -470,7 +372,9 @@ def train_world_model(
             )
             losses.append(loss)
         epoch_loss = jnp.mean(jnp.array(losses))
-        if VERBOSE and (epoch + 1) % (num_epochs / 10) == 0:
+        # if VERBOSE and (epoch + 1) % (num_epochs / 10) == 0:
+        #     print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
+        if VERBOSE:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
 
     return params, {
@@ -486,6 +390,10 @@ def compare_real_vs_model(
     actions=None,
     normalization_stats=None,
 ):
+    
+    states = states[100:]
+    actions = actions[100:]
+    
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
         if step % 1 == 0:
@@ -652,7 +560,7 @@ def compare_real_vs_model(
 
 if __name__ == "__main__":
 
-    batch_size = 4096
+
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -746,8 +654,7 @@ if __name__ == "__main__":
             actions,
             next_states,
             rewards,
-            batch_size=batch_size,
-            num_epochs=5000,
+            episode_boundaries=boundaries,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
@@ -819,7 +726,7 @@ if __name__ == "__main__":
     # exit()
     compare_real_vs_model(
         num_steps=5000,
-        render_scale=2,
+        render_scale=6,
         states=states,
         actions=actions,
         normalization_stats=normalization_stats,
