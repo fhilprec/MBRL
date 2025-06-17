@@ -139,7 +139,6 @@ def build_world_model():
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
         x = hk.Linear(512)(inputs)
         x = jax.nn.relu(x)
-
         lstm = hk.LSTM(1024)
 
         # Use provided lstm_state or initialize if None
@@ -149,7 +148,7 @@ def build_world_model():
         output, new_lstm_state = lstm(x, lstm_state)
         output = jax.nn.relu(output)
         output = hk.Linear(flat_state.shape[-1])(output)
-        output = jnp.clip(output, -10.0, 10.0)
+        # output = jnp.clip(output, -10.0, 10.0)
 
         return output, new_lstm_state  # Return both prediction and new state
 
@@ -157,7 +156,7 @@ def build_world_model():
 
 
 def collect_experience_sequential(
-    env, num_episodes: int = 1, max_steps_per_episode: int = 1000
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = True
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     states = []
@@ -167,6 +166,8 @@ def collect_experience_sequential(
     dones = []
     boundaries = []
 
+    dead = False
+    total_steps = 0
     rng = jax.random.PRNGKey(42)
 
     for episode in range(num_episodes):
@@ -198,16 +199,29 @@ def collect_experience_sequential(
             dones.append(done)
 
             # If episode is done, reset the environment
+
+            
+            if not episodic_life: 
+                if current_state.death_counter > 0 and not dead:
+                    dead = True
+                if not current_state.death_counter > 0 and dead:
+                    dead = False
+                    boundaries.append(total_steps)
+
             if done:
                 print(f"Episode {episode+1} done after {step+1} steps")
-                if len(boundaries) == 0:
-                    boundaries.append(step)
-                else:
-                    boundaries.append(boundaries[-1] + step + 1)
+
+                if episodic_life: 
+                    if len(boundaries) == 0:
+                        boundaries.append(step)
+                    else:
+                        boundaries.append(boundaries[-1] + step + 1)
                 break
+               
 
             # Update state for the next step
             state = next_state
+            total_steps += 1
 
     # Convert to JAX arrays (but don't flatten the structure yet)
     # Use tree_map to maintain structure with jnp arrays
@@ -225,6 +239,9 @@ def collect_experience_sequential(
     actions_array = jnp.array(actions)
     rewards_array = jnp.array(rewards)
     dones_array = jnp.array(dones)
+
+    print("Boundaries:")
+    print(boundaries)
 
     return (
         flatten_state(states, is_list=True),
@@ -446,7 +463,7 @@ def compare_real_vs_model(
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
     running = True
-    step_count = 0
+    step_count = 120 # Start from a later step to avoid initial noise
     clock = pygame.time.Clock()
 
     # This part is only here to get the real_start and for the unflattener
@@ -458,7 +475,7 @@ def compare_real_vs_model(
     rng, reset_key = jax.random.split(rng)
     real_obs, real_state = real_env.reset(reset_key)
 
-    first_state_flat = states[0]
+    first_state_flat = states[0 + step_count]
     _, unflattener = flatten_state(real_state.env_state, single_state=True)
     first_state_raw = unflattener(first_state_flat)
     real_state = real_state.replace(env_state=first_state_raw)
@@ -551,7 +568,8 @@ def compare_real_vs_model(
         pygame.display.flip()
 
         step_count += 1
-        clock.tick(30)
+        # print(states[step_count][:-2])
+        clock.tick(1)
         # Rendering stuff end -------------------------------------------------------
 
     pygame.quit()
@@ -607,7 +625,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             flattened_states, actions, _, rewards, _, boundaries = (
                 collect_experience_sequential(
-                    env, num_episodes=5, max_steps_per_episode=1000
+                    env, num_episodes=5, max_steps_per_episode=1000, episodic_life=False
                 )
             )
             next_states = flattened_states[
@@ -687,41 +705,43 @@ if __name__ == "__main__":
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
 
+    lstm_state = None
+
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
 
-    # for i in range(len(states)):
-    #     prediction = world_model.apply(
-    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
-    #         )
-    #     prediction
+    for i in range(len(states)):
+        prediction, lstm_state = world_model.apply(
+                dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]]), lstm_state
+            )
+        
 
-    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-    #     # print(loss)
-    #     losses.append(loss)
-    #     if loss > 10 and i < 20:
-    #         # print('-----------------------------------------------------------------------------------------------------------------')
-    #         pass
-    #         print(f"Step {i}:")
-    #         print(f"Loss : {loss}")
-    #         # print("Indexes where difference > 3:")
-    #         # for j in range(len(prediction[0])):
-    #         #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-    #         #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
-    #         # print(f"Difference: {prediction - states[1+i][:-2]}")
-    #         # print(f"State {states[i]}")
-    #         # print("Negative values in state:")
-    #         # print(jnp.any(states[i][:-2] < -1))
-    #         # print(f"Prediction: {prediction}")
-    #         # print(f"Actual Next State {states[i+1]}")
-    #         # print all indexes where the difference it greater than 10
+        loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
+        # print(loss)
+        losses.append(loss)
+        if loss > 10 and i < 20:
+            # print('-----------------------------------------------------------------------------------------------------------------')
+            pass
+            print(f"Step {i}:")
+            print(f"Loss : {loss}")
+            # print("Indexes where difference > 3:")
+            # for j in range(len(prediction[0])):
+            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+            # print(f"Difference: {prediction - states[1+i][:-2]}")
+            # print(f"State {states[i]}")
+            # print("Negative values in state:")
+            # print(jnp.any(states[i][:-2] < -1))
+            # print(f"Prediction: {prediction}")
+            # print(f"Actual Next State {states[i+1]}")
+            # print all indexes where the difference it greater than 10
 
-    #     # if i == 30:
-    #     #     # exit()
-    #     #     break
-    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+        # if i == 30:
+        #     # exit()
+        #     break
+        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
 
-    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
+    print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
     # exit()
     compare_real_vs_model(
