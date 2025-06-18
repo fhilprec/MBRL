@@ -406,10 +406,12 @@ def compare_real_vs_model(
     states=None,
     actions=None,
     normalization_stats=None,
+    steps_into_future: int = 5,
+    clock_speed = 5
 ):
     
-    states = states[100:]
-    actions = actions[100:]
+    # states = states[100:]
+    # actions = actions[100:]
     
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
@@ -483,6 +485,7 @@ def compare_real_vs_model(
 
     # Initialize LSTM state for model predictions
     lstm_state = None
+    lsmt_real_state = None
 
     while running and step_count < min(num_steps, len(states) - 1):
         for event in pygame.event.get():
@@ -506,6 +509,9 @@ def compare_real_vs_model(
             flattened_model_state - state_mean
         ) / state_std
 
+
+
+
         # Use the stateful model (returns both prediction and new LSTM state)
         normalized_model_state_flattened, lstm_state = world_model.apply(
             dynamics_params,
@@ -514,6 +520,12 @@ def compare_real_vs_model(
             jnp.array([action]),
             lstm_state,
         )
+
+
+        
+
+
+
 
         model_state_flattened = (
             normalized_model_state_flattened * state_std[:-2] + state_mean[:-2]
@@ -567,9 +579,36 @@ def compare_real_vs_model(
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
 
+
+
+
+
+
+
+        #seperate prediction just to have the lstm state for the current real trajectory at all times
+        flattened_real_state, unflattener = flatten_state(
+            real_state.env_state, single_state=True
+        )
+        normalized_real_state_flat = (
+            flattened_real_state - state_mean
+        ) / state_std
+        _, lsmt_real_state = world_model.apply(
+            dynamics_params,
+            None,
+            normalized_real_state_flat,
+            jnp.array([action]),
+            lsmt_real_state,
+        )
+
+        if step_count % steps_into_future == 0:
+            model_state = real_state
+            lstm_state = lsmt_real_state
+
+
+
         step_count += 1
         # print(states[step_count][:-2])
-        clock.tick(1)
+        clock.tick(clock_speed)
         # Rendering stuff end -------------------------------------------------------
 
     pygame.quit()
