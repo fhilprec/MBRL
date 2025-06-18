@@ -339,7 +339,7 @@ def train_world_model(
     rewards,
     learning_rate=3e-4,
     batch_size=256,
-    num_epochs=10,
+    num_epochs=10000,
 ):
     # Calculate normalization statistics from the flattened states
     # States should be shape (num_samples, feature_dim)
@@ -360,7 +360,7 @@ def train_world_model(
 
     # Use normalized data for training
     model = build_world_model()
-    optimizer = optax.adam(learning_rate=1e-4)
+    optimizer = optax.adam(learning_rate=learning_rate)
     
     rng = jax.random.PRNGKey(42)
     dummy_state = normalized_states[:1]  # Take first normalized state as example
@@ -543,6 +543,9 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         real_base_state = real_state.env_state
         model_base_state = model_state.env_state
 
+        if step_count % 2 == 0:
+            model_state = real_state
+
         # Rendering stuff -------------------------------------------------------
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
@@ -567,7 +570,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         pygame.display.flip()
        
         step_count += 1
-        clock.tick(30)
+        clock.tick(5)
         # Rendering stuff end -------------------------------------------------------
 
     pygame.quit()
@@ -576,7 +579,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
 
 if __name__ == "__main__":
 
-    batch_size = 128
+    batch_size = 1024
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -623,7 +626,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             flattened_states, actions, _, rewards,_ = collect_experience_sequential(
                 env,
-                num_episodes=1,
+                num_episodes=5,
                 max_steps_per_episode=1000
             )
             next_states = flattened_states[1:]  # Next states are just the next frame in the sequence
@@ -664,7 +667,6 @@ if __name__ == "__main__":
             next_states,
             rewards,
             batch_size=batch_size,
-            num_epochs=5000,
         )
         normalization_stats = training_info.get('normalization_stats', None)
 
@@ -707,7 +709,7 @@ if __name__ == "__main__":
         loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
         # print(loss)
         losses.append(loss)
-        if loss > 10 and i < 20:
+        if loss > 0.01:
             # print('-----------------------------------------------------------------------------------------------------------------')
             pass
             print(f"Step {i}:")
