@@ -339,7 +339,7 @@ def train_world_model(
     rewards,
     learning_rate=3e-4,
     batch_size=256,
-    num_epochs=10000,
+    num_epochs=1000,
 ):
     # Calculate normalization statistics from the flattened states
     # States should be shape (num_samples, feature_dim)
@@ -371,13 +371,13 @@ def train_world_model(
     # Update loss_function to work with normalized states
     def loss_function(params, state_batch, action_batch, next_state_batch):
         # Model now works with normalized states
-        pred_next_state = model.apply(params, None, state_batch, action_batch)
+        pred_next_state_batch = model.apply(params, None, state_batch, action_batch)
         
         # Next state is also normalized
-        target_next_state = next_state_batch[:, :-2]
+        target_next_state_batch = next_state_batch[:, :-2]
         
         # Simple MSE loss on normalized values
-        mse = jnp.mean((target_next_state - pred_next_state)**2)
+        mse = jnp.mean((target_next_state_batch - pred_next_state_batch)**2)
         # jax.debug.print(
         #     "Loss: {mse:.6f}", mse=mse
         # )
@@ -527,8 +527,21 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
             axis=-1,
         )
+
+        #TODO DELETE afterwards
+        model_state_flattened = model_state_flattened.at[0,133:135].set([20,50])  # Set player_x and player_y to 200
+        print(model_state_flattened)
+        print(model_state_flattened[0,133:135])
+        print(len(model_state_flattened))
+        print(model_state_flattened.shape)
+
         model_state_flattened_1d = model_state_flattened.reshape(-1)
-        
+
+
+
+
+
+
         # Update model state
         model_state = model_state.replace(env_state=unflattener(model_state_flattened_1d))
         reconstructed_env_state = unflattener(model_state_flattened_1d)
@@ -537,7 +550,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             rng_key=real_state.env_state.rng_key
         )
         model_state = model_state.replace(env_state=reconstructed_env_state)
-
+        # print(model_state)
         if VERBOSE and step_count % 100 == 0:
             print(f"Step {step_count}: Real vs Model state comparison")
         real_base_state = real_state.env_state
@@ -709,27 +722,27 @@ if __name__ == "__main__":
         loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
         # print(loss)
         losses.append(loss)
-        if loss > 0.01:
+        if loss > 1:
             # print('-----------------------------------------------------------------------------------------------------------------')
             pass
             print(f"Step {i}:")
             print(f"Loss : {loss}")
-            # print("Indexes where difference > 3:")
-            # for j in range(len(prediction[0])):
-            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
-            # print(f"Difference: {prediction - states[1+i][:-2]}")
-            # print(f"State {states[i]}")
-            # print("Negative values in state:")
-            # print(jnp.any(states[i][:-2] < -1))
-            # print(f"Prediction: {prediction}")
-            # print(f"Actual Next State {states[i+1]}")
+            print("Indexes where difference > 3:")
+            for j in range(len(prediction[0])):
+                if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 3:
+                    print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
+            print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
+            print(f"State {normalized_states[i]}")
+            print("Negative values in state:")
+            print(jnp.any(normalized_states[i][:-2] < -1))
+            print(f"Prediction: {prediction}")
+            print(f"Actual Next State {normalized_states[i+1]}")
             # print all indexes where the difference it greater than 10
 
             
-        # if i == 30:
+        if i == 2048:
         #     # exit()
-        #     break
+            break
         # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
     
 
