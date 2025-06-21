@@ -171,7 +171,7 @@ def build_world_model():
         output = hk.Linear(flat_state.shape[-1])(x)
         
         # Add clipping to prevent extreme values
-        output = jnp.clip(output, -10.0, 10.0)
+        # output = jnp.clip(output, -10.0, 10.0)
         
         # If normalization was used, denormalize the output
         # if normalization_stats is not None:
@@ -339,7 +339,7 @@ def train_world_model(
     rewards,
     learning_rate=3e-4,
     batch_size=256,
-    num_epochs=1000,
+    num_epochs=2000,
 ):
     # Calculate normalization statistics from the flattened states
     # States should be shape (num_samples, feature_dim)
@@ -420,7 +420,7 @@ def train_world_model(
     }
 
 
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None, normalization_stats=None):
+def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None, normalization_stats=None, steps_to_reset: int = 2):
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
         if step % 1 == 0:
@@ -446,7 +446,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
     renderer = SeaquestRenderer()
-    model_path = "world_model.pkl"
+    model_path = "world_model_MLP.pkl"
     if not os.path.exists(model_path):
         print(f"Error: World model not found at {model_path}")
         return
@@ -528,12 +528,12 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             axis=-1,
         )
 
-        #TODO DELETE afterwards
-        model_state_flattened = model_state_flattened.at[0,133:135].set([20,50])  # Set player_x and player_y to 200
-        print(model_state_flattened)
-        print(model_state_flattened[0,133:135])
-        print(len(model_state_flattened))
-        print(model_state_flattened.shape)
+        # #TODO DELETE afterwards
+        # model_state_flattened = model_state_flattened.at[0,133:136].set(200)  # Set player_x and player_y to 200
+        # print(model_state_flattened)
+        # print(model_state_flattened[0,133:146])
+        # print(len(model_state_flattened))
+        # print(model_state_flattened.shape)
 
         model_state_flattened_1d = model_state_flattened.reshape(-1)
 
@@ -556,7 +556,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         real_base_state = real_state.env_state
         model_base_state = model_state.env_state
 
-        if step_count % 2 == 0:
+        if step_count % steps_to_reset == 0:
             model_state = real_state
 
         # Rendering stuff -------------------------------------------------------
@@ -600,7 +600,7 @@ if __name__ == "__main__":
     )
     env = FlattenObservationWrapper(env)
 
-    save_path = "world_model.pkl"
+    save_path = "world_model_MLP.pkl"
     experience_data_path = "experience_data.pkl"
     model = build_world_model()
     normalization_stats = None
@@ -639,7 +639,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             flattened_states, actions, _, rewards,_ = collect_experience_sequential(
                 env,
-                num_episodes=5,
+                num_episodes=8,
                 max_steps_per_episode=1000
             )
             next_states = flattened_states[1:]  # Next states are just the next frame in the sequence
@@ -713,40 +713,40 @@ if __name__ == "__main__":
 
 
 
-    for i in range(len(states)):
-        prediction = world_model.apply(
-                dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
-            )
-        prediction
+    # for i in range(len(states)):
+    #     prediction = world_model.apply(
+    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
+    #         )
+    #     prediction
         
-        loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-        # print(loss)
-        losses.append(loss)
-        if loss > 1:
-            # print('-----------------------------------------------------------------------------------------------------------------')
-            pass
-            print(f"Step {i}:")
-            print(f"Loss : {loss}")
-            print("Indexes where difference > 3:")
-            for j in range(len(prediction[0])):
-                if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 3:
-                    print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
-            print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
-            print(f"State {normalized_states[i]}")
-            print("Negative values in state:")
-            print(jnp.any(normalized_states[i][:-2] < -1))
-            print(f"Prediction: {prediction}")
-            print(f"Actual Next State {normalized_states[i+1]}")
-            # print all indexes where the difference it greater than 10
+    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
+    #     # print(loss)
+    #     losses.append(loss)
+    #     if loss > 0.01:
+    #         # print('-----------------------------------------------------------------------------------------------------------------')
+    #         pass
+    #         print(f"Step {i}:")
+    #         print(f"Loss : {loss}")
+    #         print("Indexes where difference > 3:")
+    #         for j in range(len(prediction[0])):
+    #             if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 1:
+    #                 print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
+    #         # print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
+    #         # print(f"State {normalized_states[i]}")
+    #         # print("Negative values in state:")
+    #         # print(jnp.any(normalized_states[i][:-2] < -1))
+    #         # print(f"Prediction: {prediction}")
+    #         # print(f"Actual Next State {normalized_states[i+1]}")
+    #         # print all indexes where the difference it greater than 10
 
             
-        if i == 2048:
-        #     # exit()
-            break
-        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+    #     if i == 2048:
+    #     #     # exit()
+    #         break
+    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
     
 
-    print(f"Average loss: {jnp.mean(jnp.array(losses))}")
+    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
     # exit()
     compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions, normalization_stats=normalization_stats)
