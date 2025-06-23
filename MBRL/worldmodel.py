@@ -171,7 +171,7 @@ def build_world_model():
         output = hk.Linear(flat_state.shape[-1])(x)
         
         # Add clipping to prevent extreme values
-        output = jnp.clip(output, -10.0, 10.0)
+        # output = jnp.clip(output, -10.0, 10.0)
         
         # If normalization was used, denormalize the output
         # if normalization_stats is not None:
@@ -182,7 +182,7 @@ def build_world_model():
     return hk.transform(forward)
 
 def collect_experience_sequential(
-    env, num_episodes: int = 1, max_steps_per_episode: int = 1000
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     states = []
@@ -190,40 +190,64 @@ def collect_experience_sequential(
     actions = []
     rewards = []
     dones = []
-    
+    boundaries = []
+
+    dead = False
+    total_steps = 0
     rng = jax.random.PRNGKey(42)
-    
+
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
         _, state = env.reset(reset_key)
-        
+
         for step in range(max_steps_per_episode):
             current_state = jax.tree.map(lambda x: x, state.env_state)
-            
+
             # Choose a random action
             rng, action_key = jax.random.split(rng)
-            action = 5 if jax.random.uniform(action_key) < 0.2 else jax.random.randint(action_key, (), 0, 18)
-            
+            action = (
+                5
+                if jax.random.uniform(action_key) < 0.2
+                else jax.random.randint(action_key, (), 0, 18)
+            )
+
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)
             _, next_state, reward, done, _ = env.step(step_key, state, action)
-            
+
             next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
-            
+
             # Store the transition
             states.append(current_state)
             actions.append(action)
             next_states.append(next_state_repr)
             rewards.append(reward)
             dones.append(done)
-            
+
             # If episode is done, reset the environment
+
+            
+            if not episodic_life: 
+                if current_state.death_counter > 0 and not dead:
+                    dead = True
+                if not current_state.death_counter > 0 and dead:
+                    dead = False
+                    boundaries.append(total_steps)
+
             if done:
                 print(f"Episode {episode+1} done after {step+1} steps")
+
+                if episodic_life: 
+                    if len(boundaries) == 0:
+                        boundaries.append(step)
+                    else:
+                        boundaries.append(boundaries[-1] + step + 1)
                 break
-                
+               
+
             # Update state for the next step
             state = next_state
+            total_steps += 1
     
     # Convert to JAX arrays (but don't flatten the structure yet)
     # Use tree_map to maintain structure with jnp arrays
@@ -339,7 +363,7 @@ def train_world_model(
     rewards,
     learning_rate=3e-4,
     batch_size=256,
-    num_epochs=10000,
+    num_epochs=3000,
 ):
     # Calculate normalization statistics from the flattened states
     # States should be shape (num_samples, feature_dim)
@@ -420,7 +444,7 @@ def train_world_model(
     }
 
 
-def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None, normalization_stats=None):
+def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=None, actions=None, normalization_stats=None, steps_into_future: int = 2):
     # Add debugging to understand the model input/output formats
     def debug_states(step, real_state, pred_state):
         if step % 1 == 0:
@@ -431,7 +455,7 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             print(f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}")
 
             error = jnp.mean((real_state - pred_state) ** 2)
-            print(f"Step {step_count}, Error: {error:.2f}")
+            print(f"Step {step_count}, Unnormalized Error: {error:.2f}")
 
     state_mean = normalization_stats['mean']
     state_std = normalization_stats['std']
@@ -568,6 +592,9 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
+
+        if step_count % steps_into_future == 0:
+            model_state = real_state
        
         step_count += 1
         clock.tick(5)
@@ -615,12 +642,13 @@ if __name__ == "__main__":
         # Check if experience data file exists
         if os.path.exists(experience_data_path):
             print(f"Loading existing experience data from {experience_data_path}...")
-            with open(experience_data_path, 'rb') as f:
+            with open(experience_data_path, "rb") as f:
                 saved_data = pickle.load(f)
-                states = saved_data['states']
-                actions = saved_data['actions']
-                next_states = saved_data['next_states']
-                rewards = saved_data['rewards']
+                states = saved_data["states"]
+                actions = saved_data["actions"]
+                next_states = saved_data["next_states"]
+                rewards = saved_data["rewards"]
+                boundaries = saved_data["boundaries"]
         else:
             print("No existing experience data found. Collecting new experience data...")
             # Collect experience data (AtariWrapper handles frame stacking automatically)
@@ -687,7 +715,7 @@ if __name__ == "__main__":
             actions = saved_data['actions']
             next_states = saved_data['next_states']
             rewards = saved_data['rewards']
-
+            boundaries = saved_data["boundaries"]
     world_model = build_world_model()
     losses = []
 
@@ -700,40 +728,42 @@ if __name__ == "__main__":
 
 
 
-    for i in range(len(states)):
-        prediction = world_model.apply(
-                dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
-            )
-        prediction
+    # for i in range(len(states)):
+    #     prediction = world_model.apply(
+    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]])
+    #         )
+    #     prediction
         
-        loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-        # print(loss)
-        losses.append(loss)
-        if loss > 0.01:
-            # print('-----------------------------------------------------------------------------------------------------------------')
-            pass
-            print(f"Step {i}:")
-            print(f"Loss : {loss}")
-            # print("Indexes where difference > 3:")
-            # for j in range(len(prediction[0])):
-            #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
-            #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
-            # print(f"Difference: {prediction - states[1+i][:-2]}")
-            # print(f"State {states[i]}")
-            # print("Negative values in state:")
-            # print(jnp.any(states[i][:-2] < -1))
-            # print(f"Prediction: {prediction}")
-            # print(f"Actual Next State {states[i+1]}")
-            # print all indexes where the difference it greater than 10
+    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
+    #     # print(loss)
+    #     losses.append(loss)
+    #     if loss > 0.01:
+    #         # print('-----------------------------------------------------------------------------------------------------------------')
+    #         print(f"Step {i}:")
+    #         print(f"Loss : {loss}")
+    #         print("Indexes where difference > 3:")
+    #         for j in range(len(prediction[0])):
+    #             if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 1:
+    #                 print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
+    #         # print("Indexes where difference > 3:")
+    #         # for j in range(len(prediction[0])):
+    #         #     if jnp.abs(prediction[0][j] - states[1+i][j]) > 3:
+    #         #         print(f"Index {j}: {prediction[0][j]} vs {states[1+i][j]}")
+    #         # print(f"Difference: {prediction - states[1+i][:-2]}")
+    #         # print(f"State {states[i]}")
+    #         # print("Negative values in state:")
+    #         # print(jnp.any(states[i][:-2] < -1))
+    #         # print(f"Prediction: {prediction}")
+    #         # print(f"Actual Next State {states[i+1]}")
+    #         # print all indexes where the difference it greater than 10
 
             
-        # if i == 30:
-        #     # exit()
-        #     break
-        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+    #     if i == 2048:
+    #         break
+    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
     
 
-    print(f"Average loss: {jnp.mean(jnp.array(losses))}")
+    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
     # exit()
     compare_real_vs_model(num_steps=5000, render_scale=2, states=states, actions=actions, normalization_stats=normalization_stats)

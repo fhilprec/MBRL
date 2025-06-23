@@ -156,7 +156,7 @@ def build_world_model():
 
 
 def collect_experience_sequential(
-    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = True
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     states = []
@@ -263,7 +263,7 @@ def train_world_model(
     rewards,
     learning_rate=3e-4,
     batch_size=4,
-    num_epochs=2000,
+    num_epochs=600,
     sequence_length=32,
     episode_boundaries=None,
 ):
@@ -300,7 +300,8 @@ def train_world_model(
                 end_idx = episode_boundaries[i]
             
             # Create sequences within this episode
-            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length//4):
+            for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
+            # for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 4):
                 if start_idx + j + sequence_length > end_idx:
                     break
                     
@@ -391,7 +392,7 @@ def train_world_model(
         epoch_loss = jnp.mean(jnp.array(losses))
         # if VERBOSE and (epoch + 1) % (num_epochs / 10) == 0:
         #     print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
-        if VERBOSE:
+        if VERBOSE and (epoch + 1) % (num_epochs/10) == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
 
     return params, {
@@ -406,7 +407,7 @@ def compare_real_vs_model(
     states=None,
     actions=None,
     normalization_stats=None,
-    steps_into_future: int = 5,
+    steps_into_future: int = 10,
     clock_speed = 5
 ):
     
@@ -427,7 +428,7 @@ def compare_real_vs_model(
             )
 
             error = jnp.mean((real_state - pred_state) ** 2)
-            print(f"Step {step_count}, Error: {error:.2f}")
+            print(f"Step {step_count}, Unnormalized Error: {error:.2f}")
 
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
@@ -465,7 +466,8 @@ def compare_real_vs_model(
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
     running = True
-    step_count = 120 # Start from a later step to avoid initial noise
+    # step_count = 120 # Start from a later step to avoid initial noise
+    step_count = 0
     clock = pygame.time.Clock()
 
     # This part is only here to get the real_start and for the unflattener
@@ -664,7 +666,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             flattened_states, actions, _, rewards, _, boundaries = (
                 collect_experience_sequential(
-                    env, num_episodes=8, max_steps_per_episode=1000, episodic_life=False
+                    env, num_episodes=5, max_steps_per_episode=1000
                 )
             )
             next_states = flattened_states[
@@ -749,37 +751,37 @@ if __name__ == "__main__":
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
 
-    for i in range(len(states)):
-        prediction, lstm_state = world_model.apply(
-                dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]]), lstm_state
-            )
-        prediction
+    # for i in range(len(states)):
+    #     prediction, lstm_state = world_model.apply(
+    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]]), lstm_state
+    #         )
+    #     prediction
         
-        loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-        # print(loss)
-        losses.append(loss)
-        if loss > 0.01:
-            # print('-----------------------------------------------------------------------------------------------------------------')
-            pass
-            print(f"Step {i}:")
-            print(f"Loss : {loss}")
-            print("Indexes where difference > 3:")
-            for j in range(len(prediction[0])):
-                if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 1:
-                    print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
-            # print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
-            # print(f"State {normalized_states[i]}")
-            # print("Negative values in state:")
-            # print(jnp.any(normalized_states[i][:-2] < -1))
-            # print(f"Prediction: {prediction}")
-            # print(f"Actual Next State {normalized_states[i+1]}")
-            # print all indexes where the difference it greater than 10
+    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
+    #     # print(loss)
+    #     losses.append(loss)
+    #     if loss > 0.01:
+    #         # print('-----------------------------------------------------------------------------------------------------------------')
+    #         print(f"Step {i}:")
+    #         print(f"Loss : {loss}")
+    #         print("Indexes where difference > 3:")
+    #         for j in range(len(prediction[0])):
+    #             if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 1:
+    #                 print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
+    #         # print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
+    #         # print(f"State {normalized_states[i]}")
+    #         # print("Negative values in state:")
+    #         # print(jnp.any(normalized_states[i][:-2] < -1))
+    #         # print(f"Prediction: {prediction}")
+    #         # print(f"Actual Next State {normalized_states[i+1]}")
+    #         # print all indexes where the difference it greater than 10
 
             
-        if i == 2048:
-        #     # exit()
-            break
-        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+    #     if i == 2048:
+    #         break
+    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
+
+    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
 
     # exit()
     compare_real_vs_model(
