@@ -440,7 +440,7 @@ def compare_real_vs_model(
         base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
     renderer = SeaquestRenderer()
-    model_path = "world_model.pkl"
+    model_path = "world_model_LSTM.pkl"
     if not os.path.exists(model_path):
         print(f"Error: World model not found at {model_path}")
         return
@@ -625,7 +625,7 @@ if __name__ == "__main__":
     )
     env = FlattenObservationWrapper(env)
 
-    save_path = "world_model.pkl"
+    save_path = "world_model_LSTM.pkl"
     experience_data_path = "experience_data.pkl"
     model = build_world_model()
     normalization_stats = None
