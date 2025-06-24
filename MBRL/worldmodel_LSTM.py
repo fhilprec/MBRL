@@ -159,8 +159,8 @@ def collect_experience_sequential(
     env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False
 ):
     """Collect experience data sequentially to ensure proper transitions."""
-    states = []
-    next_states = []
+    observations = []
+    next_observations = []
     actions = []
     rewards = []
     dones = []
@@ -172,10 +172,11 @@ def collect_experience_sequential(
 
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
-        _, state = env.reset(reset_key)
+        obs, state = env.reset(reset_key)
 
         for step in range(max_steps_per_episode):
-            current_state = jax.tree.map(lambda x: x, state.env_state)
+            current_state = state
+            current_obs = obs
 
             # Choose a random action
             rng, action_key = jax.random.split(rng)
@@ -187,14 +188,14 @@ def collect_experience_sequential(
 
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)
-            _, next_state, reward, done, _ = env.step(step_key, state, action)
+            next_obs, next_state, reward, done, _ = env.step(step_key, state, action)
 
             next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
 
             # Store the transition
-            states.append(current_state)
+            observations.append(current_obs)
             actions.append(action)
-            next_states.append(next_state_repr)
+            next_observations.append(next_obs)
             rewards.append(reward)
             dones.append(done)
 
@@ -202,9 +203,9 @@ def collect_experience_sequential(
 
             
             if not episodic_life: 
-                if current_state.death_counter > 0 and not dead:
+                if current_state.env_state.death_counter > 0 and not dead:
                     dead = True
-                if not current_state.death_counter > 0 and dead:
+                if not current_state.env_state.death_counter > 0 and dead:
                     dead = False
                     boundaries.append(total_steps)
 
@@ -228,13 +229,13 @@ def collect_experience_sequential(
 
     # Stack states correctly to form batch
     # Step 1: Stack states across time
-    batched_states = jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *states)
+    # batched_observations = jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *observations)
 
-    # Step 2: Flatten into a single vector per state
-    flat_states, unflattener = flatten_state(batched_states, single_state=False)
 
-    batched_next_states = jax.tree.map(lambda *xs: jnp.stack(xs), *next_states)
-    flat_next_states, _ = flatten_state(batched_next_states, single_state=False)
+    observations_array = flatten_state(observations, is_list=True)[0]
+
+    print(observations_array.shape)
+    exit()
 
     actions_array = jnp.array(actions)
     rewards_array = jnp.array(rewards)
@@ -244,7 +245,7 @@ def collect_experience_sequential(
     print(boundaries)
 
     return (
-        flatten_state(states, is_list=True),
+        flatten_state(observations, is_list=True),
         actions_array,
         states,
         rewards_array,
@@ -263,8 +264,8 @@ def train_world_model(
     rewards,
     learning_rate=3e-4,
     batch_size=4,
-    num_epochs=600,
-    sequence_length=32,
+    num_epochs=30,
+    sequence_length=16,
     episode_boundaries=None,
 ):
     # Calculate normalization statistics from the flattened states
@@ -300,10 +301,35 @@ def train_world_model(
                 end_idx = episode_boundaries[i]
             
             # Create sequences within this episode
-            for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
-            # for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 4):
+            # for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
+            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
                 if start_idx + j + sequence_length > end_idx:
-                    break
+                    # break
+                    #dont just break but just repeat the last state of the current sequence to fill out the sequence
+                    padding_length = start_idx + j + sequence_length - end_idx
+                    padded_states = jnp.concatenate(
+                        [normalized_states[start_idx + j : end_idx], 
+                         jnp.tile(normalized_states[end_idx - 1], (padding_length, 1))],
+                        axis=0
+                    )
+                    padded_actions = jnp.concatenate(
+                        [actions[start_idx + j : end_idx], 
+                         jnp.tile(actions[end_idx - 1], (padding_length,))],
+                        axis=0
+                    )
+                    padded_next_states = jnp.concatenate(
+                        [normalized_next_states[start_idx + j : end_idx], 
+                         jnp.tile(normalized_next_states[end_idx - 1], (padding_length, 1))],
+                        axis=0
+                    )
+
+                    sequences.append((
+                        padded_states,
+                        padded_actions, 
+                        padded_next_states
+                    ))
+                    continue
+                    
                     
                 sequences.append((
                     normalized_states[start_idx + j : start_idx + j + sequence_length],
@@ -317,7 +343,7 @@ def train_world_model(
     # Create sequential batches
     batches = create_sequential_batches()
 
-
+    print(f"Created {len(batches)} sequential batches of size {sequence_length}")
 
     model = build_world_model()
     optimizer = optax.adam(learning_rate=1e-4)
@@ -436,6 +462,8 @@ def compare_real_vs_model(
     normalized_states = (states - state_mean) / state_std
     normalized_next_states = (next_states - state_mean) / state_std
 
+
+
     base_game = JaxSeaquest()
     real_env = AtariWrapper(
         base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
@@ -485,6 +513,9 @@ def compare_real_vs_model(
     real_state = real_state.replace(env_state=first_state_raw)
     model_state = real_state  # Start identical
 
+
+
+
     # Initialize LSTM state for model predictions
     lstm_state = None
     lsmt_real_state = None
@@ -533,7 +564,8 @@ def compare_real_vs_model(
             normalized_model_state_flattened * state_std[:-2] + state_mean[:-2]
         )
 
-        debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
+        # debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
+        print(next_real_state_flat[:-2])
 
         # Complete model state with additional fields
         model_state_flattened = jnp.concatenate(
