@@ -445,15 +445,11 @@ def compare_real_vs_model(
     env=None
 ):
 
-    # obs = obs[100:]
-    # actions = actions[100:]
     
-    # Add debugging to understand the model input/output formats
     def debug_obs(step, real_state, pred_state):
         error = jnp.mean((real_state - pred_state) ** 2)
         print(f"Step {step}, Unnormalized Error: {error:.2f}")
-        # print(f"Real State: {real_state}"
-        #       f"\nPredicted State: {pred_state}")
+
 
 
 
@@ -471,7 +467,6 @@ def compare_real_vs_model(
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
-        scale_factor = model_data.get("scale_factor", 1 / 1)
         normalization_stats = model_data.get("normalization_stats", None)
     world_model = build_world_model()
 
@@ -488,7 +483,6 @@ def compare_real_vs_model(
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
-    running = True
     step_count = 0
     clock = pygame.time.Clock()
 
@@ -505,15 +499,14 @@ def compare_real_vs_model(
 
 
     
-    # state = flat_observation_to_state(real_unflattened, unflattener)
 
 
-    real_obs = obs[0]
-    model_obs = obs[0]  # Start identical
+   
 
     
-
-
+    #init the first observation and model observation
+    real_obs = obs[0]
+    model_obs = obs[0]  # Start identical
 
     # Initialize LSTM state for model predictions
     lstm_state = None
@@ -559,38 +552,11 @@ def compare_real_vs_model(
         debug_obs(step_count, next_real_obs, unnormalized_model_prediction)
 
 
-        # # Complete model state with additional fields
-        # model_state_flattened = jnp.concatenate(
-        #     [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
-        #     axis=-1,
-        # )
-        # model_state_flattened_1d = model_state_flattened.reshape(-1)
 
-        # # Update model state
-        # model_state = model_state.replace(
-        #     env_state=unflattener(model_state_flattened_1d)
-        # )
-        # reconstructed_env_state = unflattener(model_state_flattened_1d)
-        # reconstructed_env_state = reconstructed_env_state._replace(
-        #     step_counter=real_state.env_state.step_counter,
-        #     rng_key=real_state.env_state.rng_key,
-        # )
-        # model_state = model_state.replace(env_state=reconstructed_env_state)
-
-        # if VERBOSE and step_count % 100 == 0:
-        #     print(f"Step {step_count}: Real vs Model state comparison")
-        # real_base_state = real_state.env_state
-        # model_base_state = model_state.env_state
-
-        # Rendering stuff -------------------------------------------------------
-        print(real_obs.shape)
-        print(model_obs.squeeze().shape)
-        
+        # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
             real_obs, unflattener
         )
-        print(real_base_state)
-        print(type(real_base_state))
         model_base_state = flat_observation_to_state(
             model_obs.squeeze(), unflattener
         )
@@ -616,6 +582,7 @@ def compare_real_vs_model(
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
 
+        # Rendering stuff end -------------------------------------------------------
 
 
 
@@ -700,7 +667,7 @@ if __name__ == "__main__":
             # Collect experience data (AtariWrapper handles frame stacking automatically)
             obs, actions, rewards, _, boundaries = (
                 collect_experience_sequential(
-                    env, num_episodes=1, max_steps_per_episode=1000
+                    env, num_episodes=10, max_steps_per_episode=1000
                 )
             )
             next_obs = obs[
@@ -774,50 +741,7 @@ if __name__ == "__main__":
             rewards = saved_data["rewards"]
             boundaries = saved_data["boundaries"]
 
-    # world_model = build_world_model()
-    # losses = []
 
-    # obs_mean = normalization_stats["mean"]
-    # obs_std = normalization_stats["std"]
-
-    # lstm_state = None
-
-    # normalized_obs = (obs - obs_mean) / obs_std
-    # normalized_next_obs = (next_obs - obs_mean) / obs_std
-
-    # for i in range(len(states)):
-    #     prediction, lstm_state = world_model.apply(
-    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]]), lstm_state
-    #         )
-    #     prediction
-        
-    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-    #     # print(loss)
-    #     losses.append(loss)
-    #     if loss > 0.01:
-    #         # print('-----------------------------------------------------------------------------------------------------------------')
-    #         print(f"Step {i}:")
-    #         print(f"Loss : {loss}")
-    #         print("Indexes where difference > 3:")
-    #         for j in range(len(prediction[0])):
-    #             if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 1:
-    #                 print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
-    #         # print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
-    #         # print(f"State {normalized_states[i]}")
-    #         # print("Negative values in state:")
-    #         # print(jnp.any(normalized_states[i][:-2] < -1))
-    #         # print(f"Prediction: {prediction}")
-    #         # print(f"Actual Next State {normalized_states[i+1]}")
-    #         # print all indexes where the difference it greater than 10
-
-            
-    #     if i == 2048:
-    #         break
-    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
-
-    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
-
-    # exit()
     compare_real_vs_model(
         render_scale=6,
         obs=obs,
