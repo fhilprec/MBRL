@@ -16,6 +16,8 @@ import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
+from obs_state_converter import flat_observation_to_state
+
 VERBOSE = True
 model = None
 
@@ -94,7 +96,7 @@ def render_trajectory(
     print(f"Rendered {frame_idx} frames from trajectory")
 
 
-def flatten_state(
+def flatten_obs(
     state, single_state: bool = False, is_list=False
 ) -> Tuple[jnp.ndarray, Any]:
     """
@@ -105,10 +107,12 @@ def flatten_state(
 
     if type(state) == list:
         flat_states = []
+
         for s in state:
             flat_state, _ = jax.flatten_util.ravel_pytree(s)
             flat_states.append(flat_state)
         flat_states = jnp.stack(flat_states, axis=0)  # Shape: (1626, 160)
+        print(flat_states.shape)
         return flat_states
 
     if single_state:
@@ -131,7 +135,7 @@ def build_world_model():
         else:
             flat_state_full = state
 
-        flat_state = flat_state_full[..., :-2]
+        flat_state = flat_state_full[..., :]
         action_one_hot = jax.nn.one_hot(action, num_classes=18)
         if len(state.shape) == 1:
             action_one_hot = action_one_hot.reshape(1, 18)
@@ -222,6 +226,7 @@ def collect_experience_sequential(
 
             # Update state for the next step
             state = next_state
+            obs = next_obs
             total_steps += 1
 
     # Convert to JAX arrays (but don't flatten the structure yet)
@@ -232,22 +237,16 @@ def collect_experience_sequential(
     # batched_observations = jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *observations)
 
 
-    observations_array = flatten_state(observations, is_list=True)[0]
-
-    print(observations_array.shape)
-    exit()
-
     actions_array = jnp.array(actions)
     rewards_array = jnp.array(rewards)
     dones_array = jnp.array(dones)
 
-    print("Boundaries:")
-    print(boundaries)
+    # print("Boundaries:")
+    # print(boundaries)
 
     return (
-        flatten_state(observations, is_list=True),
+        flatten_obs(observations, is_list=True),
         actions_array,
-        states,
         rewards_array,
         dones_array,
         boundaries,
@@ -258,26 +257,29 @@ def collect_experience_sequential(
 
 
 def train_world_model(
-    states,
+    obs,
     actions,
-    next_states,
+    next_obs,
     rewards,
-    learning_rate=3e-4,
+    learning_rate=1e-4,
     batch_size=4,
-    num_epochs=30,
+    num_epochs=3000,
     sequence_length=16,
     episode_boundaries=None,
 ):
-    # Calculate normalization statistics from the flattened states
-    state_mean = jnp.mean(states, axis=0)
-    state_std = jnp.std(states, axis=0) + 1e-8
+    # Calculate normalization statistics from the flattened obs
+    state_mean = jnp.mean(obs, axis=0)
+    state_std = jnp.std(obs, axis=0) + 1e-8
 
     # Store normalization stats for later use
     normalization_stats = {"mean": state_mean, "std": state_std}
 
-    # Normalize states and next_states
-    normalized_states = (states - state_mean) / state_std
-    normalized_next_states = (next_states - state_mean) / state_std
+    # Normalize obs and next_obs
+    normalized_obs = (obs - state_mean) / state_std
+    normalized_next_obs = (next_obs - state_mean) / state_std
+
+
+
 
     # Create sequential batches that respect episode boundaries
     def create_sequential_batches(batch_size=32):
@@ -307,9 +309,9 @@ def train_world_model(
                     # break
                     #dont just break but just repeat the last state of the current sequence to fill out the sequence
                     padding_length = start_idx + j + sequence_length - end_idx
-                    padded_states = jnp.concatenate(
-                        [normalized_states[start_idx + j : end_idx], 
-                         jnp.tile(normalized_states[end_idx - 1], (padding_length, 1))],
+                    padded_obs = jnp.concatenate(
+                        [normalized_obs[start_idx + j : end_idx], 
+                         jnp.tile(normalized_obs[end_idx - 1], (padding_length, 1))],
                         axis=0
                     )
                     padded_actions = jnp.concatenate(
@@ -317,24 +319,24 @@ def train_world_model(
                          jnp.tile(actions[end_idx - 1], (padding_length,))],
                         axis=0
                     )
-                    padded_next_states = jnp.concatenate(
-                        [normalized_next_states[start_idx + j : end_idx], 
-                         jnp.tile(normalized_next_states[end_idx - 1], (padding_length, 1))],
+                    padded_next_obs = jnp.concatenate(
+                        [normalized_next_obs[start_idx + j : end_idx], 
+                         jnp.tile(normalized_next_obs[end_idx - 1], (padding_length, 1))],
                         axis=0
                     )
 
                     sequences.append((
-                        padded_states,
+                        padded_obs,
                         padded_actions, 
-                        padded_next_states
+                        padded_next_obs
                     ))
                     continue
                     
                     
                 sequences.append((
-                    normalized_states[start_idx + j : start_idx + j + sequence_length],
+                    normalized_obs[start_idx + j : start_idx + j + sequence_length],
                     actions[start_idx + j : start_idx + j + sequence_length], 
-                    normalized_next_states[start_idx + j : start_idx + j + sequence_length]
+                    normalized_next_obs[start_idx + j : start_idx + j + sequence_length]
                 ))
         
         return sequences
@@ -346,10 +348,10 @@ def train_world_model(
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
 
     model = build_world_model()
-    optimizer = optax.adam(learning_rate=1e-4)
+    optimizer = optax.adam(learning_rate=learning_rate)
 
     rng = jax.random.PRNGKey(42)
-    dummy_state = normalized_states[:1]
+    dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
@@ -362,7 +364,6 @@ def train_world_model(
             action_batch: (batch_size, seq_len)
             next_state_batch: (batch_size, seq_len, state_dim)
         """
-        print(state_batch.shape)
         seq_len, state_dim = state_batch.shape
         total_loss = 0.0
 
@@ -377,18 +378,23 @@ def train_world_model(
             ]  # Keep batch dimension
             current_action = action_batch[ t : t + 1]
             target_next_state = next_state_batch[
-                t, :-2
-            ]  # Remove last 2 features
+                t, :
+            ]  
 
             # Forward pass
             pred_next_state, lstm_state = model.apply(
                 params, None, current_state, current_action, lstm_state
             )
-
+            # print("Start here")
+            # print(str(pred_next_state.shape))
+            # print(str(pred_next_state))
+            # print(str(target_next_state.shape))
+            
             # Compute loss for this timestep
             step_loss = jnp.mean(
                 (target_next_state - pred_next_state.squeeze()) ** 2
             )
+            # exit()
             sequence_loss += step_loss
 
         total_loss += sequence_loss / seq_len
@@ -421,6 +427,7 @@ def train_world_model(
         if VERBOSE and (epoch + 1) % (num_epochs/10) == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
 
+    print("Training completed")
     return params, {
         "final_loss": epoch_loss,
         "normalization_stats": normalization_stats,
@@ -428,51 +435,39 @@ def train_world_model(
 
 
 def compare_real_vs_model(
-    num_steps: int = 10,
+    num_steps: int = 100,
     render_scale: int = 2,
-    states=None,
+    obs=None,
     actions=None,
     normalization_stats=None,
-    steps_into_future: int = 10,
-    clock_speed = 5
+    steps_into_future: int = 100,
+    clock_speed = 5,
+    env=None
 ):
-    
-    # states = states[100:]
+
+    # obs = obs[100:]
     # actions = actions[100:]
     
     # Add debugging to understand the model input/output formats
-    def debug_states(step, real_state, pred_state):
-        if step % 1 == 0:
-            print(f"Step {step} debugging:")
+    def debug_obs(step, real_state, pred_state):
+        error = jnp.mean((real_state - pred_state) ** 2)
+        print(f"Step {step}, Unnormalized Error: {error:.2f}")
+        # print(f"Real State: {real_state}"
+        #       f"\nPredicted State: {pred_state}")
 
-            # Check ranges and statistics of the data
-            print(
-                f"Real state min/max/mean: {jnp.min(real_state):.2f}/{jnp.max(real_state):.2f}/{jnp.mean(real_state):.2f}"
-            )
-            print(
-                f"Model state min/max/mean: {jnp.min(pred_state):.2f}/{jnp.max(pred_state):.2f}/{jnp.mean(pred_state):.2f}"
-            )
 
-            error = jnp.mean((real_state - pred_state) ** 2)
-            print(f"Step {step_count}, Unnormalized Error: {error:.2f}")
+
 
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
 
-    normalized_states = (states - state_mean) / state_std
-    normalized_next_states = (next_states - state_mean) / state_std
 
 
 
-    base_game = JaxSeaquest()
-    real_env = AtariWrapper(
-        base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
-    )
+
+
     renderer = SeaquestRenderer()
     model_path = "world_model_LSTM.pkl"
-    if not os.path.exists(model_path):
-        print(f"Error: World model not found at {model_path}")
-        return
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
@@ -494,25 +489,29 @@ def compare_real_vs_model(
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
     running = True
-    # step_count = 120 # Start from a later step to avoid initial noise
     step_count = 0
     clock = pygame.time.Clock()
 
-    # This part is only here to get the real_start and for the unflattener
-    base_game = JaxSeaquest()
-    real_env = AtariWrapper(
-        base_game, sticky_actions=False, episodic_life=False, frame_stack_size=4
+
+
+
+    #code to get the unflattener
+    game = JaxSeaquest()
+    env = AtariWrapper(
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=1
     )
-    rng = jax.random.PRNGKey(int(time.time()))
-    rng, reset_key = jax.random.split(rng)
-    real_obs, real_state = real_env.reset(reset_key)
+    dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
+    _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
-    first_state_flat = states[0 + step_count]
-    _, unflattener = flatten_state(real_state.env_state, single_state=True)
-    first_state_raw = unflattener(first_state_flat)
-    real_state = real_state.replace(env_state=first_state_raw)
-    model_state = real_state  # Start identical
 
+    
+    # state = flat_observation_to_state(real_unflattened, unflattener)
+
+
+    real_obs = obs[0]
+    model_obs = obs[0]  # Start identical
+
+    
 
 
 
@@ -520,77 +519,76 @@ def compare_real_vs_model(
     lstm_state = None
     lsmt_real_state = None
 
-    while running and step_count < min(num_steps, len(states) - 1):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+    while step_count < min(num_steps, len(obs) - 1):
+        # for event in pygame.event.get():
+        #     if event.type == pygame.QUIT:
+        #         running = False
 
         # Use the saved action
         action = actions[step_count]
 
         # Use the saved next state directly instead of environment stepping
-        next_real_state_flat = states[step_count + 1]
-        real_state = real_state.replace(env_state=unflattener(next_real_state_flat))
+        next_real_obs = obs[step_count + 1]
 
-        # Get the flattened current state for the model
-        flattened_model_state, _ = flatten_state(
-            model_state.env_state, single_state=True
-        )
+        # Check if we need to reset the model state before making prediction
+        if step_count % steps_into_future == 0:
+            print("State reset")
+            model_obs = obs[step_count]  # Reset to current real observation
+            # We'll reset lstm_state to lsmt_real_state after computing it below
 
         # Apply model prediction with normalization and LSTM state
-        normalized_flattened_model_state = (
-            flattened_model_state - state_mean
+        normalized_flattened_model_obs = (
+            model_obs - state_mean
         ) / state_std
 
-
-
-
         # Use the stateful model (returns both prediction and new LSTM state)
-        normalized_model_state_flattened, lstm_state = world_model.apply(
+        normalized_model_prediction, lstm_state = world_model.apply(
             dynamics_params,
             None,
-            normalized_flattened_model_state,
+            normalized_flattened_model_obs,
             jnp.array([action]),
             lstm_state,
         )
 
-
-        
-
-
-
-
-        model_state_flattened = (
-            normalized_model_state_flattened * state_std[:-2] + state_mean[:-2]
+        unnormalized_model_prediction = (
+            normalized_model_prediction * state_std + state_mean
         )
 
-        # debug_states(step_count, next_real_state_flat[:-2], model_state_flattened)
-        print(next_real_state_flat[:-2])
+        model_obs = unnormalized_model_prediction
 
-        # Complete model state with additional fields
-        model_state_flattened = jnp.concatenate(
-            [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
-            axis=-1,
-        )
-        model_state_flattened_1d = model_state_flattened.reshape(-1)
+        debug_obs(step_count, next_real_obs, unnormalized_model_prediction)
 
-        # Update model state
-        model_state = model_state.replace(
-            env_state=unflattener(model_state_flattened_1d)
-        )
-        reconstructed_env_state = unflattener(model_state_flattened_1d)
-        reconstructed_env_state = reconstructed_env_state._replace(
-            step_counter=real_state.env_state.step_counter,
-            rng_key=real_state.env_state.rng_key,
-        )
-        model_state = model_state.replace(env_state=reconstructed_env_state)
 
-        if VERBOSE and step_count % 100 == 0:
-            print(f"Step {step_count}: Real vs Model state comparison")
-        real_base_state = real_state.env_state
-        model_base_state = model_state.env_state
+        # # Complete model state with additional fields
+        # model_state_flattened = jnp.concatenate(
+        #     [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
+        #     axis=-1,
+        # )
+        # model_state_flattened_1d = model_state_flattened.reshape(-1)
+
+        # # Update model state
+        # model_state = model_state.replace(
+        #     env_state=unflattener(model_state_flattened_1d)
+        # )
+        # reconstructed_env_state = unflattener(model_state_flattened_1d)
+        # reconstructed_env_state = reconstructed_env_state._replace(
+        #     step_counter=real_state.env_state.step_counter,
+        #     rng_key=real_state.env_state.rng_key,
+        # )
+        # model_state = model_state.replace(env_state=reconstructed_env_state)
+
+        # if VERBOSE and step_count % 100 == 0:
+        #     print(f"Step {step_count}: Real vs Model state comparison")
+        # real_base_state = real_state.env_state
+        # model_base_state = model_state.env_state
 
         # Rendering stuff -------------------------------------------------------
+        real_base_state = flat_observation_to_state(
+            real_obs, unflattener
+        )
+        model_base_state = flat_observation_to_state(
+            model_obs, unflattener
+        )
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -619,29 +617,28 @@ def compare_real_vs_model(
 
 
 
-        #seperate prediction just to have the lstm state for the current real trajectory at all times
-        flattened_real_state, unflattener = flatten_state(
-            real_state.env_state, single_state=True
-        )
-        normalized_real_state_flat = (
-            flattened_real_state - state_mean
+        # Separate prediction just to have the lstm state for the current real trajectory at all times
+        # This tracks the "ground truth" LSTM state
+        real_obs = obs[step_count]  # Current real observation
+        normalized_real_obs = (
+            real_obs - state_mean
         ) / state_std
         _, lsmt_real_state = world_model.apply(
             dynamics_params,
             None,
-            normalized_real_state_flat,
+            normalized_real_obs,
             jnp.array([action]),
             lsmt_real_state,
         )
 
+        # Reset LSTM state if we're at a reset point
         if step_count % steps_into_future == 0:
-            model_state = real_state
             lstm_state = lsmt_real_state
 
 
 
         step_count += 1
-        # print(states[step_count][:-2])
+        # print(obs[step_count][:-2])
         clock.tick(clock_speed)
         # Rendering stuff end -------------------------------------------------------
 
@@ -655,7 +652,7 @@ if __name__ == "__main__":
 
     game = JaxSeaquest()
     env = AtariWrapper(
-        game, sticky_actions=False, episodic_life=False, frame_stack_size=4
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=1
     )
     env = FlattenObservationWrapper(env)
 
@@ -686,9 +683,9 @@ if __name__ == "__main__":
             print(f"Loading existing experience data from {experience_data_path}...")
             with open(experience_data_path, "rb") as f:
                 saved_data = pickle.load(f)
-                states = saved_data["states"]
+                obs = saved_data["obs"]
                 actions = saved_data["actions"]
-                next_states = saved_data["next_states"]
+                next_obs = saved_data["next_obs"]
                 rewards = saved_data["rewards"]
                 boundaries = saved_data["boundaries"]
         else:
@@ -696,31 +693,31 @@ if __name__ == "__main__":
                 "No existing experience data found. Collecting new experience data..."
             )
             # Collect experience data (AtariWrapper handles frame stacking automatically)
-            flattened_states, actions, _, rewards, _, boundaries = (
+            obs, actions, rewards, _, boundaries = (
                 collect_experience_sequential(
-                    env, num_episodes=5, max_steps_per_episode=1000
+                    env, num_episodes=1, max_steps_per_episode=1000
                 )
             )
-            next_states = flattened_states[
+            next_obs = obs[
                 1:
             ]  # Next states are just the next frame in the sequence
-            states = flattened_states[:-1]  # Current states are all but the last frame
+            obs = obs[:-1]  # Current states are all but the last frame
 
             # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
             # I want to check whether the next_state is equal to the current state + 1
-            print(states.shape)
-            print(next_states.shape)
+            print(obs.shape)
+            print(next_obs.shape)
 
             if VERBOSE:
                 print("Checking if next_state is equal to current state + 1...")
                 for i in range(100):
-                    if not jnp.allclose(states[i + 1][:-2], next_states[i][:-2]):
+                    if not jnp.allclose(obs[i + 1], next_obs[i]):
                         print(
-                            f"Mismatch at index {i}: {states[i][:-2]} != {next_states[i][:-2]}"
+                            f"Mismatch at index {i}: {obs[i]} != {next_obs[i]}"
                         )
-                        print(states[i + 1][:-2])
-                        print(next_states[i][:-2])
-                        print(states[i + 1][:-2] - next_states[i][:-2])
+                        print(obs[i + 1])
+                        print(next_obs[i])
+                        print(obs[i + 1] - next_obs[i])
                         exit(1)
                 print("All states match the expected transition.")
 
@@ -728,9 +725,9 @@ if __name__ == "__main__":
             with open(experience_data_path, "wb") as f:
                 pickle.dump(
                     {
-                        "states": states,
+                        "obs": obs,
                         "actions": actions,
-                        "next_states": next_states,
+                        "next_obs": next_obs,
                         "rewards": rewards,
                         "boundaries": boundaries,
                     },
@@ -741,9 +738,9 @@ if __name__ == "__main__":
 
         # Train world model
         dynamics_params, training_info = train_world_model(
-            states,
+            obs,
             actions,
-            next_states,
+            next_obs,
             rewards,
             episode_boundaries=boundaries,
         )
@@ -766,22 +763,22 @@ if __name__ == "__main__":
     if os.path.exists(experience_data_path):
         with open(experience_data_path, "rb") as f:
             saved_data = pickle.load(f)
-            states = saved_data["states"]
+            obs = saved_data["obs"]
             actions = saved_data["actions"]
-            next_states = saved_data["next_states"]
+            next_obs = saved_data["next_obs"]
             rewards = saved_data["rewards"]
             boundaries = saved_data["boundaries"]
 
-    world_model = build_world_model()
-    losses = []
+    # world_model = build_world_model()
+    # losses = []
 
-    state_mean = normalization_stats["mean"]
-    state_std = normalization_stats["std"]
+    # obs_mean = normalization_stats["mean"]
+    # obs_std = normalization_stats["std"]
 
-    lstm_state = None
+    # lstm_state = None
 
-    normalized_states = (states - state_mean) / state_std
-    normalized_next_states = (next_states - state_mean) / state_std
+    # normalized_obs = (obs - obs_mean) / obs_std
+    # normalized_next_obs = (next_obs - obs_mean) / obs_std
 
     # for i in range(len(states)):
     #     prediction, lstm_state = world_model.apply(
@@ -817,9 +814,9 @@ if __name__ == "__main__":
 
     # exit()
     compare_real_vs_model(
-        num_steps=5000,
         render_scale=6,
-        states=states,
+        obs=obs,
         actions=actions,
         normalization_stats=normalization_stats,
+        env=env,
     )
