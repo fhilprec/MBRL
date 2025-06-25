@@ -583,11 +583,16 @@ def compare_real_vs_model(
         # model_base_state = model_state.env_state
 
         # Rendering stuff -------------------------------------------------------
+        print(real_obs.shape)
+        print(model_obs.squeeze().shape)
+        
         real_base_state = flat_observation_to_state(
             real_obs, unflattener
         )
+        print(real_base_state)
+        print(type(real_base_state))
         model_base_state = flat_observation_to_state(
-            model_obs, unflattener
+            model_obs.squeeze(), unflattener
         )
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
@@ -657,7 +662,7 @@ if __name__ == "__main__":
     env = FlattenObservationWrapper(env)
 
     save_path = "world_model_LSTM.pkl"
-    experience_data_path = "experience_data.pkl"
+    experience_data_path = "experience_data_LSTM.pkl"
     model = build_world_model()
     normalization_stats = None
 

@@ -571,6 +571,8 @@ def compare_real_vs_model(num_steps: int = 10, render_scale: int = 2, states=Non
             model_state = real_state
 
         # Rendering stuff -------------------------------------------------------
+        print(type(real_base_state))
+        print(real_base_state)
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -715,7 +717,7 @@ if __name__ == "__main__":
             actions = saved_data['actions']
             next_states = saved_data['next_states']
             rewards = saved_data['rewards']
-            boundaries = saved_data["boundaries"]
+            # boundaries = saved_data["boundaries"]
     world_model = build_world_model()
     losses = []
 
