@@ -15,11 +15,33 @@ from tqdm import tqdm
 import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
+from jax import lax
 
 from obs_state_converter import flat_observation_to_state
 
 VERBOSE = True
 model = None
+
+action_map = {
+      0 : "NOOP",
+      1 : "FIRE",
+      2 : "UP",
+      3 : "RIGHT",
+      4 : "LEFT",
+      5 : "DOWN",
+      6 : "UPRIGHT",
+      7 : "UPLEFT",
+      8 : "DOWNRIGHT",
+      9 : "DOWNLEFT",
+     10 : "UPFIRE",
+     11 : "RIGHTFIRE",
+     12 : "LEFTFIRE",
+     13 : "DOWNFIRE",
+     14 : "UPRIGHTFIRE",
+     15 : "UPLEFTFIRE",
+     16 : "DOWNRIGHTFIRE",
+     17 : "DOWNLEFTFIRE",
+}
 
 
 def render_trajectory(
@@ -160,7 +182,7 @@ def build_world_model():
 
 
 def collect_experience_sequential(
-    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False, seed: int = 42
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     observations = []
@@ -172,7 +194,7 @@ def collect_experience_sequential(
 
     dead = False
     total_steps = 0
-    rng = jax.random.PRNGKey(42)
+    rng = jax.random.PRNGKey(seed)
 
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
@@ -261,10 +283,10 @@ def train_world_model(
     actions,
     next_obs,
     rewards,
-    learning_rate=1e-4,
+    learning_rate=6e-4,
     batch_size=4,
     num_epochs=3000,
-    sequence_length=16,
+    sequence_length=64,
     episode_boundaries=None,
 ):
     # Calculate normalization statistics from the flattened obs
@@ -304,7 +326,8 @@ def train_world_model(
             
             # Create sequences within this episode
             # for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
-            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
+            for j in range(0, end_idx-start_idx-sequence_length+1,1):
+            # for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
                 if start_idx + j + sequence_length > end_idx:
                     # break
                     #dont just break but just repeat the last state of the current sequence to fill out the sequence
@@ -346,6 +369,8 @@ def train_world_model(
     batches = create_sequential_batches()
 
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
+    mini_batch_size = 4
+    print(f"Using mini-batch size: {mini_batch_size}")
 
     model = build_world_model()
     optimizer = optax.adam(learning_rate=learning_rate)
@@ -356,75 +381,62 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    def loss_function(params, state_batch, action_batch, next_state_batch):
-        """
-        Compute loss over sequences maintaining LSTM state
-        Args:
-            state_batch: (batch_size, seq_len, state_dim)
-            action_batch: (batch_size, seq_len)
-            next_state_batch: (batch_size, seq_len, state_dim)
-        """
-        seq_len, state_dim = state_batch.shape
-        total_loss = 0.0
-
-        # Process each sequence in the batch
-
-        lstm_state = None  # Start with fresh state for each sequence
-        sequence_loss = 0.0
-
-        for t in range(seq_len):
-            current_state = state_batch[
-                 t : t + 1
-            ]  # Keep batch dimension
-            current_action = action_batch[ t : t + 1]
-            target_next_state = next_state_batch[
-                t, :
-            ]  
-
-            # Forward pass
-            pred_next_state, lstm_state = model.apply(
-                params, None, current_state, current_action, lstm_state
-            )
-            # print("Start here")
-            # print(str(pred_next_state.shape))
-            # print(str(pred_next_state))
-            # print(str(target_next_state.shape))
-            
-            # Compute loss for this timestep
-            step_loss = jnp.mean(
-                (target_next_state - pred_next_state.squeeze()) ** 2
-            )
-            # exit()
-            sequence_loss += step_loss
-
-        total_loss += sequence_loss / seq_len
-
-        return total_loss
-
+    _, lstm_state_template = model.apply(params, None, dummy_state, dummy_action, None)
+    
     @jax.jit
-    def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
-        loss, grads = jax.value_and_grad(loss_function)(
-            params, state_batch, action_batch, next_state_batch
-        )
-
+    def single_sequence_loss(params, state_batch, action_batch, next_state_batch):
+        def scan_fn(lstm_state, inputs):
+            current_state, current_action, target_next_state = inputs
+            
+            pred_next_state, new_lstm_state = model.apply(
+                params, None, 
+                current_state[None, :],
+                current_action[None],
+                lstm_state
+            )
+            
+            step_loss = jnp.mean((target_next_state - pred_next_state.squeeze()) ** 2)
+            return new_lstm_state, step_loss
+        
+        scan_inputs = (state_batch, action_batch, next_state_batch)
+        _, step_losses = lax.scan(scan_fn, lstm_state_template, scan_inputs)
+        return jnp.mean(step_losses)
+    
+    # Vectorize over mini-batch
+    mini_batch_loss_fn = jax.vmap(single_sequence_loss, in_axes=(None, 0, 0, 0))
+    
+    @jax.jit
+    def update_mini_batch(params, opt_state, batch_states, batch_actions, batch_next_states):
+        def compute_loss(p):
+            losses = mini_batch_loss_fn(p, batch_states, batch_actions, batch_next_states)
+            return jnp.mean(losses)
+        
+        loss, grads = jax.value_and_grad(compute_loss)(params)
         updates, new_opt_state = optimizer.update(grads, opt_state)
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
 
-    
-
+    # Training loop with mini-batches
     for epoch in range(num_epochs):
-        losses = []
-        for batch in batches:
-            state_batch, action_batch, next_state_batch = batch
-            params, opt_state, loss = update_step(
-                params, opt_state, state_batch, action_batch, next_state_batch
+        epoch_losses = []
+        
+        # Process in mini-batches
+        for i in range(0, len(batches), mini_batch_size):
+            mini_batch = batches[i:i + mini_batch_size]
+            
+            # Stack mini-batch
+            mini_states = jnp.stack([batch[0] for batch in mini_batch])
+            mini_actions = jnp.stack([batch[1] for batch in mini_batch])
+            mini_next_states = jnp.stack([batch[2] for batch in mini_batch])
+            
+            params, opt_state, loss = update_mini_batch(
+                params, opt_state, mini_states, mini_actions, mini_next_states
             )
-            losses.append(loss)
-        epoch_loss = jnp.mean(jnp.array(losses))
-        # if VERBOSE and (epoch + 1) % (num_epochs / 10) == 0:
-        #     print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
-        if VERBOSE and (epoch + 1) % (num_epochs/10) == 0:
+            epoch_losses.append(float(loss))
+        
+        epoch_loss = jnp.mean(jnp.array(epoch_losses))
+        
+        if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
 
     print("Training completed")
@@ -435,20 +447,20 @@ def train_world_model(
 
 
 def compare_real_vs_model(
-    num_steps: int = 100,
+    num_steps: int = 1000,
     render_scale: int = 2,
     obs=None,
     actions=None,
     normalization_stats=None,
-    steps_into_future: int = 100,
-    clock_speed = 5,
+    steps_into_future: int = 30,
+    clock_speed = 10,
     env=None
 ):
 
     
-    def debug_obs(step, real_state, pred_state):
-        error = jnp.mean((real_state - pred_state) ** 2)
-        print(f"Step {step}, Unnormalized Error: {error:.2f}")
+    def debug_obs(step, real_obs, pred_obs, action,):
+        error = jnp.mean((real_obs - pred_obs) ** 2)
+        print(f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}")
 
 
 
@@ -519,6 +531,7 @@ def compare_real_vs_model(
 
         # Use the saved action
         action = actions[step_count]
+        # action = 5
 
         # Use the saved next state directly instead of environment stepping
         next_real_obs = obs[step_count + 1]
@@ -549,7 +562,7 @@ def compare_real_vs_model(
 
         model_obs = unnormalized_model_prediction
 
-        debug_obs(step_count, next_real_obs, unnormalized_model_prediction)
+        debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
 
 
 
@@ -639,6 +652,67 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
+
+
+    if os.path.exists(experience_data_path):
+            print(f"Loading existing experience data from {experience_data_path}...")
+            with open(experience_data_path, "rb") as f:
+                saved_data = pickle.load(f)
+                obs = saved_data["obs"]
+                actions = saved_data["actions"]
+                next_obs = saved_data["next_obs"]
+                rewards = saved_data["rewards"]
+                boundaries = saved_data["boundaries"]
+    else:
+        print(
+            "No existing experience data found. Collecting new experience data..."
+        )
+        # Collect experience data (AtariWrapper handles frame stacking automatically)
+        obs, actions, rewards, _, boundaries = (
+            collect_experience_sequential(
+                env, num_episodes=100, max_steps_per_episode=1000, seed=0
+            )
+        )
+        next_obs = obs[
+            1:
+        ]  # Next states are just the next frame in the sequence
+        obs = obs[:-1]  # Current states are all but the last frame
+
+        # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
+        # I want to check whether the next_state is equal to the current state + 1
+        print(obs.shape)
+        print(next_obs.shape)
+
+        if VERBOSE:
+            print("Checking if next_state is equal to current state + 1...")
+            for i in range(100):
+                if not jnp.allclose(obs[i + 1], next_obs[i]):
+                    print(
+                        f"Mismatch at index {i}: {obs[i]} != {next_obs[i]}"
+                    )
+                    print(obs[i + 1])
+                    print(next_obs[i])
+                    print(obs[i + 1] - next_obs[i])
+                    exit(1)
+            print("All states match the expected transition.")
+
+        # Save the collected experience data
+        with open(experience_data_path, "wb") as f:
+            pickle.dump(
+                {
+                    "obs": obs,
+                    "actions": actions,
+                    "next_obs": next_obs,
+                    "rewards": rewards,
+                    "boundaries": boundaries,
+                },
+                f,
+            )
+        print(f"Experience data saved to {experience_data_path}")
+
+
+
+
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
         with open(save_path, "rb") as f:
@@ -651,62 +725,7 @@ if __name__ == "__main__":
         # Define a file path for the experience data
 
         # Check if experience data file exists
-        if os.path.exists(experience_data_path):
-            print(f"Loading existing experience data from {experience_data_path}...")
-            with open(experience_data_path, "rb") as f:
-                saved_data = pickle.load(f)
-                obs = saved_data["obs"]
-                actions = saved_data["actions"]
-                next_obs = saved_data["next_obs"]
-                rewards = saved_data["rewards"]
-                boundaries = saved_data["boundaries"]
-        else:
-            print(
-                "No existing experience data found. Collecting new experience data..."
-            )
-            # Collect experience data (AtariWrapper handles frame stacking automatically)
-            obs, actions, rewards, _, boundaries = (
-                collect_experience_sequential(
-                    env, num_episodes=10, max_steps_per_episode=1000
-                )
-            )
-            next_obs = obs[
-                1:
-            ]  # Next states are just the next frame in the sequence
-            obs = obs[:-1]  # Current states are all but the last frame
-
-            # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
-            # I want to check whether the next_state is equal to the current state + 1
-            print(obs.shape)
-            print(next_obs.shape)
-
-            if VERBOSE:
-                print("Checking if next_state is equal to current state + 1...")
-                for i in range(100):
-                    if not jnp.allclose(obs[i + 1], next_obs[i]):
-                        print(
-                            f"Mismatch at index {i}: {obs[i]} != {next_obs[i]}"
-                        )
-                        print(obs[i + 1])
-                        print(next_obs[i])
-                        print(obs[i + 1] - next_obs[i])
-                        exit(1)
-                print("All states match the expected transition.")
-
-            # Save the collected experience data
-            with open(experience_data_path, "wb") as f:
-                pickle.dump(
-                    {
-                        "obs": obs,
-                        "actions": actions,
-                        "next_obs": next_obs,
-                        "rewards": rewards,
-                        "boundaries": boundaries,
-                    },
-                    f,
-                )
-            print(f"Experience data saved to {experience_data_path}")
-            print(boundaries)
+        
 
         # Train world model
         dynamics_params, training_info = train_world_model(
@@ -731,15 +750,6 @@ if __name__ == "__main__":
             )
         print(f"Model saved to {save_path}")
 
-    states, actions, boundaries = None, None, None
-    if os.path.exists(experience_data_path):
-        with open(experience_data_path, "rb") as f:
-            saved_data = pickle.load(f)
-            obs = saved_data["obs"]
-            actions = saved_data["actions"]
-            next_obs = saved_data["next_obs"]
-            rewards = saved_data["rewards"]
-            boundaries = saved_data["boundaries"]
 
 
     compare_real_vs_model(
