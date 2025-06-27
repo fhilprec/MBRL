@@ -15,11 +15,33 @@ from tqdm import tqdm
 import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
+from jax import lax
 
 from obs_state_converter import flat_observation_to_state
 
 VERBOSE = True
 model = None
+
+action_map = {
+      0 : "NOOP",
+      1 : "FIRE",
+      2 : "UP",
+      3 : "RIGHT",
+      4 : "LEFT",
+      5 : "DOWN",
+      6 : "UPRIGHT",
+      7 : "UPLEFT",
+      8 : "DOWNRIGHT",
+      9 : "DOWNLEFT",
+     10 : "UPFIRE",
+     11 : "RIGHTFIRE",
+     12 : "LEFTFIRE",
+     13 : "DOWNFIRE",
+     14 : "UPRIGHTFIRE",
+     15 : "UPLEFTFIRE",
+     16 : "DOWNRIGHTFIRE",
+     17 : "DOWNLEFTFIRE",
+}
 
 
 def render_trajectory(
@@ -154,13 +176,14 @@ def build_world_model():
         output = hk.Linear(flat_state.shape[-1])(output)
         # output = jnp.clip(output, -10.0, 10.0)
 
+
         return output, new_lstm_state  # Return both prediction and new state
 
     return hk.transform(forward)
 
 
 def collect_experience_sequential(
-    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False, seed: int = 42
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     observations = []
@@ -172,7 +195,7 @@ def collect_experience_sequential(
 
     dead = False
     total_steps = 0
-    rng = jax.random.PRNGKey(42)
+    rng = jax.random.PRNGKey(seed)
 
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
@@ -261,10 +284,10 @@ def train_world_model(
     actions,
     next_obs,
     rewards,
-    learning_rate=1e-4,
+    learning_rate=1e-2,
     batch_size=4,
-    num_epochs=3000,
-    sequence_length=16,
+    num_epochs=1000,
+    sequence_length=64,
     episode_boundaries=None,
 ):
     # Calculate normalization statistics from the flattened obs
@@ -304,7 +327,8 @@ def train_world_model(
             
             # Create sequences within this episode
             # for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
-            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
+            for j in range(0, end_idx-start_idx-sequence_length+1,1):
+            # for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
                 if start_idx + j + sequence_length > end_idx:
                     # break
                     #dont just break but just repeat the last state of the current sequence to fill out the sequence
@@ -356,104 +380,87 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    def loss_function(params, state_batch, action_batch, next_state_batch):
-        """
-        Compute loss over sequences maintaining LSTM state
-        Args:
-            state_batch: (batch_size, seq_len, state_dim)
-            action_batch: (batch_size, seq_len)
-            next_state_batch: (batch_size, seq_len, state_dim)
-        """
-        seq_len, state_dim = state_batch.shape
-        total_loss = 0.0
-
-        # Process each sequence in the batch
-
-        lstm_state = None  # Start with fresh state for each sequence
-        sequence_loss = 0.0
-
-        for t in range(seq_len):
-            current_state = state_batch[
-                 t : t + 1
-            ]  # Keep batch dimension
-            current_action = action_batch[ t : t + 1]
-            target_next_state = next_state_batch[
-                t, :
-            ]  
-
-            # Forward pass
-            pred_next_state, lstm_state = model.apply(
-                params, None, current_state, current_action, lstm_state
-            )
-            # print("Start here")
-            # print(str(pred_next_state.shape))
-            # print(str(pred_next_state))
-            # print(str(target_next_state.shape))
-            
-            # Compute loss for this timestep
-            step_loss = jnp.mean(
-                (target_next_state - pred_next_state.squeeze()) ** 2
-            )
-            # exit()
-            sequence_loss += step_loss
-
-        total_loss += sequence_loss / seq_len
-
-        return total_loss
-
+    # Pre-initialize LSTM state template
+    _, lstm_state_template = model.apply(params, None, dummy_state, dummy_action, None)
+    
+    # Single sequence loss function
     @jax.jit
-    def update_step(params, opt_state, state_batch, action_batch, next_state_batch):
-        loss, grads = jax.value_and_grad(loss_function)(
-            params, state_batch, action_batch, next_state_batch
-        )
-
+    def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template):
+        seq_len, state_dim = state_batch.shape
+        
+        def scan_fn(lstm_state, inputs):
+            current_state, current_action, target_next_state = inputs
+            
+            pred_next_state, new_lstm_state = model.apply(
+                params, None, 
+                current_state[None, :],
+                current_action[None],
+                lstm_state
+            )
+            
+            step_loss = jnp.mean((target_next_state - pred_next_state.squeeze()) ** 2)
+            return new_lstm_state, step_loss
+        
+        scan_inputs = (state_batch, action_batch, next_state_batch)
+        _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
+        
+        return jnp.mean(step_losses)
+    
+    # Vectorize loss over batch dimension
+    batched_loss_fn = jax.vmap(single_sequence_loss, in_axes=(None, 0, 0, 0, None))
+    
+    @jax.jit
+    def update_step_batched(params, opt_state, batch_states, batch_actions, batch_next_states, lstm_template):
+        # Compute loss for all sequences in parallel
+        losses = batched_loss_fn(params, batch_states, batch_actions, batch_next_states, lstm_template)
+        mean_loss = jnp.mean(losses)
+        
+        # Compute gradients
+        grads = jax.grad(lambda p: jnp.mean(batched_loss_fn(p, batch_states, batch_actions, batch_next_states, lstm_template)))(params)
+        
         updates, new_opt_state = optimizer.update(grads, opt_state)
         new_params = optax.apply_updates(params, updates)
-        return new_params, new_opt_state, loss
-
+        return new_params, new_opt_state, mean_loss
     
-
+    # Convert to arrays
+    batch_states = jnp.stack([batch[0] for batch in batches])
+    batch_actions = jnp.stack([batch[1] for batch in batches])
+    batch_next_states = jnp.stack([batch[2] for batch in batches])
+    
+    # Training loop
     for epoch in range(num_epochs):
-        losses = []
-        for batch in batches:
-            state_batch, action_batch, next_state_batch = batch
-            params, opt_state, loss = update_step(
-                params, opt_state, state_batch, action_batch, next_state_batch
-            )
-            losses.append(loss)
-        epoch_loss = jnp.mean(jnp.array(losses))
-        # if VERBOSE and (epoch + 1) % (num_epochs / 10) == 0:
-        #     print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
-        if VERBOSE and (epoch + 1) % (num_epochs/10) == 0:
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
+        params, opt_state, loss = update_step_batched(
+            params, opt_state, batch_states, batch_actions, batch_next_states, lstm_state_template
+        )
+        
+        if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.6f}")
 
     print("Training completed")
     return params, {
-        "final_loss": epoch_loss,
+        "final_loss": loss,
         "normalization_stats": normalization_stats,
     }
 
 
 def compare_real_vs_model(
-    num_steps: int = 100,
+    num_steps: int = 1000,
     render_scale: int = 2,
     obs=None,
     actions=None,
     normalization_stats=None,
-    steps_into_future: int = 100,
-    clock_speed = 5,
+    steps_into_future: int = 10,
+    clock_speed = 10,
+    boundaries=None,
     env=None
 ):
 
-    # obs = obs[100:]
-    # actions = actions[100:]
     
-    # Add debugging to understand the model input/output formats
-    def debug_obs(step, real_state, pred_state):
-        error = jnp.mean((real_state - pred_state) ** 2)
-        print(f"Step {step}, Unnormalized Error: {error:.2f}")
-        # print(f"Real State: {real_state}"
-        #       f"\nPredicted State: {pred_state}")
+    def debug_obs(step, real_obs, pred_obs, action,):
+        error = jnp.mean((real_obs - pred_obs) ** 2)
+        # print(pred_obs)
+        print(f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}")
+
 
 
 
@@ -471,7 +478,6 @@ def compare_real_vs_model(
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
-        scale_factor = model_data.get("scale_factor", 1 / 1)
         normalization_stats = model_data.get("normalization_stats", None)
     world_model = build_world_model()
 
@@ -488,7 +494,6 @@ def compare_real_vs_model(
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
-    running = True
     step_count = 0
     clock = pygame.time.Clock()
 
@@ -505,15 +510,14 @@ def compare_real_vs_model(
 
 
     
-    # state = flat_observation_to_state(real_unflattened, unflattener)
 
 
-    real_obs = obs[0]
-    model_obs = obs[0]  # Start identical
+   
 
     
-
-
+    #init the first observation and model observation
+    real_obs = obs[0]
+    model_obs = obs[0]  # Start identical
 
     # Initialize LSTM state for model predictions
     lstm_state = None
@@ -526,12 +530,13 @@ def compare_real_vs_model(
 
         # Use the saved action
         action = actions[step_count]
+        # action = 5
 
         # Use the saved next state directly instead of environment stepping
         next_real_obs = obs[step_count + 1]
 
         # Check if we need to reset the model state before making prediction
-        if step_count % steps_into_future == 0:
+        if step_count % steps_into_future == 0 or step_count in boundaries:
             print("State reset")
             model_obs = obs[step_count]  # Reset to current real observation
             # We'll reset lstm_state to lsmt_real_state after computing it below
@@ -550,45 +555,24 @@ def compare_real_vs_model(
             lstm_state,
         )
 
-        unnormalized_model_prediction = (
-            normalized_model_prediction * state_std + state_mean
-        )
+        # unnormalized_model_prediction = (
+        #     normalized_model_prediction * state_std + state_mean
+        # )
+
+        # Convert model predictions to integers
+        unnormalized_model_prediction = jnp.round(normalized_model_prediction * state_std + state_mean)
+        
 
         model_obs = unnormalized_model_prediction
 
-        debug_obs(step_count, next_real_obs, unnormalized_model_prediction)
+        debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
 
 
-        # # Complete model state with additional fields
-        # model_state_flattened = jnp.concatenate(
-        #     [model_state_flattened, jnp.zeros((model_state_flattened.shape[0], 2))],
-        #     axis=-1,
-        # )
-        # model_state_flattened_1d = model_state_flattened.reshape(-1)
 
-        # # Update model state
-        # model_state = model_state.replace(
-        #     env_state=unflattener(model_state_flattened_1d)
-        # )
-        # reconstructed_env_state = unflattener(model_state_flattened_1d)
-        # reconstructed_env_state = reconstructed_env_state._replace(
-        #     step_counter=real_state.env_state.step_counter,
-        #     rng_key=real_state.env_state.rng_key,
-        # )
-        # model_state = model_state.replace(env_state=reconstructed_env_state)
-
-        # if VERBOSE and step_count % 100 == 0:
-        #     print(f"Step {step_count}: Real vs Model state comparison")
-        # real_base_state = real_state.env_state
-        # model_base_state = model_state.env_state
-
-        # Rendering stuff -------------------------------------------------------
-
-        
+        # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
             real_obs, unflattener
         )
-
         model_base_state = flat_observation_to_state(
             model_obs.squeeze(), unflattener
         )
@@ -614,6 +598,7 @@ def compare_real_vs_model(
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
 
+        # Rendering stuff end -------------------------------------------------------
 
 
 
@@ -635,7 +620,7 @@ def compare_real_vs_model(
         )
 
         # Reset LSTM state if we're at a reset point
-        if step_count % steps_into_future == 0:
+        if step_count % steps_into_future == 0 or step_count in boundaries:
             lstm_state = lsmt_real_state
 
 
@@ -670,6 +655,8 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
+
+
     if os.path.exists(experience_data_path):
             print(f"Loading existing experience data from {experience_data_path}...")
             with open(experience_data_path, "rb") as f:
@@ -686,7 +673,7 @@ if __name__ == "__main__":
         # Collect experience data (AtariWrapper handles frame stacking automatically)
         obs, actions, rewards, _, boundaries = (
             collect_experience_sequential(
-                env, num_episodes=1, max_steps_per_episode=1000
+                env, num_episodes=5, max_steps_per_episode=1000, seed=0
             )
         )
         next_obs = obs[
@@ -725,7 +712,15 @@ if __name__ == "__main__":
                 f,
             )
         print(f"Experience data saved to {experience_data_path}")
-        print(boundaries)
+
+
+    print(boundaries)
+    training_obs = obs[0 : boundaries[-4]]
+    training_actions = actions[0 : boundaries[-4]]
+    training_next_obs = next_obs[0 : boundaries[-4]]
+    training_rewards = rewards[0 : boundaries[-4]]
+    print(f"Training on {len(training_obs)} states...")
+
 
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
@@ -743,11 +738,11 @@ if __name__ == "__main__":
 
         # Train world model
         dynamics_params, training_info = train_world_model(
-            obs,
-            actions,
-            next_obs,
-            rewards,
-            episode_boundaries=boundaries,
+            training_obs,
+            training_actions,
+            training_next_obs,
+            training_rewards,
+            episode_boundaries=boundaries[:-4],
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
@@ -764,64 +759,23 @@ if __name__ == "__main__":
             )
         print(f"Model saved to {save_path}")
 
-    states, actions, boundaries = None, None, None
-    if os.path.exists(experience_data_path):
-        with open(experience_data_path, "rb") as f:
-            saved_data = pickle.load(f)
-            obs = saved_data["obs"]
-            actions = saved_data["actions"]
-            next_obs = saved_data["next_obs"]
-            rewards = saved_data["rewards"]
-            boundaries = saved_data["boundaries"]
-
-    # world_model = build_world_model()
-    # losses = []
-
-    # obs_mean = normalization_stats["mean"]
-    # obs_std = normalization_stats["std"]
-
-    # lstm_state = None
-
-    # normalized_obs = (obs - obs_mean) / obs_std
-    # normalized_next_obs = (next_obs - obs_mean) / obs_std
-
-    # for i in range(len(states)):
-    #     prediction, lstm_state = world_model.apply(
-    #             dynamics_params, None, normalized_states[0+i], jnp.array([actions[0+i]]), lstm_state
-    #         )
-    #     prediction
-        
-    #     loss = jnp.mean((prediction - normalized_next_states[0+i][:-2])**2)
-    #     # print(loss)
-    #     losses.append(loss)
-    #     if loss > 0.01:
-    #         # print('-----------------------------------------------------------------------------------------------------------------')
-    #         print(f"Step {i}:")
-    #         print(f"Loss : {loss}")
-    #         print("Indexes where difference > 3:")
-    #         for j in range(len(prediction[0])):
-    #             if jnp.abs(prediction[0][j] - normalized_states[1+i][j]) > 1:
-    #                 print(f"Index {j}: {prediction[0][j]} vs {normalized_states[1+i][j]}")
-    #         # print(f"Difference: {prediction - normalized_states[1+i][:-2]}")
-    #         # print(f"State {normalized_states[i]}")
-    #         # print("Negative values in state:")
-    #         # print(jnp.any(normalized_states[i][:-2] < -1))
-    #         # print(f"Prediction: {prediction}")
-    #         # print(f"Actual Next State {normalized_states[i+1]}")
-    #         # print all indexes where the difference it greater than 10
-
-            
-    #     if i == 2048:
-    #         break
-    #     # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
-
-    # print(f"Average loss: {jnp.mean(jnp.array(losses))}")
-
-    # exit()
+    use_train_test_split = False
+    if use_train_test_split == True:
+        validation_obs = obs[boundaries[-3] : boundaries[-1]]
+        validation_actions = actions[boundaries[-3] : boundaries[-1]]
+        validation_next_obs = next_obs[boundaries[-3] : boundaries[-1]]
+        validation_rewards = rewards[boundaries[-3] : boundaries[-1]]
+    else:
+        validation_obs = training_obs
+        validation_actions = training_actions
+        validation_next_obs = training_next_obs
+        validation_rewards = training_rewards
+    
     compare_real_vs_model(
         render_scale=6,
         obs=obs,
         actions=actions,
         normalization_stats=normalization_stats,
+        boundaries=boundaries,
         env=env,
     )
