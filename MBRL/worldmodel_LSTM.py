@@ -285,7 +285,7 @@ def train_world_model(
     rewards,
     learning_rate=6e-4,
     batch_size=4,
-    num_epochs=3000,
+    num_epochs=100,
     sequence_length=64,
     episode_boundaries=None,
 ):
@@ -326,8 +326,8 @@ def train_world_model(
             
             # Create sequences within this episode
             # for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
-            for j in range(0, end_idx-start_idx-sequence_length+1,1):
-            # for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
+            # for j in range(0, end_idx-start_idx-sequence_length+1,1):
+            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
                 if start_idx + j + sequence_length > end_idx:
                     # break
                     #dont just break but just repeat the last state of the current sequence to fill out the sequence
@@ -369,7 +369,7 @@ def train_world_model(
     batches = create_sequential_batches()
 
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
-    mini_batch_size = 4
+    mini_batch_size = 2000
     print(f"Using mini-batch size: {mini_batch_size}")
 
     model = build_world_model()
@@ -436,7 +436,8 @@ def train_world_model(
         
         epoch_loss = jnp.mean(jnp.array(epoch_losses))
         
-        if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
+        if 1:
+        # if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.6f}")
 
     print("Training completed")
