@@ -583,14 +583,12 @@ def compare_real_vs_model(
         # model_base_state = model_state.env_state
 
         # Rendering stuff -------------------------------------------------------
-        print(real_obs.shape)
-        print(model_obs.squeeze().shape)
+
         
         real_base_state = flat_observation_to_state(
             real_obs, unflattener
         )
-        print(real_base_state)
-        print(type(real_base_state))
+
         model_base_state = flat_observation_to_state(
             model_obs.squeeze(), unflattener
         )
@@ -672,6 +670,63 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
+    if os.path.exists(experience_data_path):
+            print(f"Loading existing experience data from {experience_data_path}...")
+            with open(experience_data_path, "rb") as f:
+                saved_data = pickle.load(f)
+                obs = saved_data["obs"]
+                actions = saved_data["actions"]
+                next_obs = saved_data["next_obs"]
+                rewards = saved_data["rewards"]
+                boundaries = saved_data["boundaries"]
+    else:
+        print(
+            "No existing experience data found. Collecting new experience data..."
+        )
+        # Collect experience data (AtariWrapper handles frame stacking automatically)
+        obs, actions, rewards, _, boundaries = (
+            collect_experience_sequential(
+                env, num_episodes=1, max_steps_per_episode=1000
+            )
+        )
+        next_obs = obs[
+            1:
+        ]  # Next states are just the next frame in the sequence
+        obs = obs[:-1]  # Current states are all but the last frame
+
+        # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
+        # I want to check whether the next_state is equal to the current state + 1
+        print(obs.shape)
+        print(next_obs.shape)
+
+        if VERBOSE:
+            print("Checking if next_state is equal to current state + 1...")
+            for i in range(100):
+                if not jnp.allclose(obs[i + 1], next_obs[i]):
+                    print(
+                        f"Mismatch at index {i}: {obs[i]} != {next_obs[i]}"
+                    )
+                    print(obs[i + 1])
+                    print(next_obs[i])
+                    print(obs[i + 1] - next_obs[i])
+                    exit(1)
+            print("All states match the expected transition.")
+
+        # Save the collected experience data
+        with open(experience_data_path, "wb") as f:
+            pickle.dump(
+                {
+                    "obs": obs,
+                    "actions": actions,
+                    "next_obs": next_obs,
+                    "rewards": rewards,
+                    "boundaries": boundaries,
+                },
+                f,
+            )
+        print(f"Experience data saved to {experience_data_path}")
+        print(boundaries)
+
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
         with open(save_path, "rb") as f:
@@ -684,62 +739,7 @@ if __name__ == "__main__":
         # Define a file path for the experience data
 
         # Check if experience data file exists
-        if os.path.exists(experience_data_path):
-            print(f"Loading existing experience data from {experience_data_path}...")
-            with open(experience_data_path, "rb") as f:
-                saved_data = pickle.load(f)
-                obs = saved_data["obs"]
-                actions = saved_data["actions"]
-                next_obs = saved_data["next_obs"]
-                rewards = saved_data["rewards"]
-                boundaries = saved_data["boundaries"]
-        else:
-            print(
-                "No existing experience data found. Collecting new experience data..."
-            )
-            # Collect experience data (AtariWrapper handles frame stacking automatically)
-            obs, actions, rewards, _, boundaries = (
-                collect_experience_sequential(
-                    env, num_episodes=1, max_steps_per_episode=1000
-                )
-            )
-            next_obs = obs[
-                1:
-            ]  # Next states are just the next frame in the sequence
-            obs = obs[:-1]  # Current states are all but the last frame
-
-            # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
-            # I want to check whether the next_state is equal to the current state + 1
-            print(obs.shape)
-            print(next_obs.shape)
-
-            if VERBOSE:
-                print("Checking if next_state is equal to current state + 1...")
-                for i in range(100):
-                    if not jnp.allclose(obs[i + 1], next_obs[i]):
-                        print(
-                            f"Mismatch at index {i}: {obs[i]} != {next_obs[i]}"
-                        )
-                        print(obs[i + 1])
-                        print(next_obs[i])
-                        print(obs[i + 1] - next_obs[i])
-                        exit(1)
-                print("All states match the expected transition.")
-
-            # Save the collected experience data
-            with open(experience_data_path, "wb") as f:
-                pickle.dump(
-                    {
-                        "obs": obs,
-                        "actions": actions,
-                        "next_obs": next_obs,
-                        "rewards": rewards,
-                        "boundaries": boundaries,
-                    },
-                    f,
-                )
-            print(f"Experience data saved to {experience_data_path}")
-            print(boundaries)
+        
 
         # Train world model
         dynamics_params, training_info = train_world_model(
