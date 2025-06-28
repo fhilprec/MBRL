@@ -162,22 +162,51 @@ def build_world_model():
         if len(state.shape) == 1:
             action_one_hot = action_one_hot.reshape(1, 18)
 
+        # Improved architecture with residual connections and better processing
         inputs = jnp.concatenate([flat_state, action_one_hot], axis=1)
-        x = hk.Linear(512)(inputs)
-        x = jax.nn.relu(x)
+        
+        # State processing branch
+        state_features = hk.Linear(512)(flat_state)
+        state_features = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(state_features)
+        state_features = jax.nn.gelu(state_features)
+        state_features = hk.Linear(256)(state_features)
+        state_features = jax.nn.gelu(state_features)
+        
+        # Action processing branch  
+        action_features = hk.Linear(128)(action_one_hot)
+        action_features = jax.nn.gelu(action_features)
+        action_features = hk.Linear(64)(action_features)
+        action_features = jax.nn.gelu(action_features)
+        
+        # Combine features
+        combined = jnp.concatenate([state_features, action_features], axis=1)
+        x = hk.Linear(512)(combined)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        
+        # LSTM with larger hidden size
         lstm = hk.LSTM(1024)
 
         # Use provided lstm_state or initialize if None
         if lstm_state is None:
             lstm_state = lstm.initial_state(batch_size)
 
-        output, new_lstm_state = lstm(x, lstm_state)
-        output = jax.nn.relu(output)
-        output = hk.Linear(flat_state.shape[-1])(output)
-        # output = jnp.clip(output, -10.0, 10.0)
-
-
-        return output, new_lstm_state  # Return both prediction and new state
+        lstm_output, new_lstm_state = lstm(x, lstm_state)
+        
+        # Multi-layer output processing with skip connection
+        output = hk.Linear(512)(lstm_output)
+        output = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(output)
+        output = jax.nn.gelu(output)
+        output = hk.Linear(256)(output)
+        output = jax.nn.gelu(output)
+        
+        # Final prediction with residual connection
+        prediction = hk.Linear(flat_state.shape[-1])(output)
+        
+        # Add residual connection for stability
+        prediction = prediction + flat_state
+        
+        return prediction, new_lstm_state
 
     return hk.transform(forward)
 
@@ -284,10 +313,10 @@ def train_world_model(
     actions,
     next_obs,
     rewards,
-    learning_rate=1e-2,
+    learning_rate=2e-4,
     batch_size=4,
-    num_epochs=1000,
-    sequence_length=64,
+    num_epochs=2000,
+    sequence_length=32,
     episode_boundaries=None,
 ):
     # Calculate normalization statistics from the flattened obs
@@ -300,9 +329,6 @@ def train_world_model(
     # Normalize obs and next_obs
     normalized_obs = (obs - state_mean) / state_std
     normalized_next_obs = (next_obs - state_mean) / state_std
-
-
-
 
     # Create sequential batches that respect episode boundaries
     def create_sequential_batches(batch_size=32):
@@ -325,13 +351,10 @@ def train_world_model(
                 start_idx = episode_boundaries[i - 1]
                 end_idx = episode_boundaries[i]
             
-            # Create sequences within this episode
-            # for j in range(0, end_idx-start_idx-sequence_length+1): # Iterate over every possible starting point
-            for j in range(0, end_idx-start_idx-sequence_length+1,1):
-            # for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 8):
+            # Create sequences within this episode with stride for better coverage
+            for j in range(0, end_idx-start_idx-sequence_length+1, sequence_length // 4):
                 if start_idx + j + sequence_length > end_idx:
-                    # break
-                    #dont just break but just repeat the last state of the current sequence to fill out the sequence
+                    # Padding strategy for sequences that exceed episode boundary
                     padding_length = start_idx + j + sequence_length - end_idx
                     padded_obs = jnp.concatenate(
                         [normalized_obs[start_idx + j : end_idx], 
@@ -356,7 +379,8 @@ def train_world_model(
                     ))
                     continue
                     
-                    
+                # print("Creating sequence from index:", start_idx + j)
+                # print("Creating sequence to index:", start_idx + j + sequence_length)
                 sequences.append((
                     normalized_obs[start_idx + j : start_idx + j + sequence_length],
                     actions[start_idx + j : start_idx + j + sequence_length], 
@@ -365,14 +389,22 @@ def train_world_model(
         
         return sequences
 
-    
     # Create sequential batches
     batches = create_sequential_batches()
-
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
 
     model = build_world_model()
-    optimizer = optax.adam(learning_rate=learning_rate)
+    
+    # Improved optimizer with learning rate scheduling
+    lr_schedule = optax.cosine_decay_schedule(
+        init_value=learning_rate,
+        decay_steps=num_epochs,
+        alpha=0.1  # Final learning rate will be 0.1 * initial
+    )
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),  # Gradient clipping
+        optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8)
+    )
 
     rng = jax.random.PRNGKey(42)
     dummy_state = normalized_obs[:1]
@@ -383,7 +415,7 @@ def train_world_model(
     # Pre-initialize LSTM state template
     _, lstm_state_template = model.apply(params, None, dummy_state, dummy_action, None)
     
-    # Single sequence loss function
+    # Improved loss function with multiple components
     @jax.jit
     def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template):
         seq_len, state_dim = state_batch.shape
@@ -398,7 +430,15 @@ def train_world_model(
                 lstm_state
             )
             
-            step_loss = jnp.mean((target_next_state - pred_next_state.squeeze()) ** 2)
+            # Multi-component loss
+            mse_loss = jnp.mean((target_next_state - pred_next_state.squeeze()) ** 2)
+            
+            # L1 loss for sparsity
+            l1_loss = jnp.mean(jnp.abs(target_next_state - pred_next_state.squeeze()))
+            
+            # Combine losses
+            step_loss = 0.8 * mse_loss + 0.2 * l1_loss
+            
             return new_lstm_state, step_loss
         
         scan_inputs = (state_batch, action_batch, next_state_batch)
@@ -412,34 +452,61 @@ def train_world_model(
     @jax.jit
     def update_step_batched(params, opt_state, batch_states, batch_actions, batch_next_states, lstm_template):
         # Compute loss for all sequences in parallel
-        losses = batched_loss_fn(params, batch_states, batch_actions, batch_next_states, lstm_template)
-        mean_loss = jnp.mean(losses)
+        def loss_fn(p):
+            losses = batched_loss_fn(p, batch_states, batch_actions, batch_next_states, lstm_template)
+            return jnp.mean(losses)
         
-        # Compute gradients
-        grads = jax.grad(lambda p: jnp.mean(batched_loss_fn(p, batch_states, batch_actions, batch_next_states, lstm_template)))(params)
-        
-        updates, new_opt_state = optimizer.update(grads, opt_state)
+        loss, grads = jax.value_and_grad(loss_fn)(params)
+        updates, new_opt_state = optimizer.update(grads, opt_state, params)
         new_params = optax.apply_updates(params, updates)
-        return new_params, new_opt_state, mean_loss
+        return new_params, new_opt_state, loss
     
-    # Convert to arrays
+    # Convert to arrays and shuffle for better training
     batch_states = jnp.stack([batch[0] for batch in batches])
     batch_actions = jnp.stack([batch[1] for batch in batches])
     batch_next_states = jnp.stack([batch[2] for batch in batches])
     
-    # Training loop
+    # Shuffle indices for each epoch
+    rng_shuffle = jax.random.PRNGKey(123)
+    
+    # Training loop with validation tracking
+    best_loss = float('inf')
+    patience = 50
+    no_improve_count = 0
+    
     for epoch in range(num_epochs):
+        # Shuffle data each epoch
+        rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
+        indices = jax.random.permutation(shuffle_key, len(batches))
+        
+        shuffled_states = batch_states[indices]
+        shuffled_actions = batch_actions[indices]
+        shuffled_next_states = batch_next_states[indices]
+        
         params, opt_state, loss = update_step_batched(
-            params, opt_state, batch_states, batch_actions, batch_next_states, lstm_state_template
+            params, opt_state, shuffled_states, shuffled_actions, shuffled_next_states, lstm_state_template
         )
         
-        if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.6f}")
+        # Early stopping
+        if loss < best_loss:
+            best_loss = loss
+            no_improve_count = 0
+        else:
+            no_improve_count += 1
+            
+        if no_improve_count >= patience:
+            print(f"Early stopping at epoch {epoch + 1}")
+            break
+        
+        if VERBOSE and (epoch + 1) % max(1, num_epochs // 100) == 0:
+            current_lr = lr_schedule(epoch)
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.6f}, LR: {current_lr:.2e}")
 
     print("Training completed")
     return params, {
         "final_loss": loss,
         "normalization_stats": normalization_stats,
+        "best_loss": best_loss,
     }
 
 
@@ -457,9 +524,30 @@ def compare_real_vs_model(
 
     
     def debug_obs(step, real_obs, pred_obs, action,):
-        error = jnp.mean((real_obs - pred_obs) ** 2)
+        error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         # print(pred_obs)
         print(f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}")
+
+        # if error > 1:
+        #     print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
+        #     print("Indexes where difference > 1:")
+        #     for j in range(len(pred_obs[0])):
+        #         if jnp.abs(pred_obs[0][j] - real_obs[j]) > 1:
+        #             print(f"Prediction Index {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}")
+        #     print(f"Difference: {pred_obs[0] - real_obs}")
+        #     print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
+            # print(f"State {real_obs[i]}")
+            # print("Negative values in state:")
+            # print(jnp.any(real_obs[i][:-2] < -1))
+            # print(f"pred_obs: {pred_obs}")
+            # print(f"Actual Next State {real_obs}")
+            # print all indexes where the difference it greater than 10
+
+            
+        # if i == 30:
+        #     # exit()
+        #     break
+        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
 
 
 
@@ -634,6 +722,8 @@ def compare_real_vs_model(
     print("Comparison completed")
 
 
+
+
 if __name__ == "__main__":
 
 
@@ -736,7 +826,7 @@ if __name__ == "__main__":
         # Check if experience data file exists
         
 
-        # Train world model
+        # Train world model with improved hyperparameters
         dynamics_params, training_info = train_world_model(
             training_obs,
             training_actions,
@@ -770,7 +860,9 @@ if __name__ == "__main__":
         validation_actions = training_actions
         validation_next_obs = training_next_obs
         validation_rewards = training_rewards
-    
+
+    print(f"boundaries: {boundaries}")
+
     compare_real_vs_model(
         render_scale=6,
         obs=obs,
@@ -779,3 +871,4 @@ if __name__ == "__main__":
         boundaries=boundaries,
         env=env,
     )
+
