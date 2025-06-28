@@ -22,7 +22,7 @@ from obs_state_converter import flat_observation_to_state
 
 from model_architectures import *
 
-MODEL_ARCHITECTURE = LSTM
+MODEL_ARCHITECTURE = V2_LSTM
 
 
 
@@ -266,7 +266,7 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=2000,
+    num_epochs=20000,
     sequence_length=32,
     episode_boundaries=None,
 ):
@@ -369,6 +369,7 @@ def train_world_model(
     # Improved loss function with multiple components
     @jax.jit
     def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template):
+        """Enhanced loss with feature-specific weighting"""
         seq_len, state_dim = state_batch.shape
         
         def scan_fn(lstm_state, inputs):
@@ -381,16 +382,26 @@ def train_world_model(
                 lstm_state
             )
             
-            # Multi-component loss
-            mse_loss = jnp.mean((target_next_state - pred_next_state.squeeze()) ** 2)
+            pred_next_state = pred_next_state.squeeze()
             
-            # L1 loss for sparsity
-            l1_loss = jnp.mean(jnp.abs(target_next_state - pred_next_state.squeeze()))
+            # Simpler, more balanced weighting
+            static_weight = 1.0
+            dynamic_weight = 1.0  # Equal weighting instead of 2.0
             
-            # Combine losses
-            step_loss = 0.8 * mse_loss + 0.2 * l1_loss
+            # Create weight mask
+            weights = jnp.concatenate([
+                jnp.full((170,), static_weight),
+                jnp.full((9,), dynamic_weight),
+                jnp.full((state_dim - 179,), static_weight)
+            ])
             
-            return new_lstm_state, step_loss
+            # Standard weighted MSE loss
+            mse_loss = jnp.mean(weights * (target_next_state - pred_next_state) ** 2)
+            
+            # Remove the additional stability loss for now
+            total_loss = mse_loss
+            
+            return new_lstm_state, total_loss
         
         scan_inputs = (state_batch, action_batch, next_state_batch)
         _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
@@ -449,7 +460,7 @@ def train_world_model(
             print(f"Early stopping at epoch {epoch + 1}")
             break
         
-        if VERBOSE and (epoch + 1) % max(1, num_epochs // 100) == 0:
+        if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
             current_lr = lr_schedule(epoch)
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.6f}, LR: {current_lr:.2e}")
 
@@ -462,7 +473,7 @@ def train_world_model(
 
 
 def compare_real_vs_model(
-    num_steps: int = 1000,
+    num_steps: int = 500,
     render_scale: int = 2,
     obs=None,
     actions=None,
@@ -479,14 +490,14 @@ def compare_real_vs_model(
         # print(pred_obs)
         print(f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}")
 
-        if error > 1:
-            print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
-            print("Indexes where difference > 1:")
-            for j in range(len(pred_obs[0])):
-                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 1:
-                    print(f"Prediction Index {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}")
-            print(f"Difference: {pred_obs[0] - real_obs}")
-            print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
+        # if error > 1:
+        #     print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
+            # print("Indexes where difference > 1:")
+            # for j in range(len(pred_obs[0])):
+            #     if jnp.abs(pred_obs[0][j] - real_obs[j]) > 1:
+            #         print(f"Prediction Index {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}")
+            # print(f"Difference: {pred_obs[0] - real_obs}")
+            # print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
             # print(f"State {real_obs[i]}")
             # print("Negative values in state:")
             # print(jnp.any(real_obs[i][:-2] < -1))
@@ -513,7 +524,7 @@ def compare_real_vs_model(
 
 
     renderer = SeaquestRenderer()
-    model_path = f"world_model_{MODEL_ARCHITECTURE}.pkl"
+    model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
@@ -685,7 +696,7 @@ if __name__ == "__main__":
     )
     env = FlattenObservationWrapper(env)
 
-    save_path = f"world_model_{MODEL_ARCHITECTURE}.pkl"
+    save_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
     experience_data_path = "experience_data_LSTM.pkl"
     model = MODEL_ARCHITECTURE()
     normalization_stats = None
@@ -812,8 +823,8 @@ if __name__ == "__main__":
         validation_next_obs = training_next_obs
         validation_rewards = training_rewards
 
-    print(f"boundaries: {boundaries}")
-
+    # print(f"boundaries: {boundaries}")
+    # exit()
     compare_real_vs_model(
         render_scale=6,
         obs=obs,
