@@ -17,12 +17,38 @@ from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 from jax import lax
 
-from obs_state_converter import flat_observation_to_state
-
+from obs_state_converter import flat_observation_to_state, OBSERVATION_INDEX_MAP
 
 from model_architectures import *
 
-MODEL_ARCHITECTURE = V2_LSTM
+#get the model architecture from the command line argument
+if len(sys.argv) > 1:
+    model_architecture_name = sys.argv[1]
+    if model_architecture_name == "V5":
+        MODEL_ARCHITECTURE = V5_Physics_Aware_LSTM
+    elif model_architecture_name == "V6":
+        MODEL_ARCHITECTURE = V6_Hierarchical_LSTM
+    elif model_architecture_name == "V7":
+        MODEL_ARCHITECTURE = V7_Entity_Aware_LSTM
+    elif model_architecture_name == "V4":
+        MODEL_ARCHITECTURE = V4_LSTM
+    elif model_architecture_name == "V3":
+        MODEL_ARCHITECTURE = V3_LSTM
+    elif model_architecture_name == "V2":
+        MODEL_ARCHITECTURE = V2_LSTM
+    elif model_architecture_name == "LSTM":
+        MODEL_ARCHITECTURE = LSTM
+    elif model_architecture_name == "LSTM_split":
+        MODEL_ARCHITECTURE = LSTM_with_split_action
+    elif model_architecture_name == "MLP":
+        MODEL_ARCHITECTURE = MLP
+    elif model_architecture_name == "V2_Enhanced":
+        MODEL_ARCHITECTURE = V2_Enhanced_LSTM
+    else:
+        raise ValueError(f"Unknown model architecture: {model_architecture_name}")
+else:
+    # Default model if no argument provided
+    MODEL_ARCHITECTURE = V2_LSTM
 
 
 
@@ -408,14 +434,112 @@ def train_world_model(
         
         return jnp.mean(step_losses)
     
-    # Vectorize loss over batch dimension
-    batched_loss_fn = jax.vmap(single_sequence_loss, in_axes=(None, 0, 0, 0, None))
+
+    @jax.jit
+    def multi_step_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, num_steps=30):
+        """Loss that includes multi-step predictions"""
+        seq_len, state_dim = state_batch.shape
+        
+        def scan_fn(lstm_state, inputs):
+            current_state, current_action, target_next_state = inputs
+            
+            # Single step prediction
+            pred_next_state, new_lstm_state = model.apply(
+                params, None, 
+                current_state[None, :],
+                current_action[None],
+                lstm_state
+            )
+            pred_next_state = pred_next_state.squeeze()
+            
+            # Multi-step predictions using the model iteratively
+            multi_step_losses = []
+            temp_state = pred_next_state
+            temp_lstm_state = new_lstm_state
+            
+            # Predict 2, 3, ... steps ahead
+            for step in range(1, min(num_steps, seq_len - inputs[0].shape[0] + 1)):
+                if inputs[0].shape[0] + step < seq_len:  # Make sure we have target
+                    next_action = action_batch[inputs[0].shape[0] + step]
+                    target_future = next_state_batch[inputs[0].shape[0] + step]
+                    
+                    pred_future, temp_lstm_state = model.apply(
+                        params, None,
+                        temp_state[None, :],
+                        next_action[None],
+                        temp_lstm_state
+                    )
+                    pred_future = pred_future.squeeze()
+                    
+                    # Weight decreases with prediction horizon
+                    weight = 0.8 ** step
+                    multi_step_loss = weight * jnp.mean((target_future - pred_future) ** 2)
+                    multi_step_losses.append(multi_step_loss)
+                    
+                    temp_state = pred_future
+            
+            # Combine single-step and multi-step losses
+            single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            total_multi_step_loss = jnp.sum(jnp.array(multi_step_losses)) if multi_step_losses else 0.0
+            
+            total_loss = single_step_loss + 0.5 * total_multi_step_loss  # Weight multi-step contribution
+            
+            return new_lstm_state, total_loss
+        
+        scan_inputs = (state_batch, action_batch, next_state_batch)
+        _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
+        
+        return jnp.mean(step_losses)
     
     @jax.jit
-    def update_step_batched(params, opt_state, batch_states, batch_actions, batch_next_states, lstm_template):
+    def scheduled_sampling_loss(params, state_batch, action_batch, next_state_batch, lstm_template, epoch, max_epochs):
+        """Loss with scheduled sampling - gradually use model predictions instead of ground truth"""
+        seq_len, state_dim = state_batch.shape
+        
+        # Probability of using model prediction increases with training progress
+        use_prediction_prob = jnp.minimum(0.2, epoch / (max_epochs * 10))
+        
+        def scan_fn(carry, inputs):
+            lstm_state, previous_state = carry
+            current_action, target_next_state, step_idx = inputs
+            
+            # Decide whether to use ground truth or model prediction as input
+            key = jax.random.PRNGKey(step_idx.astype(int))
+            use_prediction = jax.random.uniform(key) < use_prediction_prob
+            
+            # Use either ground truth or previous model prediction
+            input_state = jnp.where(use_prediction, previous_state, target_next_state)
+            
+            pred_next_state, new_lstm_state = model.apply(
+                params, None, 
+                input_state[None, :],
+                current_action[None],
+                lstm_state
+            )
+            pred_next_state = pred_next_state.squeeze()
+            
+            loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            
+            return (new_lstm_state, pred_next_state), loss
+        
+        # Prepare inputs for scan
+        step_indices = jnp.arange(seq_len)
+        scan_inputs = (action_batch, next_state_batch, step_indices)
+        
+        # Start with first ground truth state
+        initial_carry = (lstm_template, state_batch[0])
+        _, step_losses = lax.scan(scan_fn, initial_carry, scan_inputs)
+        
+        return jnp.mean(step_losses)
+    
+    # Vectorize loss over batch dimension
+    batched_loss_fn = jax.vmap(scheduled_sampling_loss, in_axes=(None, 0, 0, 0, None, None, None))
+    
+    @jax.jit
+    def update_step_batched(params, opt_state, batch_states, batch_actions, batch_next_states, lstm_template, epoch=0, num_epochs=20000):
         # Compute loss for all sequences in parallel
         def loss_fn(p):
-            losses = batched_loss_fn(p, batch_states, batch_actions, batch_next_states, lstm_template)
+            losses = batched_loss_fn(p, batch_states, batch_actions, batch_next_states, lstm_template, epoch, num_epochs)
             return jnp.mean(losses)
         
         loss, grads = jax.value_and_grad(loss_fn)(params)
@@ -433,7 +557,7 @@ def train_world_model(
     
     # Training loop with validation tracking
     best_loss = float('inf')
-    patience = 50
+    patience = num_epochs
     no_improve_count = 0
     
     for epoch in range(num_epochs):
@@ -446,7 +570,7 @@ def train_world_model(
         shuffled_next_states = batch_next_states[indices]
         
         params, opt_state, loss = update_step_batched(
-            params, opt_state, shuffled_states, shuffled_actions, shuffled_next_states, lstm_state_template
+            params, opt_state, shuffled_states, shuffled_actions, shuffled_next_states, lstm_state_template, epoch, num_epochs
         )
         
         # Early stopping
@@ -478,10 +602,11 @@ def compare_real_vs_model(
     obs=None,
     actions=None,
     normalization_stats=None,
-    steps_into_future: int = 10,
+    steps_into_future: int = 20,
     clock_speed = 10,
     boundaries=None,
-    env=None
+    env=None,
+    render_debugging: bool = False
 ):
 
     
@@ -490,14 +615,14 @@ def compare_real_vs_model(
         # print(pred_obs)
         print(f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}")
 
-        # if error > 1:
-        #     print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
-            # print("Indexes where difference > 1:")
-            # for j in range(len(pred_obs[0])):
-            #     if jnp.abs(pred_obs[0][j] - real_obs[j]) > 1:
-            #         print(f"Prediction Index {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}")
-            # print(f"Difference: {pred_obs[0] - real_obs}")
-            # print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
+        if error > 1 and render_debugging:
+            print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
+            print("Indexes where difference > 1:")
+            for j in range(len(pred_obs[0])):
+                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 1:
+                    print(f"Prediction Index ({OBSERVATION_INDEX_MAP[j]}) {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}")
+            print(f"Difference: {pred_obs[0] - real_obs}")
+            print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
             # print(f"State {real_obs[i]}")
             # print("Negative values in state:")
             # print(jnp.any(real_obs[i][:-2] < -1))
@@ -686,6 +811,75 @@ def compare_real_vs_model(
 
 
 
+
+
+def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
+    """Add various types of noise to training data for improved robustness"""
+    
+    if noise_config is None:
+        noise_config = {
+            'observation_noise': 0.01,     # Gaussian noise on observations
+            'action_dropout': 0.02,        # Randomly change some actions
+            'state_dropout': 0.005,        # Randomly zero out some state features
+            'temporal_noise': 0.01,        # Small time-shift noise
+            'entity_noise': 0.02,          # Extra noise on entity positions
+        }
+    
+    key = jax.random.PRNGKey(42)
+    noisy_obs = obs.copy()
+    noisy_actions = actions.copy()
+    noisy_next_obs = next_obs.copy()
+    
+    # 1. Observation noise - general Gaussian noise
+    if noise_config['observation_noise'] > 0:
+        key, subkey = jax.random.split(key)
+        obs_noise = jax.random.normal(subkey, obs.shape) * noise_config['observation_noise']
+        noisy_obs = noisy_obs + obs_noise
+        
+        key, subkey = jax.random.split(key)
+        next_obs_noise = jax.random.normal(subkey, next_obs.shape) * noise_config['observation_noise']
+        noisy_next_obs = noisy_next_obs + next_obs_noise
+    
+    # 2. Action dropout - randomly change some actions
+    if noise_config['action_dropout'] > 0:
+        key, subkey = jax.random.split(key)
+        action_mask = jax.random.uniform(subkey, (len(actions),)) < noise_config['action_dropout']
+        key, subkey = jax.random.split(key)
+        random_actions = jax.random.randint(subkey, (len(actions),), 0, 18)
+        noisy_actions = jnp.where(action_mask, random_actions, actions)
+    
+    # 3. State feature dropout - randomly zero some features
+    if noise_config['state_dropout'] > 0:
+        key, subkey = jax.random.split(key)
+        dropout_mask = jax.random.uniform(subkey, obs.shape) < noise_config['state_dropout']
+        noisy_obs = jnp.where(dropout_mask, 0, noisy_obs)
+        
+        key, subkey = jax.random.split(key)
+        dropout_mask = jax.random.uniform(subkey, next_obs.shape) < noise_config['state_dropout']
+        noisy_next_obs = jnp.where(dropout_mask, 0, noisy_next_obs)
+    
+    # 4. Entity-specific noise (higher noise on dynamic entities)
+    if noise_config['entity_noise'] > 0:
+        # Add extra noise to missile positions (indices 170-174) and entity positions
+        key, subkey = jax.random.split(key)
+        entity_noise = jax.random.normal(subkey, noisy_obs[..., 5:175].shape) * noise_config['entity_noise']
+        noisy_obs = noisy_obs.at[..., 5:175].add(entity_noise)
+        
+        key, subkey = jax.random.split(key)
+        entity_noise = jax.random.normal(subkey, noisy_next_obs[..., 5:175].shape) * noise_config['entity_noise']
+        noisy_next_obs = noisy_next_obs.at[..., 5:175].add(entity_noise)
+    
+    # 5. Ensure observations stay in reasonable bounds
+    noisy_obs = jnp.clip(noisy_obs, -100, 300)
+    noisy_next_obs = jnp.clip(noisy_next_obs, -100, 300)
+    
+    return noisy_obs, noisy_actions, noisy_next_obs, rewards
+
+
+
+
+
+
 if __name__ == "__main__":
 
 
@@ -787,6 +981,7 @@ if __name__ == "__main__":
 
         # Check if experience data file exists
         
+        
 
         # Train world model with improved hyperparameters
         dynamics_params, training_info = train_world_model(
@@ -823,14 +1018,14 @@ if __name__ == "__main__":
         validation_next_obs = training_next_obs
         validation_rewards = training_rewards
 
-    # print(f"boundaries: {boundaries}")
-    # exit()
-    compare_real_vs_model(
-        render_scale=6,
-        obs=obs,
-        actions=actions,
-        normalization_stats=normalization_stats,
-        boundaries=boundaries,
-        env=env,
-    )
+    if len(args := sys.argv) > 2 and args[2] == "render":
+        compare_real_vs_model(
+            render_scale=6,
+            obs=obs,
+            actions=actions,
+            normalization_stats=normalization_stats,
+            boundaries=boundaries,
+            env=env,
+            render_debugging= (args[3] == 'verbose')
+        )
 
