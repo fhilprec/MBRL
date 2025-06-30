@@ -30,6 +30,8 @@ if len(sys.argv) > 1:
         MODEL_ARCHITECTURE = V6_Hierarchical_LSTM
     elif model_architecture_name == "V7":
         MODEL_ARCHITECTURE = V7_Entity_Aware_LSTM
+    elif model_architecture_name == "V8":
+        MODEL_ARCHITECTURE = V8_LSTM
     elif model_architecture_name == "V4":
         MODEL_ARCHITECTURE = V4_LSTM
     elif model_architecture_name == "V3":
@@ -394,7 +396,7 @@ def train_world_model(
     
     # Improved loss function with multiple components
     @jax.jit
-    def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template):
+    def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, epoch, max_epochs):
         """Enhanced loss with feature-specific weighting"""
         seq_len, state_dim = state_batch.shape
         
@@ -436,7 +438,7 @@ def train_world_model(
     
 
     @jax.jit
-    def multi_step_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, num_steps=30):
+    def multi_step_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, epoch, max_epochs, num_steps=30):
         """Loss that includes multi-step predictions"""
         seq_len, state_dim = state_batch.shape
         
@@ -533,7 +535,7 @@ def train_world_model(
         return jnp.mean(step_losses)
     
     # Vectorize loss over batch dimension
-    batched_loss_fn = jax.vmap(scheduled_sampling_loss, in_axes=(None, 0, 0, 0, None, None, None))
+    batched_loss_fn = jax.vmap(single_sequence_loss, in_axes=(None, 0, 0, 0, None, None, None))
     
     @jax.jit
     def update_step_batched(params, opt_state, batch_states, batch_actions, batch_next_states, lstm_template, epoch=0, num_epochs=20000):
@@ -557,7 +559,7 @@ def train_world_model(
     
     # Training loop with validation tracking
     best_loss = float('inf')
-    patience = num_epochs
+    patience = 50
     no_improve_count = 0
     
     for epoch in range(num_epochs):
@@ -606,6 +608,7 @@ def compare_real_vs_model(
     clock_speed = 10,
     boundaries=None,
     env=None,
+    starting_step : int = 0,
     render_debugging: bool = False
 ):
 
@@ -615,30 +618,74 @@ def compare_real_vs_model(
         # print(pred_obs)
         print(f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}")
 
-        if error > 1 and render_debugging:
+        if error > 20 and render_debugging:
             print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
             print("Indexes where difference > 1:")
             for j in range(len(pred_obs[0])):
-                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 1:
+                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
                     print(f"Prediction Index ({OBSERVATION_INDEX_MAP[j]}) {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}")
-            print(f"Difference: {pred_obs[0] - real_obs}")
+            # print(f"Difference: {pred_obs[0] - real_obs}")
             print('----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
-            # print(f"State {real_obs[i]}")
-            # print("Negative values in state:")
-            # print(jnp.any(real_obs[i][:-2] < -1))
-            # print(f"pred_obs: {pred_obs}")
-            # print(f"Actual Next State {real_obs}")
-            # print all indexes where the difference it greater than 10
-
             
-        # if i == 30:
-        #     # exit()
-        #     break
-        # print(f"Loss : {jnp.mean((prediction - states[1+i][:-2])**2)}")
 
+    def check_lstm_state_health(lstm_state, step):
+        if lstm_state is not None:
+            # V2_LSTM returns (lstm1_state, lstm2_state) tuple
+            lstm1_state, lstm2_state = lstm_state
+            
+            # Check first LSTM layer
+            hidden1_norm = jnp.linalg.norm(lstm1_state.hidden)
+            cell1_norm = jnp.linalg.norm(lstm1_state.cell)
+            
+            # Check second LSTM layer  
+            hidden2_norm = jnp.linalg.norm(lstm2_state.hidden)
+            cell2_norm = jnp.linalg.norm(lstm2_state.cell)
+            
+            # Check for problems in either layer
+            max_norm = max(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
+            min_norm = min(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
+            
+            if max_norm > 5.0:
+                print(f"Step {step}: LSTM state explosion - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}")
+            elif min_norm < 0.01:
+                print(f"Step {step}: LSTM state vanishing - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}")
+            else:
+                # Only print occasionally when healthy to avoid spam
+                if step % 50 == 0:  # Print every 50 steps when healthy
+                    print(f"Step {step}: LSTM states healthy - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}")
+    
+    
+    def detect_game_events(real_obs, prev_obs, step):
+        # Detect significant state changes that might confuse the model
+        if prev_obs is not None:
+            total_change = jnp.sum(jnp.abs(real_obs - prev_obs))
+            
+            # Detect potential death/reset events
+            if total_change > 50:  # Threshold to tune
+                print(f"Step {step}: Major state change detected (change: {total_change:.2f})")
+                
+            # Check for specific entity spawn/despawn
+            dynamic_change = jnp.sum(jnp.abs(real_obs[170:179] - prev_obs[170:179]))
+            if dynamic_change > 20:
+                print(f"Step {step}: Entity spawn/despawn (dynamic change: {dynamic_change:.2f})")
+    def analyze_prediction_errors(real_obs, pred_obs, step):
+        error_agg = jnp.mean((real_obs - pred_obs[0]) ** 2)
+        error = jnp.abs(real_obs - pred_obs[0])
+        # Check which parts are wrong
+        static_error = jnp.mean(error[:170])
+        dynamic_error = jnp.mean(error[170:179]) 
+        other_error = jnp.mean(error[179:])
 
-
-
+        if error_agg > 10:  # Large error threshold
+            print(f"  LARGE ERROR BREAKDOWN:")
+            print(f"    Static (background): {static_error:.1f}")
+            print(f"    Dynamic (entities): {dynamic_error:.1f}")
+            print(f"    Other: {other_error:.1f}")
+            
+            # Find the worst predictions
+            worst_indices = jnp.where(error > 20)[0]
+            if len(worst_indices) > 0:
+                print(f"    Worst predictions at indices: {worst_indices[:5]}")
 
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
@@ -669,7 +716,7 @@ def compare_real_vs_model(
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
-    step_count = 0
+    step_count = 0 + starting_step
     clock = pygame.time.Clock()
 
 
@@ -741,8 +788,9 @@ def compare_real_vs_model(
         model_obs = unnormalized_model_prediction
 
         debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
-
-
+        # check_lstm_state_health(lstm_state, step_count)
+        # analyze_prediction_errors(next_real_obs, unnormalized_model_prediction, step_count)
+        # detect_game_events(next_real_obs, real_obs, step_count)
 
         # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
@@ -796,6 +844,7 @@ def compare_real_vs_model(
 
         # Reset LSTM state if we're at a reset point
         if step_count % steps_into_future == 0 or step_count in boundaries:
+            # lstm_state = None
             lstm_state = lsmt_real_state
 
 
@@ -919,7 +968,7 @@ if __name__ == "__main__":
         # Collect experience data (AtariWrapper handles frame stacking automatically)
         obs, actions, rewards, _, boundaries = (
             collect_experience_sequential(
-                env, num_episodes=5, max_steps_per_episode=1000, seed=0
+                env, num_episodes=20, max_steps_per_episode=1000, seed=0
             )
         )
         next_obs = obs[
@@ -1006,7 +1055,7 @@ if __name__ == "__main__":
             )
         print(f"Model saved to {save_path}")
 
-    use_train_test_split = False
+    use_train_test_split = True
     if use_train_test_split == True:
         validation_obs = obs[boundaries[-3] : boundaries[-1]]
         validation_actions = actions[boundaries[-3] : boundaries[-1]]
@@ -1026,6 +1075,8 @@ if __name__ == "__main__":
             normalization_stats=normalization_stats,
             boundaries=boundaries,
             env=env,
-            render_debugging= (args[3] == 'verbose')
+            starting_step=0,
+            steps_into_future=10,
+            render_debugging = (args[3] == 'verbose' if len(args) > 3 else False)
         )
 

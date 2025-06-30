@@ -686,10 +686,9 @@ def V2_LSTM():
         x = hk.Linear(256)(x)
         x = jax.nn.gelu(x)
         
-        # Multi-layer LSTM for better temporal modeling
         lstm1 = hk.LSTM(512)
         lstm2 = hk.LSTM(256)
-        
+
         if lstm_state is None:
             lstm1_state = lstm1.initial_state(batch_size)
             lstm2_state = lstm2.initial_state(batch_size)
@@ -698,11 +697,24 @@ def V2_LSTM():
             
         # First LSTM layer
         lstm1_out, new_lstm1_state = lstm1(x, lstm1_state)
+
+        # ADD THIS: Clip LSTM1 states to prevent explosion
+        new_lstm1_state = hk.LSTMState(
+            hidden=jnp.clip(new_lstm1_state.hidden, -1.0, 1.0),
+            cell=jnp.clip(new_lstm1_state.cell, -1.0, 1.0)
+        )
+
         lstm1_out = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(lstm1_out)
-        
+
         # Second LSTM layer
         lstm2_out, new_lstm2_state = lstm2(lstm1_out, lstm2_state)
+
         
+        new_lstm2_state = hk.LSTMState(
+            hidden=jnp.clip(new_lstm2_state.hidden, -1.0, 1.0),
+            cell=jnp.clip(new_lstm2_state.cell, -1.0, 1.0)
+        )
+
         # Separate prediction heads for static vs dynamic features
         static_head = hk.Linear(256)(lstm2_out)
         static_head = jax.nn.gelu(static_head)
@@ -733,11 +745,167 @@ def V2_LSTM():
         prediction = full_prediction + residual_weights * flat_state
         
         # Stability constraints for dynamic features
-        prediction = prediction.at[..., 170:179].set(
-            jnp.clip(prediction[..., 170:179], -50, 200)
-        )
+        # prediction = prediction.at[..., 170:179].set(
+        #     jnp.clip(prediction[..., 170:179], -50, 200)
+        # )
         
         new_lstm_state = (new_lstm1_state, new_lstm2_state)
+        return prediction, new_lstm_state
+
+    return hk.transform(forward)
+
+def V8_LSTM():
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+        action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        if len(state.shape) == 1:
+            action_one_hot = action_one_hot.reshape(1, 18)
+
+        # More granular feature separation to prevent cascade errors
+        player_features = flat_state[..., :5]  # Player position, lives, etc.
+        enemy_features = flat_state[..., 5:170]  # Sharks, divers, etc.
+        missile_features = flat_state[..., 170:179]  # Missiles (problematic)
+        score_features = flat_state[..., 179:]  # Score, etc.
+        
+        # SEPARATE PROCESSING STREAMS to prevent contamination
+        
+        # 1. Player stream (most stable)
+        player_stream = hk.Linear(128)(player_features)
+        player_stream = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(player_stream)
+        player_stream = jax.nn.gelu(player_stream)
+        player_stream = hk.Linear(64)(player_stream)
+        player_stream = jax.nn.gelu(player_stream)
+        
+        # 2. Enemy stream (moderately stable)
+        enemy_stream = hk.Linear(256)(enemy_features)
+        enemy_stream = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(enemy_stream)
+        enemy_stream = jax.nn.gelu(enemy_stream)
+        enemy_stream = hk.Linear(128)(enemy_stream)
+        enemy_stream = jax.nn.gelu(enemy_stream)
+        
+        # 3. Missile stream (isolated to prevent contamination)
+        missile_stream = hk.Linear(64)(missile_features)
+        missile_stream = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(missile_stream)
+        missile_stream = jax.nn.gelu(missile_stream)
+        missile_stream = hk.Linear(32)(missile_stream)
+        missile_stream = jax.nn.gelu(missile_stream)
+        
+        # 4. Score stream
+        score_stream = hk.Linear(32)(score_features)
+        score_stream = jax.nn.gelu(score_stream)
+        
+        # Action processing
+        action_features = hk.Linear(64)(action_one_hot)
+        action_features = jax.nn.gelu(action_features)
+        action_features = hk.Linear(32)(action_features)
+        action_features = jax.nn.gelu(action_features)
+        
+        # SEPARATE LSTM STREAMS to prevent cross-contamination
+        lstm_player = hk.LSTM(256)
+        lstm_enemy = hk.LSTM(256) 
+        lstm_missile = hk.LSTM(128)  # Smaller for unstable features
+        
+        if lstm_state is None:
+            lstm_player_state = lstm_player.initial_state(batch_size)
+            lstm_enemy_state = lstm_enemy.initial_state(batch_size)
+            lstm_missile_state = lstm_missile.initial_state(batch_size)
+        else:
+            lstm_player_state, lstm_enemy_state, lstm_missile_state = lstm_state
+        
+        # Combine player + action for player LSTM
+        player_action_input = jnp.concatenate([player_stream, action_features], axis=-1)
+        player_lstm_out, new_player_state = lstm_player(player_action_input, lstm_player_state)
+        
+        # Enemy LSTM gets player context but not missile contamination
+        enemy_context_input = jnp.concatenate([enemy_stream, player_stream], axis=-1)
+        enemy_lstm_out, new_enemy_state = lstm_enemy(enemy_context_input, lstm_enemy_state)
+        
+        # Missile LSTM is ISOLATED - only gets its own features + action
+        missile_action_input = jnp.concatenate([missile_stream, action_features], axis=-1)
+        missile_lstm_out, new_missile_state = lstm_missile(missile_action_input, lstm_missile_state)
+        
+        # Apply more aggressive clipping to prevent any state explosion
+        new_player_state = hk.LSTMState(
+            hidden=jnp.clip(new_player_state.hidden, -2.0, 2.0),
+            cell=jnp.clip(new_player_state.cell, -3.0, 3.0)
+        )
+        new_enemy_state = hk.LSTMState(
+            hidden=jnp.clip(new_enemy_state.hidden, -2.0, 2.0),
+            cell=jnp.clip(new_enemy_state.cell, -3.0, 3.0)
+        )
+        new_missile_state = hk.LSTMState(
+            hidden=jnp.clip(new_missile_state.hidden, -1.5, 1.5),
+            cell=jnp.clip(new_missile_state.cell, -2.0, 2.0)
+        )
+        
+        # SEPARATE PREDICTION HEADS - no cross-contamination
+        
+        # Player predictions (most reliable)
+        player_head = hk.Linear(128)(player_lstm_out)
+        player_head = jax.nn.gelu(player_head)
+        player_pred = hk.Linear(len(player_features[0]))(player_head)
+        
+        # Enemy predictions
+        enemy_head = hk.Linear(256)(enemy_lstm_out)
+        enemy_head = jax.nn.gelu(enemy_head)
+        enemy_pred = hk.Linear(len(enemy_features[0]))(enemy_head)
+        
+        # Missile predictions (isolated and dampened)
+        missile_head = hk.Linear(64)(missile_lstm_out)
+        missile_head = jax.nn.gelu(missile_head)
+        missile_pred = hk.Linear(9)(missile_head)
+        
+        # Score predictions (affected by player+enemy but not missiles directly)
+        score_context = jnp.concatenate([player_lstm_out, enemy_lstm_out], axis=-1)
+        score_head = hk.Linear(64)(score_context)
+        score_head = jax.nn.gelu(score_head)
+        score_pred = hk.Linear(len(score_features[0]))(score_head)
+        
+        # Combine predictions
+        full_prediction = jnp.concatenate([
+            player_pred,
+            enemy_pred, 
+            missile_pred,
+            score_pred
+        ], axis=-1)
+        
+        # DIFFERENT RESIDUAL STRATEGIES for different feature types
+        player_residual = 0.9  # High residual for stable features
+        enemy_residual = 0.7   # Medium residual for moderately stable
+        missile_residual = 0.1 # Very low residual for unstable features
+        score_residual = 0.8   # High residual for slowly changing scores
+        
+        residual_weights = jnp.concatenate([
+            jnp.full((len(player_features[0]),), player_residual),
+            jnp.full((len(enemy_features[0]),), enemy_residual),
+            jnp.full((9,), missile_residual),
+            jnp.full((len(score_features[0]),), score_residual)
+        ])
+        
+        prediction = full_prediction + residual_weights * flat_state
+        
+        # AGGRESSIVE CONSTRAINTS on problematic features
+        # Missile coordinates should be 0 or reasonable game coordinates
+        missile_pred_constrained = jnp.where(
+            jnp.abs(prediction[..., 170:179]) < 10,  # If prediction is close to 0
+            jnp.zeros_like(prediction[..., 170:179]),  # Set to 0 (no missile)
+            jnp.clip(prediction[..., 170:179], 20, 160)  # Otherwise constrain to game bounds
+        )
+        prediction = prediction.at[..., 170:179].set(missile_pred_constrained)
+        
+        # Constrain other features to reasonable game bounds
+        prediction = prediction.at[..., :5].set(jnp.clip(prediction[..., :5], 0, 160))  # Player bounds
+        prediction = prediction.at[..., 5:170].set(jnp.clip(prediction[..., 5:170], -10, 200))  # Enemy bounds
+        
+        new_lstm_state = (new_player_state, new_enemy_state, new_missile_state)
         return prediction, new_lstm_state
 
     return hk.transform(forward)

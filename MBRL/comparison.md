@@ -610,3 +610,130 @@ Step 498, Unnormalized Error: 5.36 | Action: UPRIGHTFIRE
 Step 499, Unnormalized Error: 4.61 | Action: NOOP
 Comparison completed
 MBRLfhilprec@Florian:~/MBRL$ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# with clipping
+State reset
+Step 70, Unnormalized Error: 1.22 | Action: UPLEFTFIRE
+Step 70: LSTM state explosion - Layer1 h:2.10 c:4.07, Layer2 h:4.51 c:8.90
+Step 71, Unnormalized Error: 0.87 | Action: LEFT
+Step 71: LSTM state explosion - Layer1 h:2.31 c:4.71, Layer2 h:5.82 c:12.43
+Step 72, Unnormalized Error: 0.55 | Action: RIGHTFIRE
+Step 72: LSTM state explosion - Layer1 h:2.31 c:4.90, Layer2 h:6.21 c:14.03
+Step 73, Unnormalized Error: 0.58 | Action: DOWN
+Step 73: LSTM state explosion - Layer1 h:2.27 c:4.87, Layer2 h:6.25 c:14.71
+Step 74, Unnormalized Error: 0.77 | Action: UPFIRE
+Step 74: LSTM state explosion - Layer1 h:2.56 c:5.34, Layer2 h:6.28 c:15.27
+Step 75, Unnormalized Error: 1.07 | Action: LEFTFIRE
+Step 75: LSTM state explosion - Layer1 h:2.27 c:4.74, Layer2 h:6.33 c:15.88
+Step 76, Unnormalized Error: 0.79 | Action: UP
+Step 76: LSTM state explosion - Layer1 h:2.29 c:4.74, Layer2 h:6.36 c:16.75
+Step 77, Unnormalized Error: 1.93 | Action: UPLEFT
+Step 77: LSTM state explosion - Layer1 h:2.07 c:4.49, Layer2 h:6.42 c:17.12
+Step 78, Unnormalized Error: 0.58 | Action: DOWN
+Step 78: LSTM state explosion - Layer1 h:2.24 c:4.77, Layer2 h:6.20 c:17.23
+Step 79, Unnormalized Error: 0.45 | Action: UPRIGHT
+Step 79: LSTM state explosion - Layer1 h:2.50 c:5.28, Layer2 h:6.20 c:17.53
+State reset
+Step 80, Unnormalized Error: 0.04 | Action: DOWN
+Step 80: LSTM state explosion - Layer1 h:2.40 c:5.16, Layer2 h:6.14 c:17.81
+Step 81, Unnormalized Error: 0.10 | Action: UPRIGHTFIRE
+Step 81: LSTM state explosion - Layer1 h:2.64 c:5.50, Layer2 h:6.36 c:18.15
+Step 82, Unnormalized Error: 0.18 | Action: FIRE
+Step 82: LSTM state explosion - Layer1 h:2.51 c:5.03, Layer2 h:6.35 c:18.61
+Step 83, Unnormalized Error: 0.18 | Action: DOWN
+Step 83: LSTM state explosion - Layer1 h:2.05 c:4.42, Layer2 h:6.33 c:18.75
+Step 84, Unnormalized Error: 0.15 | Action: DOWNRIGHTFIRE
+Step 84: LSTM state explosion - Layer1 h:2.03 c:4.40, Layer2 h:6.49 c:19.43
+Step 85, Unnormalized Error: 1.12 | Action: RIGHTFIRE
+Step 85: LSTM state explosion - Layer1 h:1.92 c:4.26, Layer2 h:6.44 c:19.84
+Step 86, Unnormalized Error: 1.52 | Action: DOWN
+Step 86: LSTM state explosion - Layer1 h:2.17 c:4.61, Layer2 h:6.34 c:20.02
+Step 87, Unnormalized Error: 1.01 | Action: UPRIGHT
+Step 87: LSTM state explosion - Layer1 h:2.29 c:4.70, Layer2 h:6.40 c:20.38
+Step 88, Unnormalized Error: 78.84 | Action: LEFTFIRE
+Step 88: LSTM state explosion - Layer1 h:1.85 c:4.16, Layer2 h:6.41 c:20.09
+Step 89, Unnormalized Error: 12.82 | Action: UPLEFTFIRE
+Step 89: LSTM state explosion - Layer1 h:2.37 c:4.84, Layer2 h:6.37 c:20.61
+State reset
+Step 90, Unnormalized Error: 1.48 | Action: DOWN
+Step 90: LSTM state explosion - Layer1 h:2.32 c:4.86, Layer2 h:6.28 c:20.51
+Step 91, Unnormalized Error: 3.55 | Action: RIGHTFIRE
+Step 91: LSTM state explosion - Layer1 h:2.39 c:5.04, Layer2 h:6.36 c:20.02
+Step 92, Unnormalized Error: 3.61 | Action: UPLEFTFIRE
+Step 92: LSTM state explosion - Layer1 h:2.60 c:5.34, Layer2 h:6.30 c:20.28
+Step 93, Unnormalized Error: 31.40 | Action: DOWN
+Step 93: LSTM state explosion - Layer1 h:2.29 c:4.94, Layer2 h:6.34 c:19.85
+Step 94, Unnormalized Error: 4.36 | Action: UPLEFTFIRE
+Step 94: LSTM state explosion - Layer1 h:2.43 c:5.15, Layer2 h:6.43 c:19.75
+Step 95, Unnormalized Error: 6.85 | Action: DOWN
+Step 95: LSTM state explosion - Layer1 h:2.35 c:5.04, Layer2 h:6.30 c:19.64
+Step 96, Unnormalized Error: 8.99 | Action: LEFT
+Step 96: LSTM state explosion - Layer1 h:2.31 c:5.04, Layer2 h:6.37 c:19.23
+Step 97, Unnormalized Error: 15.25 | Action: NOOP
+Step 97: LSTM state explosion - Layer1 h:2.53 c:5.20, Layer2 h:6.45 c:19.44
+Step 98, Unnormalized Error: 6.92 | Action: FIRE
+Step 98: LSTM state explosion - Layer1 h:2.48 c:5.08, Layer2 h:6.39 c:19.65
+Step 99, Unnormalized Error: 3.90 | Action: DOWNFIRE
+Step 99: LSTM state explosion - Layer1 h:2.31 c:4.99, Layer2 h:6.36 c:19.59
+State reset
+Step 100, Unnormalized Error: 0.33 | Action: DOWNRIGHT
+Step 100: LSTM state explosion - Layer1 h:2.40 c:5.10, Layer2 h:6.31 c:19.90
+Step 101, Unnormalized Error: 0.99 | Action: UPFIRE
+Step 101: LSTM state explosion - Layer1 h:2.28 c:4.95, Layer2 h:6.48 c:19.68
+Step 102, Unnormalized Error: 12.99 | Action: DOWNFIRE
+Step 102: LSTM state explosion - Layer1 h:2.22 c:4.91, Layer2 h:6.44 c:19.32
+Step 103, Unnormalized Error: 38.67 | Action: FIRE
+Step 103: LSTM state explosion - Layer1 h:2.34 c:5.00, Layer2 h:6.36 c:19.48
+Step 104, Unnormalized Error: 85.09 | Action: UPLEFT
+Step 104: LSTM state explosion - Layer1 h:2.27 c:4.89, Layer2 h:6.42 c:19.19
+Step 105, Unnormalized Error: 65.74 | Action: UPLEFTFIRE
+Step 105: LSTM state explosion - Layer1 h:2.20 c:4.81, Layer2 h:6.54 c:18.92
+Step 106, Unnormalized Error: 69.64 | Action: LEFTFIRE
+Step 106: LSTM state explosion - Layer1 h:2.10 c:4.57, Layer2 h:6.38 c:18.47
+Step 107, Unnormalized Error: 60.79 | Action: UP
+Step 107: LSTM state explosion - Layer1 h:2.06 c:4.53, Layer2 h:6.48 c:18.19
+Step 108, Unnormalized Error: 59.32 | Action: DOWN
+Step 108: LSTM state explosion - Layer1 h:2.13 c:4.59, Layer2 h:6.53 c:18.82
+Step 109, Unnormalized Error: 65.42 | Action: UPFIRE
+Step 109: LSTM state explosion - Layer1 h:2.15 c:4.59, Layer2 h:6.61 c:19.23
+State reset
+Step 110, Unnormalized Error: 1.72 | Action: UPLEFTFIRE
+Step 110: LSTM state explosion - Layer1 h:1.86 c:3.88, Layer2 h:6.56 c:18.28
+Step 111, Unnormalized Error: 1.88 | Action: LEFTFIRE
+Step 111: LSTM state explosion - Layer1 h:2.27 c:4.37, Layer2 h:6.01 c:17.61
+Step 112, Unnormalized Error: 2.08 | Action: DOWNLEFT
+Step 112: LSTM state explosion - Layer1 h:2.02 c:4.04, Layer2 h:5.97 c:18.16
+Step 113, Unnormalized Error: 104.58 | Action: DOWN
+Step 113: LSTM state explosion - Layer1 h:1.41 c:3.14, Layer2 h:6.73 c:17.58
+Step 114, Unnormalized Error: 71.94 | Action: RIGHT
+Step 114: LSTM state explosion - Layer1 h:1.79 c:3.83, Layer2 h:6.57 c:16.70
+Step 115, Unnormalized Error: 71.23 | Action: DOWNRIGHT
+Step 115: LSTM state explosion - Layer1 h:1.99 c:4.19, Layer2 h:6.38 c:16.65
+Step 116, Unnormalized Error: 26.31 | Action: DOWNRIGHTFIRE
+Step 116: LSTM state explosion - Layer1 h:2.26 c:4.53, Layer2 h:6.10 c:16.07
+Step 117, Unnormalized Error: 22.36 | Action: DOWN
+Step 117: LSTM state explosion - Layer1 h:2.05 c:4.19, Layer2 h:6.14 c:15.97
+Step 118, Unnormalized Error: 21.82 | Action: RIGHT
+Step 118: LSTM state explosion - Layer1 h:2.01 c:4.20, Layer2 h:6.21 c:16.11
+Step 119, Unnormalized Error: 22.56 | Action: UPRIGHTFIRE
+Step 119: LSTM state explosion - Layer1 h:1.81 c:3.86, Layer2 h:6.33 c:15.42
+State reset
+Step 120, Unnormalized Error: 1.47 | Action: UPLEFT
+Step 120: LSTM state explosion - Layer1 h:1.77 c:3.88, Layer2 h:6.28 c:14.82
+
+#without clipping
