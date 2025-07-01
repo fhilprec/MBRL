@@ -652,7 +652,7 @@ def V2_LSTM():
             action_one_hot = action_one_hot.reshape(1, 18)
 
         # Separate static and dynamic features
-        # Indices 170-178 appear to be dynamic (bullets, enemies)
+        # Indices 170-178 appear to be dynamic (bullets)
         static_features = jnp.concatenate([flat_state[..., :170], flat_state[..., 179:]], axis=-1)
         dynamic_features = flat_state[..., 170:179]
         

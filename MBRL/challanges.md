@@ -9,3 +9,13 @@ after increasing steps agent had bigger return but during rendering why?
 
 
 ssh-add ~/ssh/Github
+
+
+
+
+
+TODOS:
+Seaquest Orientation Reinmachen
+Negative Log Likelihood vielleicht testen
+Mehr Episoden und teilweise VRAM laden 
+Actor Critic Iterieren

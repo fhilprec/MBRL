@@ -1055,6 +1055,9 @@ if __name__ == "__main__":
             )
         print(f"Model saved to {save_path}")
 
+
+    print(boundaries[-4], boundaries[-3], boundaries[-2], boundaries[-1])
+
     use_train_test_split = True
     if use_train_test_split == True:
         validation_obs = obs[boundaries[-3] : boundaries[-1]]

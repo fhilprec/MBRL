@@ -74,6 +74,7 @@ Epoch 2000/2000, Loss: 0.000342, LR: 2.00e-05
 
 
 
+
 Best one V2
 MBRLfhilprec@Florian:~/MBRL$ python MBRL/worldmodel.py V2 render verbos
 pygame 2.6.1 (SDL 2.28.4, Python 3.10.17)
