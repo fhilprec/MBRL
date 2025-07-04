@@ -16,6 +16,7 @@ import pickle
 from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 from jax import lax
+import gc
 
 from obs_state_converter import flat_observation_to_state, OBSERVATION_INDEX_MAP
 
@@ -297,6 +298,7 @@ def train_world_model(
     num_epochs=20000,
     sequence_length=32,
     episode_boundaries=None,
+    gpu_batch_size=1000,
 ):
     # Calculate normalization statistics from the flattened obs
     state_mean = jnp.mean(obs, axis=0)
@@ -566,10 +568,21 @@ def train_world_model(
         # Shuffle data each epoch
         rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
         indices = jax.random.permutation(shuffle_key, len(batches))
+
+
         
         shuffled_states = batch_states[indices]
         shuffled_actions = batch_actions[indices]
         shuffled_next_states = batch_next_states[indices]
+
+        # only use gpu_batch_size elements for training
+
+
+        #will increase the amount of epochs a lot
+        if shuffled_states.shape[0] > gpu_batch_size:
+            shuffled_states = shuffled_states[:gpu_batch_size]
+            shuffled_actions = shuffled_actions[:gpu_batch_size]
+            shuffled_next_states = shuffled_next_states[:gpu_batch_size]
         
         params, opt_state, loss = update_step_batched(
             params, opt_state, shuffled_states, shuffled_actions, shuffled_next_states, lstm_state_template, epoch, num_epochs
@@ -582,7 +595,8 @@ def train_world_model(
         else:
             no_improve_count += 1
             
-        if no_improve_count >= patience:
+        if False:
+        # if no_improve_count >= patience:
             print(f"Early stopping at epoch {epoch + 1}")
             break
         
@@ -952,68 +966,69 @@ if __name__ == "__main__":
 
 
 
-    if os.path.exists(experience_data_path):
-            print(f"Loading existing experience data from {experience_data_path}...")
-            with open(experience_data_path, "rb") as f:
-                saved_data = pickle.load(f)
-                obs = saved_data["obs"]
-                actions = saved_data["actions"]
-                next_obs = saved_data["next_obs"]
-                rewards = saved_data["rewards"]
-                boundaries = saved_data["boundaries"]
-    else:
+    if not os.path.exists('experience_data_LSTM_0.pkl'):
         print(
             "No existing experience data found. Collecting new experience data..."
         )
         # Collect experience data (AtariWrapper handles frame stacking automatically)
-        obs, actions, rewards, _, boundaries = (
-            collect_experience_sequential(
-                env, num_episodes=20, max_steps_per_episode=1000, seed=0
+        
+            
+        for i in range(0,4):
+            print(f"Collecting experience data (iteration {i+1}/4)...")
+            obs, actions, rewards, _, boundaries = (
+                collect_experience_sequential(
+                    env, num_episodes=50, max_steps_per_episode=10000, seed=i
+                )
             )
-        )
-        next_obs = obs[
-            1:
-        ]  # Next states are just the next frame in the sequence
-        obs = obs[:-1]  # Current states are all but the last frame
+            next_obs = obs[1:] 
+            obs = obs[:-1]  
 
-        # render_trajectory(states, num_frames=1000, render_scale=2, delay=10)
-        # I want to check whether the next_state is equal to the current state + 1
-        print(obs.shape)
-        print(next_obs.shape)
+            experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
 
-        if VERBOSE:
-            print("Checking if next_state is equal to current state + 1...")
-            for i in range(100):
-                if not jnp.allclose(obs[i + 1], next_obs[i]):
-                    print(
-                        f"Mismatch at index {i}: {obs[i]} != {next_obs[i]}"
-                    )
-                    print(obs[i + 1])
-                    print(next_obs[i])
-                    print(obs[i + 1] - next_obs[i])
-                    exit(1)
-            print("All states match the expected transition.")
+            with open(experience_path, "wb") as f:
+                pickle.dump(
+                    {
+                        "obs": obs,
+                        "actions": actions,
+                        "next_obs": next_obs,
+                        "rewards": rewards,
+                        "boundaries": boundaries,
+                    },
+                    f,
+                )
+            print(f"Experience data saved to {experience_path}")
+            
+            # Explicitly delete large variables to free memory
+            del obs, actions, rewards, boundaries, next_obs
+            gc.collect()  # Force garbage collection
 
-        # Save the collected experience data
-        with open(experience_data_path, "wb") as f:
-            pickle.dump(
-                {
-                    "obs": obs,
-                    "actions": actions,
-                    "next_obs": next_obs,
-                    "rewards": rewards,
-                    "boundaries": boundaries,
-                },
-                f,
-            )
-        print(f"Experience data saved to {experience_data_path}")
+
+    #load all experience data into memory
+    obs = []
+    actions = []
+    next_obs = []
+    rewards = []
+    boundaries = []
+    for i in range(0,4):
+        experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
+        with open(experience_path, "rb") as f:
+            saved_data = pickle.load(f)
+            obs.extend(saved_data["obs"])
+            actions.extend(saved_data["actions"])
+            next_obs.extend(saved_data["next_obs"])
+            rewards.extend(saved_data["rewards"])
+            # Calculate the offset from previous data
+            offset = boundaries[-1] if boundaries else 0
+            # Add offset to each boundary before extending
+            adjusted_boundaries = [b + offset for b in saved_data["boundaries"]]
+            boundaries.extend(adjusted_boundaries)
 
 
     print(boundaries)
-    training_obs = obs[0 : boundaries[-4]]
-    training_actions = actions[0 : boundaries[-4]]
-    training_next_obs = next_obs[0 : boundaries[-4]]
-    training_rewards = rewards[0 : boundaries[-4]]
+    training_obs = jnp.array(obs[0 : boundaries[-4]])
+    training_actions = jnp.array(actions[0 : boundaries[-4]])
+    training_next_obs = jnp.array(next_obs[0 : boundaries[-4]])
+    training_rewards = jnp.array(rewards[0 : boundaries[-4]])
     print(f"Training on {len(training_obs)} states...")
 
 
