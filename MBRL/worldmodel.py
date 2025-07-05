@@ -224,9 +224,7 @@ def collect_experience_sequential(
 
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)
-            next_obs, next_state, reward, done, _ = env.step(step_key, state, action)
-
-            next_state_repr = jax.tree.map(lambda x: x, next_state.env_state)
+            next_obs, next_state, reward, done, _ = env.step(state, action)
 
             # Store the transition
             observations.append(current_obs)
@@ -414,19 +412,20 @@ def train_world_model(
             
             pred_next_state = pred_next_state.squeeze()
             
-            # Simpler, more balanced weighting
-            static_weight = 1.0
-            dynamic_weight = 1.0  # Equal weighting instead of 2.0
+            # # Simpler, more balanced weighting
+            # static_weight = 1.0
+            # dynamic_weight = 1.0  # Equal weighting instead of 2.0
             
-            # Create weight mask
-            weights = jnp.concatenate([
-                jnp.full((170,), static_weight),
-                jnp.full((9,), dynamic_weight),
-                jnp.full((state_dim - 179,), static_weight)
-            ])
+            # # Create weight mask
+            # weights = jnp.concatenate([
+            #     jnp.full((170,), static_weight),
+            #     jnp.full((9,), dynamic_weight),
+            #     jnp.full((state_dim - 179,), static_weight)
+            # ])
             
             # Standard weighted MSE loss
-            mse_loss = jnp.mean(weights * (target_next_state - pred_next_state) ** 2)
+            mse_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            # mse_loss = jnp.mean(weights * (target_next_state - pred_next_state) ** 2)
             
             # Remove the additional stability loss for now
             total_loss = mse_loss
@@ -964,7 +963,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-
+    experience_its = 1
 
     if not os.path.exists('experience_data_LSTM_0.pkl'):
         print(
@@ -972,9 +971,9 @@ if __name__ == "__main__":
         )
         # Collect experience data (AtariWrapper handles frame stacking automatically)
         
-            
-        for i in range(0,4):
-            print(f"Collecting experience data (iteration {i+1}/4)...")
+        
+        for i in range(0,experience_its):
+            print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = (
                 collect_experience_sequential(
                     env, num_episodes=50, max_steps_per_episode=10000, seed=i
@@ -1009,7 +1008,7 @@ if __name__ == "__main__":
     next_obs = []
     rewards = []
     boundaries = []
-    for i in range(0,4):
+    for i in range(0,experience_its):
         experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
         with open(experience_path, "rb") as f:
             saved_data = pickle.load(f)

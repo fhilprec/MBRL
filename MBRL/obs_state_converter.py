@@ -20,13 +20,7 @@ def flat_observation_to_state(obs: SeaquestObservation, unflattener, rng_key: ch
 
     obs = unflattener(obs)
     
-    # Add debug 
-    
-    
-    
-    
 
-    # just generate a rng_key if not provided
     if rng_key is None:
         rng_key = jax.random.PRNGKey(0)
     
@@ -34,7 +28,7 @@ def flat_observation_to_state(obs: SeaquestObservation, unflattener, rng_key: ch
     player_x = obs.player.x[0] if hasattr(obs.player.x, '__len__') and len(obs.player.x) > 0 else obs.player.x
     player_y = obs.player.y[0] if hasattr(obs.player.y, '__len__') and len(obs.player.y) > 0 else obs.player.y
     # We'll need to infer direction - this might need adjustment based on your logic
-    player_direction = jnp.array(0)  # Default to right, you may need to track this differently
+    player_direction = obs.player.o.squeeze()  # Default to right, you may need to track this differently
     
     
     

@@ -2,19 +2,18 @@ from enum import Enum
 from typing import Tuple, Generic, TypeVar
 import jax.numpy as jnp
 import jax.random as jrandom
+from jaxatari.spaces import Space
 
 
 EnvObs = TypeVar("EnvObs")
 EnvState = TypeVar("EnvState")
 EnvInfo = TypeVar("EnvInfo")
 
-
 class JAXAtariAction:
     """
     "Namespace" for Atari action integer constants.
     These are directly usable in JAX arrays.
     """
-
     NOOP: int = 0
     FIRE: int = 1
     UP: int = 2
@@ -37,30 +36,12 @@ class JAXAtariAction:
     @classmethod
     def get_all_values(cls) -> jnp.ndarray:
         # For fixed action sets, explicit listing is safest and clearest.
-        return jnp.array(
-            [
-                cls.NOOP,
-                cls.FIRE,
-                cls.UP,
-                cls.RIGHT,
-                cls.LEFT,
-                cls.DOWN,
-                cls.UPRIGHT,
-                cls.UPLEFT,
-                cls.DOWNRIGHT,
-                cls.DOWNLEFT,
-                cls.UPFIRE,
-                cls.RIGHTFIRE,
-                cls.LEFTFIRE,
-                cls.DOWNFIRE,
-                cls.UPRIGHTFIRE,
-                cls.UPLEFTFIRE,
-                cls.DOWNRIGHTFIRE,
-                cls.DOWNLEFTFIRE,
-            ],
-            dtype=jnp.int32,
-        )
-
+        return jnp.array([
+            cls.NOOP, cls.FIRE, cls.UP, cls.RIGHT, cls.LEFT, cls.DOWN,
+            cls.UPRIGHT, cls.UPLEFT, cls.DOWNRIGHT, cls.DOWNLEFT,
+            cls.UPFIRE, cls.RIGHTFIRE, cls.LEFTFIRE, cls.DOWNFIRE,
+            cls.UPRIGHTFIRE, cls.UPLEFTFIRE, cls.DOWNRIGHTFIRE, cls.DOWNLEFTFIRE
+        ], dtype=jnp.int32)
 
 class JaxEnvironment(Generic[EnvState, EnvObs, EnvInfo]):
     """
@@ -72,9 +53,11 @@ class JaxEnvironment(Generic[EnvState, EnvObs, EnvInfo]):
     """
 
     def __init__(self):
+        self.mode = 0
+        self.difficulty = 0
         pass
 
-    def reset(self, key: jrandom.PRNGKey = None) -> Tuple[EnvObs, EnvState]:
+    def reset(self, key: jrandom.PRNGKey=None) -> Tuple[EnvObs, EnvState]:
         """
         Resets the environment to the initial state.
         Returns: The initial observation and the initial environment state.
@@ -107,17 +90,24 @@ class JaxEnvironment(Generic[EnvState, EnvObs, EnvInfo]):
         """
         raise NotImplementedError("Abstract method")
 
-    def get_action_space(self) -> jnp.ndarray:
+    def action_space(self) -> Space:
         """
         Returns the action space of the environment as an array containing the actions that can be taken.
         Returns: The action space of the environment as an array.
         """
         raise NotImplementedError("Abstract method")
 
-    def get_observation_space(self) -> Tuple:
+    def observation_space(self) -> Space:
         """
         Returns the observation space of the environment.
-        Returns: The observation space of the environment as a tuple.
+        Returns: The observation space of the environment.
+        """
+        raise NotImplementedError("Abstract method")
+    
+    def image_space(self) -> Space:
+        """
+        Returns the image space of the environment.
+        Returns: The image space of the environment.
         """
         raise NotImplementedError("Abstract method")
 
@@ -129,6 +119,14 @@ class JaxEnvironment(Generic[EnvState, EnvObs, EnvInfo]):
 
         Returns: observation
 
+        """
+        raise NotImplementedError("Abstract method")
+
+    def obs_to_flat_array(self, obs: EnvObs) -> jnp.ndarray:
+        """
+        Converts the observation to a flat array.
+        Args:
+            obs: The observation.
         """
         raise NotImplementedError("Abstract method")
 
