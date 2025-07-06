@@ -264,8 +264,9 @@ OBSERVATION_INDEX_MAP = {
     176: "player_score",
     177: "lives",
     178: "oxygen_level",
+    179: "terminal",  # Add the missing index 179
     
-    # Total observation size: 179 elements
+    # Total observation size: 180 elements
 }
 
 # ...existing code...

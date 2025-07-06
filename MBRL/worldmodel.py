@@ -206,6 +206,110 @@ def collect_experience_sequential(
     total_steps = 0
     rng = jax.random.PRNGKey(seed)
 
+
+    #policies--------------------
+    # OPTION 1: Biased Movement Policy (encourages more movement)
+    def biased_movement_policy(rng):
+        """Bias towards movement actions to explore more of the screen"""
+        rng, action_key = jax.random.split(rng)
+        
+        # 30% chance for movement actions (2-9: UP, RIGHT, LEFT, DOWN, UPRIGHT, UPLEFT, DOWNRIGHT, DOWNLEFT)
+        # 20% chance for fire actions (10-17)
+        # 10% chance for NOOP/FIRE (0,1)
+        
+        action_prob = jax.random.uniform(action_key)
+        
+        if action_prob < 0.3:  # Movement actions
+            action = jax.random.randint(action_key, (), 2, 10)  # UP through DOWNLEFT
+        elif action_prob < 0.5:  # Fire actions  
+            action = jax.random.randint(action_key, (), 10, 18)  # UPFIRE through DOWNLEFTFIRE
+        else:  # NOOP or basic FIRE
+            action = jax.random.randint(action_key, (), 0, 2)
+        
+        return action
+
+    # OPTION 2: Directional Sweep Policy (systematic exploration)
+    def directional_sweep_policy(rng, step_count):
+        """Sweep left and right periodically to explore horizontally"""
+        rng, action_key = jax.random.split(rng)
+        
+        # Every 50 steps, do a directional sweep
+        sweep_cycle = step_count % 100
+        
+        if sweep_cycle < 25:  # Move left for 25 steps
+            if jax.random.uniform(action_key) < 0.6:
+                action = 4  # LEFT
+            else:
+                action = jax.random.randint(action_key, (), 0, 18)  # Random
+        elif sweep_cycle < 50:  # Move right for 25 steps  
+            if jax.random.uniform(action_key) < 0.6:
+                action = 3  # RIGHT
+            else:
+                action = jax.random.randint(action_key, (), 0, 18)  # Random
+        else:  # Random for remaining 50 steps
+            action = jax.random.randint(action_key, (), 0, 18)
+        
+        return action
+
+    # OPTION 3: Vertical + Horizontal Bias (my recommendation)
+    def exploration_bias_policy(rng):
+        """Simple policy that encourages both horizontal and vertical movement"""
+        rng, action_key = jax.random.split(rng)
+        
+        action_type = jax.random.uniform(action_key)
+        
+        if action_type < 0.25:  # 25% - Horizontal movement
+            rng, move_key = jax.random.split(rng)
+            action = jax.random.choice(move_key, jnp.array([3, 4, 6, 7, 8, 9]))  # RIGHT, LEFT, UPRIGHT, UPLEFT, DOWNRIGHT, DOWNLEFT
+        elif action_type < 0.4:  # 15% - Vertical movement  
+            rng, move_key = jax.random.split(rng)
+            action = jax.random.choice(move_key, jnp.array([2, 5]))  # UP, DOWN
+        elif action_type < 0.65:  # 25% - Fire while moving
+            rng, fire_key = jax.random.split(rng)
+            action = jax.random.randint(fire_key, (), 10, 18)  # All fire actions
+        else:  # 35% - Completely random
+            rng, rand_key = jax.random.split(rng)
+            action = jax.random.randint(rand_key, (), 0, 18)
+        
+        return action
+
+    # OPTION 4: Simple Edge Explorer (forces ship to edges)
+    def edge_explorer_policy(rng, step_count):
+        """Periodically forces ship to screen edges"""
+        rng, action_key = jax.random.split(rng)
+        
+        # Every 80 steps, spend 20 steps going to an edge
+        cycle = step_count % 80
+        
+        if cycle < 20:  # Go to left edge
+            if jax.random.uniform(action_key) < 0.7:
+                action = jax.random.choice(action_key, jnp.array([4, 7, 9]))  # LEFT, UPLEFT, DOWNLEFT
+            else:
+                action = jax.random.randint(action_key, (), 0, 18)
+        elif cycle < 40:  # Go to right edge  
+            if jax.random.uniform(action_key) < 0.7:
+                action = jax.random.choice(action_key, jnp.array([3, 6, 8]))  # RIGHT, UPRIGHT, DOWNRIGHT
+            else:
+                action = jax.random.randint(action_key, (), 0, 18)
+        else:  # Random exploration
+            action = jax.random.randint(action_key, (), 0, 18)
+        
+        return action
+    
+
+
+    # OPTION 5: down_biased_policy
+    def down_biased_policy(rng):
+        """Simple policy that encourages both horizontal and vertical movement"""
+        rng, action_key = jax.random.split(rng)
+        action = (
+            5
+            if jax.random.uniform(action_key) < 0.2
+            else jax.random.randint(action_key, (), 0, 18)
+        )
+        return action
+    
+
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
         obs, state = env.reset(reset_key)
@@ -216,11 +320,7 @@ def collect_experience_sequential(
 
             # Choose a random action
             rng, action_key = jax.random.split(rng)
-            action = (
-                5
-                if jax.random.uniform(action_key) < 0.2
-                else jax.random.randint(action_key, (), 0, 18)
-            )
+            action = down_biased_policy(rng)
 
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)
@@ -293,10 +393,10 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=20000,
+    num_epochs=5000,
     sequence_length=32,
     episode_boundaries=None,
-    gpu_batch_size=1000,
+    gpu_batch_size=500,
 ):
     # Calculate normalization statistics from the flattened obs
     state_mean = jnp.mean(obs, axis=0)
@@ -599,7 +699,7 @@ def train_world_model(
             print(f"Early stopping at epoch {epoch + 1}")
             break
         
-        if VERBOSE and (epoch + 1) % max(1, num_epochs // 10) == 0:
+        if VERBOSE and ((epoch + 1) % max(1, num_epochs // 10) or epoch == 0) == 0:
             current_lr = lr_schedule(epoch)
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.6f}, LR: {current_lr:.2e}")
 
@@ -738,7 +838,7 @@ def compare_real_vs_model(
     #code to get the unflattener
     game = JaxSeaquest()
     env = AtariWrapper(
-        game, sticky_actions=False, episodic_life=False, frame_stack_size=1
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
@@ -808,10 +908,10 @@ def compare_real_vs_model(
         # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
             real_obs, unflattener
-        )
+        )[-1]  # Get the last state for rendering
         model_base_state = flat_observation_to_state(
             model_obs.squeeze(), unflattener
-        )
+        )[-1]  # Get the last state for renderin
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -948,7 +1048,7 @@ if __name__ == "__main__":
 
     game = JaxSeaquest()
     env = AtariWrapper(
-        game, sticky_actions=False, episodic_life=False, frame_stack_size=1
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
     env = FlattenObservationWrapper(env)
 
@@ -1008,7 +1108,7 @@ if __name__ == "__main__":
     next_obs = []
     rewards = []
     boundaries = []
-    for i in range(0,experience_its):
+    for i in range(0,1): #not loading all experience data for now, just the first one
         experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
         with open(experience_path, "rb") as f:
             saved_data = pickle.load(f)
@@ -1093,7 +1193,7 @@ if __name__ == "__main__":
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=10,
+            steps_into_future=1000000,
             render_debugging = (args[3] == 'verbose' if len(args) > 3 else False)
         )
 
