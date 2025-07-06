@@ -1068,3 +1068,139 @@ def MLP():
         return prediction, dummy_lstm_state
 
     return hk.transform(forward)
+
+
+def V2_LSTM_NLL():
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+        action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        if len(state.shape) == 1:
+            action_one_hot = action_one_hot.reshape(1, 18)
+
+        # Separate static and dynamic features
+        # Indices 170-178 appear to be dynamic (bullets)
+        static_features = jnp.concatenate([flat_state[..., :170], flat_state[..., 179:]], axis=-1)
+        dynamic_features = flat_state[..., 170:179]
+        
+        # Static feature processing (player position, lives, etc.)
+        static_branch = hk.Linear(256)(static_features)
+        static_branch = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(static_branch)
+        static_branch = jax.nn.gelu(static_branch)
+        static_branch = hk.Linear(128)(static_branch)
+        static_branch = jax.nn.gelu(static_branch)
+        
+        # Dynamic feature processing (bullets, enemies, etc.)
+        dynamic_branch = hk.Linear(128)(dynamic_features)
+        dynamic_branch = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(dynamic_branch)
+        dynamic_branch = jax.nn.gelu(dynamic_branch)
+        dynamic_branch = hk.Linear(64)(dynamic_branch)
+        dynamic_branch = jax.nn.gelu(dynamic_branch)
+        
+        # Action processing with enhanced representation
+        action_features = hk.Linear(64)(action_one_hot)
+        action_features = jax.nn.gelu(action_features)
+        action_features = hk.Linear(32)(action_features)
+        action_features = jax.nn.gelu(action_features)
+        
+        # Combine all features
+        combined = jnp.concatenate([static_branch, dynamic_branch, action_features], axis=1)
+        
+        # Enhanced feature mixing
+        x = hk.Linear(512)(combined)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = hk.Linear(256)(x)
+        x = jax.nn.gelu(x)
+        
+        lstm1 = hk.LSTM(512)
+        lstm2 = hk.LSTM(256)
+
+        if lstm_state is None:
+            lstm1_state = lstm1.initial_state(batch_size)
+            lstm2_state = lstm2.initial_state(batch_size)
+        else:
+            lstm1_state, lstm2_state = lstm_state
+            
+        # First LSTM layer
+        lstm1_out, new_lstm1_state = lstm1(x, lstm1_state)
+
+        # Clip LSTM1 states to prevent explosion
+        new_lstm1_state = hk.LSTMState(
+            hidden=jnp.clip(new_lstm1_state.hidden, -1.0, 1.0),
+            cell=jnp.clip(new_lstm1_state.cell, -1.0, 1.0)
+        )
+
+        lstm1_out = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(lstm1_out)
+
+        # Second LSTM layer
+        lstm2_out, new_lstm2_state = lstm2(lstm1_out, lstm2_state)
+
+        new_lstm2_state = hk.LSTMState(
+            hidden=jnp.clip(new_lstm2_state.hidden, -1.0, 1.0),
+            cell=jnp.clip(new_lstm2_state.cell, -1.0, 1.0)
+        )
+
+        # === MODIFIED SECTION FOR NLL OUTPUT ===
+        
+        # Separate prediction heads for static vs dynamic features - MEAN
+        static_head_mean = hk.Linear(256)(lstm2_out)
+        static_head_mean = jax.nn.gelu(static_head_mean)
+        static_pred_mean = hk.Linear(len(static_features[0]))(static_head_mean)
+        
+        dynamic_head_mean = hk.Linear(128)(lstm2_out)
+        dynamic_head_mean = jax.nn.gelu(dynamic_head_mean)
+        dynamic_pred_mean = hk.Linear(9)(dynamic_head_mean)  # 170:179 = 9 features
+        
+        # Separate prediction heads for static vs dynamic features - LOG_STD
+        static_head_logstd = hk.Linear(256)(lstm2_out)
+        static_head_logstd = jax.nn.gelu(static_head_logstd)
+        static_pred_logstd = hk.Linear(len(static_features[0]))(static_head_logstd)
+        
+        dynamic_head_logstd = hk.Linear(128)(lstm2_out)
+        dynamic_head_logstd = jax.nn.gelu(dynamic_head_logstd)
+        dynamic_pred_logstd = hk.Linear(9)(dynamic_head_logstd)  # 170:179 = 9 features
+        
+        # Combine mean predictions
+        full_prediction_mean = jnp.concatenate([
+            static_pred_mean[..., :170], 
+            dynamic_pred_mean, 
+            static_pred_mean[..., 170:]
+        ], axis=-1)
+        
+        # Combine log_std predictions and clamp them
+        full_prediction_logstd = jnp.concatenate([
+            static_pred_logstd[..., :170], 
+            dynamic_pred_logstd, 
+            static_pred_logstd[..., 170:]
+        ], axis=-1)
+        
+        # Clamp log_std to prevent numerical issues
+        full_prediction_logstd = jnp.clip(full_prediction_logstd, -5, 2)
+        
+        # Apply residual connections to MEAN only
+        static_residual = 0.8
+        dynamic_residual = 0.3
+        
+        residual_weights = jnp.concatenate([
+            jnp.full((170,), static_residual),
+            jnp.full((9,), dynamic_residual),
+            jnp.full((flat_state.shape[-1] - 179,), static_residual)
+        ])
+        
+        prediction_mean = full_prediction_mean + residual_weights * flat_state
+        
+        # Concatenate mean and log_std for output
+        prediction = jnp.concatenate([prediction_mean, full_prediction_logstd], axis=-1)
+        
+        new_lstm_state = (new_lstm1_state, new_lstm2_state)
+        return prediction, new_lstm_state
+
+    return hk.transform(forward)

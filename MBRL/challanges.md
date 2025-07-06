@@ -15,7 +15,6 @@ ssh-add ~/ssh/Github
 
 
 TODOS:
-Seaquest Orientation Reinmachen
 Negative Log Likelihood vielleicht testen
 # Mehr Episoden und teilweise VRAM laden 
 policy fixen
