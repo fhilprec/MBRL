@@ -5,7 +5,7 @@ import jax
 
 from jaxatari.games.jax_seaquest import SeaquestObservation, SeaquestState, SpawnState
 
-def flat_observation_to_state(obs: SeaquestObservation, unflattener, rng_key: chex.PRNGKey = None) -> SeaquestState:
+def flat_observation_to_state(obs: SeaquestObservation, unflattener, rng_key: chex.PRNGKey = None, frame_stack_size = 4) -> SeaquestState:
     """
     Convert a flattened observation to SeaquestState by first unflattening it.
     
@@ -18,7 +18,18 @@ def flat_observation_to_state(obs: SeaquestObservation, unflattener, rng_key: ch
         SeaquestState constructed from the observation
     """
 
+    # print(obs)
+
+    # print(obs[:180])
+
+    obs = obs[::frame_stack_size]
+    
+
+    # print(obs)
+
     obs = unflattener(obs)
+
+    # print(obs)
     
 
     if rng_key is None:

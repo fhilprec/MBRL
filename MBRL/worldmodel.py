@@ -393,7 +393,7 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=5000,
+    num_epochs=10,
     sequence_length=32,
     episode_boundaries=None,
     gpu_batch_size=500,
@@ -722,7 +722,8 @@ def compare_real_vs_model(
     boundaries=None,
     env=None,
     starting_step : int = 0,
-    render_debugging: bool = False
+    render_debugging: bool = False,
+    frame_stack_size: int = 4,
 ):
 
     
@@ -838,7 +839,7 @@ def compare_real_vs_model(
     #code to get the unflattener
     game = JaxSeaquest()
     env = AtariWrapper(
-        game, sticky_actions=False, episodic_life=False, frame_stack_size=4
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=1
     )
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
@@ -907,11 +908,14 @@ def compare_real_vs_model(
 
         # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
-            real_obs, unflattener
-        )[-1]  # Get the last state for rendering
+            real_obs, unflattener, frame_stack_size
+        )  # Get the last state for rendering
         model_base_state = flat_observation_to_state(
-            model_obs.squeeze(), unflattener
-        )[-1]  # Get the last state for renderin
+            model_obs.squeeze(), unflattener, frame_stack_size
+        )  # Get the last state for renderi
+
+        # print(real_base_state)
+
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
@@ -1044,11 +1048,11 @@ def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
 
 if __name__ == "__main__":
 
-
+    frame_stack_size = 4
 
     game = JaxSeaquest()
     env = AtariWrapper(
-        game, sticky_actions=False, episodic_life=False, frame_stack_size=4
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=frame_stack_size
     )
     env = FlattenObservationWrapper(env)
 
@@ -1076,7 +1080,7 @@ if __name__ == "__main__":
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = (
                 collect_experience_sequential(
-                    env, num_episodes=50, max_steps_per_episode=10000, seed=i
+                    env, num_episodes=5, max_steps_per_episode=10000, seed=i
                 )
             )
             next_obs = obs[1:] 
@@ -1194,6 +1198,7 @@ if __name__ == "__main__":
             env=env,
             starting_step=0,
             steps_into_future=1000000,
-            render_debugging = (args[3] == 'verbose' if len(args) > 3 else False)
+            render_debugging = (args[3] == 'verbose' if len(args) > 3 else False),
+            frame_stack_size=frame_stack_size
         )
 
