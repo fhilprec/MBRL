@@ -25,28 +25,12 @@ from model_architectures import *
 #get the model architecture from the command line argument
 if len(sys.argv) > 1:
     model_architecture_name = sys.argv[1]
-    if model_architecture_name == "V5":
-        MODEL_ARCHITECTURE = V5_Physics_Aware_LSTM
-    elif model_architecture_name == "V6":
-        MODEL_ARCHITECTURE = V6_Hierarchical_LSTM
-    elif model_architecture_name == "V7":
-        MODEL_ARCHITECTURE = V7_Entity_Aware_LSTM
-    elif model_architecture_name == "V8":
-        MODEL_ARCHITECTURE = V8_LSTM
-    elif model_architecture_name == "V4":
-        MODEL_ARCHITECTURE = V4_LSTM
-    elif model_architecture_name == "V3":
-        MODEL_ARCHITECTURE = V3_LSTM
+    if model_architecture_name == "V2_NO_SEP":
+        MODEL_ARCHITECTURE = V2_NO_SEP
     elif model_architecture_name == "V2":
         MODEL_ARCHITECTURE = V2_LSTM
-    elif model_architecture_name == "LSTM":
-        MODEL_ARCHITECTURE = LSTM
-    elif model_architecture_name == "LSTM_split":
-        MODEL_ARCHITECTURE = LSTM_with_split_action
     elif model_architecture_name == "MLP":
         MODEL_ARCHITECTURE = MLP
-    elif model_architecture_name == "V2_Enhanced":
-        MODEL_ARCHITECTURE = V2_Enhanced_LSTM
     else:
         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
 else:
@@ -393,7 +377,7 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=10,
+    num_epochs=10000,
     sequence_length=32,
     episode_boundaries=None,
     gpu_batch_size=500,
@@ -712,7 +696,7 @@ def train_world_model(
 
 
 def compare_real_vs_model(
-    num_steps: int = 500,
+    num_steps: int = 150,
     render_scale: int = 2,
     obs=None,
     actions=None,
@@ -844,6 +828,13 @@ def compare_real_vs_model(
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
+    game = JaxSeaquest()
+    env = AtariWrapper(
+        game, sticky_actions=False, episodic_life=False, frame_stack_size=frame_stack_size
+    )
+    dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
+    _, unflattener_with_stacked_frames = flatten_obs(dummy_obs, single_state=True)
+
 
     
 
@@ -908,10 +899,10 @@ def compare_real_vs_model(
 
         # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
-            real_obs, unflattener, frame_stack_size
+            real_obs, unflattener, unflattener_with_stacked_frames, frame_stack_size=frame_stack_size
         )  # Get the last state for rendering
         model_base_state = flat_observation_to_state(
-            model_obs.squeeze(), unflattener, frame_stack_size
+            model_obs.squeeze(), unflattener, unflattener_with_stacked_frames, frame_stack_size=frame_stack_size
         )  # Get the last state for renderi
 
         # print(real_base_state)
@@ -1048,7 +1039,7 @@ def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
 
 if __name__ == "__main__":
 
-    frame_stack_size = 4
+    frame_stack_size = 1
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -1067,7 +1058,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-    experience_its = 1
+    experience_its = 5
 
     if not os.path.exists('experience_data_LSTM_0.pkl'):
         print(
@@ -1080,7 +1071,7 @@ if __name__ == "__main__":
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = (
                 collect_experience_sequential(
-                    env, num_episodes=5, max_steps_per_episode=10000, seed=i
+                    env, num_episodes=50, max_steps_per_episode=10000, seed=i
                 )
             )
             next_obs = obs[1:] 
@@ -1112,7 +1103,7 @@ if __name__ == "__main__":
     next_obs = []
     rewards = []
     boundaries = []
-    for i in range(0,1): #not loading all experience data for now, just the first one
+    for i in range(0,experience_its-1): #reserve last for training
         experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
         with open(experience_path, "rb") as f:
             saved_data = pickle.load(f)
@@ -1176,7 +1167,7 @@ if __name__ == "__main__":
 
     print(boundaries[-4], boundaries[-3], boundaries[-2], boundaries[-1])
 
-    use_train_test_split = True
+    use_train_test_split = False
     if use_train_test_split == True:
         validation_obs = obs[boundaries[-3] : boundaries[-1]]
         validation_actions = actions[boundaries[-3] : boundaries[-1]]
@@ -1190,6 +1181,7 @@ if __name__ == "__main__":
 
     if len(args := sys.argv) > 2 and args[2] == "render":
         compare_real_vs_model(
+            num_steps = 1000,
             render_scale=6,
             obs=obs,
             actions=actions,
@@ -1197,7 +1189,7 @@ if __name__ == "__main__":
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=1000000,
+            steps_into_future=10,
             render_debugging = (args[3] == 'verbose' if len(args) > 3 else False),
             frame_stack_size=frame_stack_size
         )
