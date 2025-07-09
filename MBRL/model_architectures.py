@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import haiku as hk
 
 
-MODEL_SCALE_FACTOR = 0.25  # Set to 0.5 for half size, 2.0 for double size, etc.
+MODEL_SCALE_FACTOR = 2  # Set to 0.5 for half size, 2.0 for double size, etc.
 
 def V2_LSTM():
     def forward(state, action, lstm_state=None):

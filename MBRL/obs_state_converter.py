@@ -5,16 +5,13 @@ import jax
 
 from jaxatari.games.jax_seaquest import SeaquestObservation, SeaquestState, SpawnState
 
-def flat_observation_to_state(obs: SeaquestObservation, unflattener, unflattener_with_stacked_frames, rng_key: chex.PRNGKey = None, frame_stack_size = 4) -> SeaquestState:
+def flat_observation_to_state(obs: SeaquestObservation, unflattener, rng_key: chex.PRNGKey = None, frame_stack_size = 4) -> SeaquestState:
 
     if frame_stack_size > 1:
-        obs = unflattener_with_stacked_frames(obs)
+        obs = unflattener(obs)
         obs = jax.tree_util.tree_map(lambda x: x[-1], obs)
 
-        obs = unflattener(obs)
     
-        print(obs)
-
         if rng_key is None:
             rng_key = jax.random.PRNGKey(0)
         
@@ -43,8 +40,6 @@ def flat_observation_to_state(obs: SeaquestObservation, unflattener, unflattener
         
         def process_entity_array(entity_array, name):
             """Process entity array: convert to position format"""
-            print(f"Processing {name}, shape: {entity_array.shape}")
-            print(f"First few {name}: {entity_array[:3]}")
             
             # Convert to (N, 3) format: [x, y, direction]
             positions = jnp.column_stack([
@@ -53,7 +48,6 @@ def flat_observation_to_state(obs: SeaquestObservation, unflattener, unflattener
                 entity_array[:, 4].astype(jnp.float32)  # active flag as direction
             ])
             
-            print(f"{name} positions: {positions}")
             return positions
         
         # Process each entity type - now single arrays after tree_map

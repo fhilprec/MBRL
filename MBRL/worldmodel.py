@@ -377,11 +377,18 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=10000,
+    num_epochs=1000,
     sequence_length=32,
     episode_boundaries=None,
-    gpu_batch_size=500,
+    frame_stack_size=4,
 ):
+    
+    gpu_batch_size=500
+
+
+    gpu_batch_size = gpu_batch_size // frame_stack_size
+
+
     # Calculate normalization statistics from the flattened obs
     state_mean = jnp.mean(obs, axis=0)
     state_std = jnp.std(obs, axis=0) + 1e-8
@@ -823,17 +830,10 @@ def compare_real_vs_model(
     #code to get the unflattener
     game = JaxSeaquest()
     env = AtariWrapper(
-        game, sticky_actions=False, episodic_life=False, frame_stack_size=1
-    )
-    dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
-    _, unflattener = flatten_obs(dummy_obs, single_state=True)
-
-    game = JaxSeaquest()
-    env = AtariWrapper(
         game, sticky_actions=False, episodic_life=False, frame_stack_size=frame_stack_size
     )
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
-    _, unflattener_with_stacked_frames = flatten_obs(dummy_obs, single_state=True)
+    _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
 
     
@@ -899,10 +899,10 @@ def compare_real_vs_model(
 
         # Rendering stuff start -------------------------------------------------------
         real_base_state = flat_observation_to_state(
-            real_obs, unflattener, unflattener_with_stacked_frames, frame_stack_size=frame_stack_size
+            real_obs, unflattener,  frame_stack_size=frame_stack_size
         )  # Get the last state for rendering
         model_base_state = flat_observation_to_state(
-            model_obs.squeeze(), unflattener, unflattener_with_stacked_frames, frame_stack_size=frame_stack_size
+            model_obs.squeeze(), unflattener,  frame_stack_size=frame_stack_size
         )  # Get the last state for renderi
 
         # print(real_base_state)
@@ -1039,7 +1039,7 @@ def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
 
 if __name__ == "__main__":
 
-    frame_stack_size = 1
+    frame_stack_size = 4
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -1103,27 +1103,7 @@ if __name__ == "__main__":
     next_obs = []
     rewards = []
     boundaries = []
-    for i in range(0,experience_its-1): #reserve last for training
-        experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
-        with open(experience_path, "rb") as f:
-            saved_data = pickle.load(f)
-            obs.extend(saved_data["obs"])
-            actions.extend(saved_data["actions"])
-            next_obs.extend(saved_data["next_obs"])
-            rewards.extend(saved_data["rewards"])
-            # Calculate the offset from previous data
-            offset = boundaries[-1] if boundaries else 0
-            # Add offset to each boundary before extending
-            adjusted_boundaries = [b + offset for b in saved_data["boundaries"]]
-            boundaries.extend(adjusted_boundaries)
-
-
-    print(boundaries)
-    training_obs = jnp.array(obs[0 : boundaries[-4]])
-    training_actions = jnp.array(actions[0 : boundaries[-4]])
-    training_next_obs = jnp.array(next_obs[0 : boundaries[-4]])
-    training_rewards = jnp.array(rewards[0 : boundaries[-4]])
-    print(f"Training on {len(training_obs)} states...")
+    
 
 
     if os.path.exists(save_path):
@@ -1138,16 +1118,35 @@ if __name__ == "__main__":
         # Define a file path for the experience data
 
         # Check if experience data file exists
+        for i in range(0,experience_its-1): #reserve last for training
+            experience_path = 'experience_data_LSTM' + '_' + str(i) + '.pkl'
+            with open(experience_path, "rb") as f:
+                saved_data = pickle.load(f)
+                obs.extend(saved_data["obs"])
+                actions.extend(saved_data["actions"])
+                next_obs.extend(saved_data["next_obs"])
+                rewards.extend(saved_data["rewards"])
+                # Calculate the offset from previous data
+                offset = boundaries[-1] if boundaries else 0
+                # Add offset to each boundary before extending
+                adjusted_boundaries = [b + offset for b in saved_data["boundaries"]]
+                boundaries.extend(adjusted_boundaries)
         
-        
+
+
+        obs_array = jnp.array(obs)
+        actions_array = jnp.array(actions)
+        next_obs_array = jnp.array(next_obs)
+        rewards_array = jnp.array(rewards)
 
         # Train world model with improved hyperparameters
         dynamics_params, training_info = train_world_model(
-            training_obs,
-            training_actions,
-            training_next_obs,
-            training_rewards,
-            episode_boundaries=boundaries[:-4],
+            obs_array,
+            actions_array,
+            next_obs_array,
+            rewards_array,
+            episode_boundaries=boundaries,
+            frame_stack_size=frame_stack_size,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
@@ -1165,19 +1164,20 @@ if __name__ == "__main__":
         print(f"Model saved to {save_path}")
 
 
-    print(boundaries[-4], boundaries[-3], boundaries[-2], boundaries[-1])
 
-    use_train_test_split = False
-    if use_train_test_split == True:
-        validation_obs = obs[boundaries[-3] : boundaries[-1]]
-        validation_actions = actions[boundaries[-3] : boundaries[-1]]
-        validation_next_obs = next_obs[boundaries[-3] : boundaries[-1]]
-        validation_rewards = rewards[boundaries[-3] : boundaries[-1]]
-    else:
-        validation_obs = training_obs
-        validation_actions = training_actions
-        validation_next_obs = training_next_obs
-        validation_rewards = training_rewards
+    
+
+    gc.collect()
+
+
+    with open(f"experience_data_LSTM_{experience_its-1}.pkl", "rb") as f:
+        saved_data = pickle.load(f)
+        obs = (saved_data["obs"])
+        actions = (saved_data["actions"])
+        next_obs = (saved_data["next_obs"])
+        rewards = (saved_data["rewards"])
+        boundaries = (saved_data["boundaries"])
+
 
     if len(args := sys.argv) > 2 and args[2] == "render":
         compare_real_vs_model(
