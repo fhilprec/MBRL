@@ -1031,3 +1031,13 @@ MBRLfhilprec@Florian:~/MBRL$
 
 
 # Episodes = 10 Model Size 2 Frame Stack Size = 1
+
+
+
+
+
+
+New Testing
+MODEL_SCALE_FACTOR = 2 MLP
+Epoch 301/100000, Train Loss: 0.016342, Val Loss: 0.027474, LR: 2.00e-04
+Epoch 16801/100000, Train Loss: 0.000478, Val Loss: 0.026477, LR: 1.88e-04

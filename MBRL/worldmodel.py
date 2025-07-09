@@ -377,7 +377,7 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=1000,
+    num_epochs=100000,
     sequence_length=32,
     episode_boundaries=None,
     frame_stack_size=4,
@@ -462,6 +462,23 @@ def train_world_model(
     # Create sequential batches
     batches = create_sequential_batches()
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
+
+
+    # Split data into training (80%) and validation (20%)
+    total_batches = len(batches)
+    train_size = int(0.8 * total_batches)
+    
+    # Shuffle batches before splitting to ensure random distribution
+    rng_split = jax.random.PRNGKey(42)
+    indices = jax.random.permutation(rng_split, total_batches)
+    
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:]
+    
+    train_batches = [batches[i] for i in train_indices]
+    val_batches = [batches[i] for i in val_indices]
+    
+    print(f"Training batches: {len(train_batches)}, Validation batches: {len(val_batches)}")
 
     model = MODEL_ARCHITECTURE()
     
@@ -641,10 +658,20 @@ def train_world_model(
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
     
-    # Convert to arrays and shuffle for better training
-    batch_states = jnp.stack([batch[0] for batch in batches])
-    batch_actions = jnp.stack([batch[1] for batch in batches])
-    batch_next_states = jnp.stack([batch[2] for batch in batches])
+    @jax.jit
+    def compute_validation_loss(params, batch_states, batch_actions, batch_next_states, lstm_template, epoch, num_epochs):
+        """Compute validation loss without updating parameters"""
+        losses = batched_loss_fn(params, batch_states, batch_actions, batch_next_states, lstm_template, epoch, num_epochs)
+        return jnp.mean(losses)
+
+     # Convert training and validation batches to arrays
+    train_batch_states = jnp.stack([batch[0] for batch in train_batches])
+    train_batch_actions = jnp.stack([batch[1] for batch in train_batches])
+    train_batch_next_states = jnp.stack([batch[2] for batch in train_batches])
+    
+    val_batch_states = jnp.stack([batch[0] for batch in val_batches])
+    val_batch_actions = jnp.stack([batch[1] for batch in val_batches])
+    val_batch_next_states = jnp.stack([batch[2] for batch in val_batches])
     
     # Shuffle indices for each epoch
     rng_shuffle = jax.random.PRNGKey(123)
@@ -657,30 +684,30 @@ def train_world_model(
     for epoch in range(num_epochs):
         # Shuffle data each epoch
         rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
-        indices = jax.random.permutation(shuffle_key, len(batches))
+        indices = jax.random.permutation(shuffle_key, len(train_batches))
 
 
         
-        shuffled_states = batch_states[indices]
-        shuffled_actions = batch_actions[indices]
-        shuffled_next_states = batch_next_states[indices]
+        shuffled_train_states = train_batch_states[train_indices]
+        shuffled_train_actions = train_batch_actions[train_indices]
+        shuffled_train_next_states = train_batch_next_states[train_indices]
 
         # only use gpu_batch_size elements for training
 
 
         #will increase the amount of epochs a lot
-        if shuffled_states.shape[0] > gpu_batch_size:
-            shuffled_states = shuffled_states[:gpu_batch_size]
-            shuffled_actions = shuffled_actions[:gpu_batch_size]
-            shuffled_next_states = shuffled_next_states[:gpu_batch_size]
+        if shuffled_train_states.shape[0] > gpu_batch_size:
+            shuffled_train_states = shuffled_train_states[:gpu_batch_size]
+            shuffled_train_actions = shuffled_train_actions[:gpu_batch_size]
+            shuffled_train_next_states = shuffled_train_next_states[:gpu_batch_size]
         
-        params, opt_state, loss = update_step_batched(
-            params, opt_state, shuffled_states, shuffled_actions, shuffled_next_states, lstm_state_template, epoch, num_epochs
+        params, opt_state, train_loss = update_step_batched(
+            params, opt_state, shuffled_train_states, shuffled_train_actions, shuffled_train_next_states, lstm_state_template, epoch, num_epochs
         )
         
         # Early stopping
-        if loss < best_loss:
-            best_loss = loss
+        if train_loss < best_loss:
+            best_loss = train_loss
             no_improve_count = 0
         else:
             no_improve_count += 1
@@ -690,13 +717,19 @@ def train_world_model(
             print(f"Early stopping at epoch {epoch + 1}")
             break
         
-        if VERBOSE and ((epoch + 1) % max(1, num_epochs // 10) or epoch == 0) == 0:
+        if VERBOSE and (epoch + 1) % 100 == 0:
+        # if VERBOSE and ((epoch + 1) % max(1, num_epochs // 10) or epoch == 0) == 0:
+            val_loss = compute_validation_loss(
+                params, val_batch_states, val_batch_actions, val_batch_next_states, 
+                lstm_state_template, epoch, num_epochs
+            )
+            
             current_lr = lr_schedule(epoch)
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss:.6f}, LR: {current_lr:.2e}")
+            print(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}")
 
     print("Training completed")
     return params, {
-        "final_loss": loss,
+        "final_loss": train_loss,
         "normalization_stats": normalization_stats,
         "best_loss": best_loss,
     }
@@ -1170,7 +1203,7 @@ if __name__ == "__main__":
     gc.collect()
 
 
-    with open(f"experience_data_LSTM_{experience_its-1}.pkl", "rb") as f:
+    with open(f"experience_data_LSTM_{0}.pkl", "rb") as f:
         saved_data = pickle.load(f)
         obs = (saved_data["obs"])
         actions = (saved_data["actions"])
