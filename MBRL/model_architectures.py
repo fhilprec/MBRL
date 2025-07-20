@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import haiku as hk
 
 
-MODEL_SCALE_FACTOR = 2  # Set to 0.5 for half size, 2.0 for double size, etc.
+MODEL_SCALE_FACTOR = 2  
 
 def V2_LSTM():
     def forward(state, action, lstm_state=None):
@@ -70,8 +70,8 @@ def V2_LSTM():
 
         # ADD THIS: Clip LSTM1 states to prevent explosion
         new_lstm1_state = hk.LSTMState(
-            hidden=jnp.clip(new_lstm1_state.hidden, -1.0, 1.0),
-            cell=jnp.clip(new_lstm1_state.cell, -1.0, 1.0)
+            hidden=jnp.clip(new_lstm1_state.hidden, -5.0, 5.0),
+            cell=jnp.clip(new_lstm1_state.cell, -5.0, 5.0)
         )
 
         lstm1_out = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(lstm1_out)
@@ -81,8 +81,8 @@ def V2_LSTM():
 
         
         new_lstm2_state = hk.LSTMState(
-            hidden=jnp.clip(new_lstm2_state.hidden, -1.0, 1.0),
-            cell=jnp.clip(new_lstm2_state.cell, -1.0, 1.0)
+            hidden=jnp.clip(new_lstm2_state.hidden, -5.0, 5.0),
+            cell=jnp.clip(new_lstm2_state.cell, -5.0, 5.0)
         )
 
         # Separate prediction heads for static vs dynamic features

@@ -377,13 +377,13 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=100000,
+    num_epochs=100,
     sequence_length=32,
     episode_boundaries=None,
     frame_stack_size=4,
 ):
     
-    gpu_batch_size=500
+    gpu_batch_size=250
 
 
     gpu_batch_size = gpu_batch_size // frame_stack_size
@@ -717,7 +717,7 @@ def train_world_model(
             print(f"Early stopping at epoch {epoch + 1}")
             break
         
-        if VERBOSE and (epoch + 1) % 100 == 0:
+        if VERBOSE and (epoch + 1) % 1 == 0:
         # if VERBOSE and ((epoch + 1) % max(1, num_epochs // 10) or epoch == 0) == 0:
             val_loss = compute_validation_loss(
                 params, val_batch_states, val_batch_actions, val_batch_next_states, 
@@ -1072,7 +1072,7 @@ def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
 
 if __name__ == "__main__":
 
-    frame_stack_size = 4
+    frame_stack_size = 1
 
     game = JaxSeaquest()
     env = AtariWrapper(
@@ -1091,7 +1091,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-    experience_its = 5
+    experience_its = 15
 
     if not os.path.exists('experience_data_LSTM_0.pkl'):
         print(
