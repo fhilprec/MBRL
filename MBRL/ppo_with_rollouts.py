@@ -9,6 +9,7 @@ import distrax
 from typing import Tuple, Any, Dict
 from jax import random
 
+from worldmodel import MODEL_ARCHITECTURE
 
 def create_actor_critic_network(obs_shape: Tuple[int, ...], action_dim: int):
     """Create an ActorCritic network compatible with your existing implementation."""
@@ -79,7 +80,7 @@ def generate_imagined_rollouts(
         observations, actions, rewards, values, log_probs arrays
     """
     # Import world model functions (assuming they exist in worldmodel.py)
-    from worldmodel import predict_next_observation, get_reward_from_observation
+    from worldmodel import get_reward_from_observation
     
     if key is None:
         key = jax.random.PRNGKey(42)
@@ -93,13 +94,15 @@ def generate_imagined_rollouts(
     rewards = jnp.zeros((rollout_length, num_rollouts))
     values = jnp.zeros((rollout_length, num_rollouts))
     log_probs = jnp.zeros((rollout_length, num_rollouts))
+    initial_lstm_state = None  # Initialize LSTM state if needed
     
     # Set initial observations
     current_obs = initial_observations
     observations = observations.at[0].set(current_obs)
     
+
     def rollout_step(carry, step_idx):
-        current_obs, key = carry
+        current_obs, key, lstm_state = carry
         
         # Get action from policy
         key, subkey = jax.random.split(key)
@@ -107,23 +110,18 @@ def generate_imagined_rollouts(
         action = pi.sample(seed=subkey)
         log_prob = pi.log_prob(action)
         
-        # Predict next observation using world model
-        try:
-            next_obs = predict_next_observation(
-                dynamics_params, current_obs, action, normalization_stats
-            )
-        except:
-            # Fallback: use a simple prediction or add noise to current obs
-            key, subkey = jax.random.split(key)
-            next_obs = current_obs + jax.random.normal(subkey, current_obs.shape) * 0.01
-        
-        # Predict reward using world model
-        try:
-            reward = get_reward_from_observation(next_obs)
-        except:
-            # Fallback: use a simple reward prediction
-            reward = jnp.zeros(num_rollouts)
-        
+        # Apply world model and get next LSTM state
+        world_model = MODEL_ARCHITECTURE()
+        next_obs, next_lstm_state = world_model.apply(
+            dynamics_params,
+            None,
+            current_obs,
+            jnp.array([action]),
+            lstm_state,
+        )
+
+        reward = get_reward_from_observation(next_obs)
+
         # Store data
         step_data = {
             'obs': current_obs,
@@ -133,13 +131,13 @@ def generate_imagined_rollouts(
             'log_prob': log_prob
         }
         
-        return (next_obs, key), step_data
-    
-    # Run the rollout
+        return (next_obs, key, next_lstm_state), step_data
+
+    # Run the rollout (assuming you have initial_lstm_state defined)
     key, subkey = jax.random.split(key)
     final_carry, rollout_data = jax.lax.scan(
         rollout_step, 
-        (current_obs, subkey), 
+        (current_obs, subkey, initial_lstm_state), 
         jnp.arange(rollout_length)
     )
     
