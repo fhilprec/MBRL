@@ -79,7 +79,7 @@ def generate_imagined_rollouts(
         observations, actions, rewards, values, log_probs arrays
     """
     # Import world model functions (assuming they exist in worldmodel.py)
-    from worldmodel import predict_next_observation, predict_reward
+    from worldmodel import predict_next_observation, get_reward_from_observation
     
     if key is None:
         key = jax.random.PRNGKey(42)
@@ -119,7 +119,7 @@ def generate_imagined_rollouts(
         
         # Predict reward using world model
         try:
-            reward = predict_reward(dynamics_params, current_obs, action, next_obs)
+            reward = get_reward_from_observation(next_obs)
         except:
             # Fallback: use a simple reward prediction
             reward = jnp.zeros(num_rollouts)
