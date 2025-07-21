@@ -1,0 +1,19 @@
+
+=== Iteration 1/5 ===
+Collecting real environment experience...
+jax.errors.SimplifiedTraceback: For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 658, in <module>
+    main()
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 580, in main
+    obs, actions, next_obs, rewards, dones, boundaries = collect_real_experience(
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 137, in collect_real_experience
+    pi, _ = network.apply(policy_params, flat_obs)
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 35, in __call__
+    actor_mean = nn.Dense(
+  File "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/flax/linen/linear.py", line 251, in __call__
+    kernel = self.param(
+flax.errors.ScopeParamShapeError: Initializer expected to generate shape (179, 64) but got shape (180, 64) instead for parameter "kernel" in "/Dense_0". (https://flax.readthedocs.io/en/latest/api_reference/flax.errors.html#flax.errors.ScopeParamShapeError)

@@ -1,0 +1,43 @@
+
+=== Iteration 1/5 ===
+Collecting real environment experience...
+Training world model...
+Created 627 sequential batches of size 32
+Epoch 1/50, Loss: 0.073766
+Epoch 11/50, Loss: 0.039863
+Epoch 21/50, Loss: 0.034908
+Epoch 31/50, Loss: 0.032761
+Epoch 41/50, Loss: 0.031675
+World model training completed
+Creating world model wrapper...
+Training policy with world model...
+Compiling...
+jax.errors.SimplifiedTraceback: For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 815, in <module>
+    main()
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 772, in main
+    result = train_jit(_rng, policy_params)
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 291, in train
+    obs, _ = world_model_wrapper.reset(reset_rngs[i])
+  File "/home/fhilprec/MBRL/MBRL/iterate.py", line 198, in reset
+    env = AtariWrapper(game, sticky_actions=False, episodic_life=False, frame_stack_size=self.frame_stack_size)
+  File "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/jaxatari/wrappers.py", line 54, in __init__
+    self._observation_space = spaces.stack_space(self._env.observation_space(), self.frame_stack_size)
+  File "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/jaxatari/games/jax_seaquest.py", line 2530, in observation_space
+    "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+  File "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/jaxatari/spaces.py", line 118, in __init__
+    np.broadcast_to(self.low, self.shape)
+  File "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/numpy/lib/_stride_tricks_impl.py", line 424, in broadcast_to
+    return _broadcast_to(array, shape, subok=subok, readonly=True)
+  File "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/numpy/lib/_stride_tricks_impl.py", line 352, in _broadcast_to
+    array = np.array(array, copy=None, subok=subok)
+jax.errors.TracerArrayConversionError: The numpy.ndarray conversion method __array__() was called on traced array with shape int32[]
+The error occurred while tracing the function train at /home/fhilprec/MBRL/MBRL/iterate.py:256 for jit. This value became a tracer due to JAX operations on these lines:
+
+  operation a:i32[] = convert_element_type[new_dtype=int32 weak_type=False] b
+    from line /home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/lib/python3.10/site-packages/jaxatari/spaces.py:100 (__init__)
+See https://docs.jax.dev/en/latest/errors.html#jax.errors.TracerArrayConversionError

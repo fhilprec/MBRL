@@ -22,6 +22,12 @@ from obs_state_converter import flat_observation_to_state, OBSERVATION_INDEX_MAP
 
 from model_architectures import *
 
+
+def get_reward_from_observation(obs):
+    if len(obs) != 180:
+        raise ValueError(f"Observation must have 180 elements, got {len(obs)}")
+    return obs[176]
+
 #get the model architecture from the command line argument
 if len(sys.argv) > 1:
     model_architecture_name = sys.argv[1]
@@ -176,7 +182,7 @@ def flatten_obs(
 
 
 def collect_experience_sequential(
-    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False, seed: int = 42
+    env, num_episodes: int = 1, max_steps_per_episode: int = 1000, episodic_life: bool = False, seed: int = 42, policy_params = None, network = None,
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     observations = []
@@ -302,9 +308,19 @@ def collect_experience_sequential(
             current_state = state
             current_obs = obs
 
-            # Choose a random action
+
+
+            #rng action key
             rng, action_key = jax.random.split(rng)
-            action = down_biased_policy(rng)
+
+            # Choose a random action
+            if network and policy_params:
+                # Use policy to select action
+                flat_obs, _ = flatten_obs(obs, single_state=True)
+                pi, _ = network.apply(policy_params, flat_obs)
+                action = pi.sample(seed=action_key)
+            else:
+                action = down_biased_policy(rng)
 
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)

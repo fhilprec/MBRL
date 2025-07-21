@@ -1,0 +1,66 @@
+_wandb:
+    value:
+        cli_version: 0.19.11
+        m: []
+        python_version: 3.10.17
+        t:
+            "1":
+                - 12
+                - 45
+                - 55
+            "3":
+                - 13
+                - 15
+                - 16
+                - 23
+                - 55
+            "4": 3.10.17
+            "5": 0.19.11
+            "8":
+                - 5
+            "12": 0.19.11
+            "13": linux-x86_64
+ACTIVATION:
+    value: relu
+ALG_NAME:
+    value: PPO_MBRL
+ANNEAL_LR:
+    value: true
+CHECKPOINT_DIR:
+    value: ./checkpoints
+CLIP_EPS:
+    value: 0.2
+ENT_COEF:
+    value: 0.01
+ENTITY:
+    value: your_entity
+ENV_NAME:
+    value: JaxSeaquest
+GAE_LAMBDA:
+    value: 0.95
+GAMMA:
+    value: 0.99
+LR:
+    value: 0.00025
+MAX_GRAD_NORM:
+    value: 0.5
+NUM_ENVS:
+    value: 512
+NUM_MINIBATCHES:
+    value: 4
+NUM_STEPS:
+    value: 128
+PROJECT:
+    value: mbrl_seaquest
+REAL_DATA_RATIO:
+    value: 0.6
+RETRAIN_WORLD_MODEL:
+    value: false
+TOTAL_TIMESTEPS:
+    value: 5e+06
+UPDATE_EPOCHS:
+    value: 4
+VF_COEF:
+    value: 0.5
+WANDB_MODE:
+    value: online

@@ -1,0 +1,40 @@
+{
+  "os": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python": "CPython 3.10.17",
+  "startedAt": "2025-07-21T16:17:32.196425Z",
+  "program": "/home/fhilprec/MBRL/MBRL/iterate.py",
+  "codePath": "MBRL/iterate.py",
+  "git": {
+    "remote": "git@github.com:fhilprec/MBRL.git",
+    "commit": "b9f4a62033a223ece488d3b9638e7952b4e44617"
+  },
+  "email": "fhilprec@googlemail.com",
+  "root": "/home/fhilprec/MBRL",
+  "host": "Florian",
+  "executable": "/home/fhilprec/.local/share/virtualenvs/MBRL-FvISZ0Lq/bin/python",
+  "codePathLocal": "MBRL/iterate.py",
+  "cpu_count": 6,
+  "cpu_count_logical": 12,
+  "gpu": "NVIDIA GeForce RTX 5070",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1081101176832",
+      "used": "23135711232"
+    }
+  },
+  "memory": {
+    "total": "16551952384"
+  },
+  "cpu": {
+    "count": 6,
+    "countLogical": 12
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 5070",
+      "memoryTotal": "12820938752"
+    }
+  ],
+  "cudaVersion": "12.9"
+}
