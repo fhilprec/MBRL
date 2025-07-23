@@ -8,8 +8,9 @@ import numpy as np
 import distrax
 from typing import Tuple, Any, Dict
 from jax import random
+from jax import lax
 
-from worldmodel import MODEL_ARCHITECTURE
+from worldmodel import MODEL_ARCHITECTURE, get_reward_from_observation
 
 def create_actor_critic_network(obs_shape: Tuple[int, ...], action_dim: int):
     """Create an ActorCritic network compatible with your existing implementation."""
@@ -55,101 +56,338 @@ def create_actor_critic_network(obs_shape: Tuple[int, ...], action_dim: int):
     return ActorCritic(action_dim=action_dim)
 
 
+
+import jax
+import jax.numpy as jnp
+from jax import lax
+from typing import Any, Dict, Tuple
+import flax.linen as nn
+
+
 def generate_imagined_rollouts(
     dynamics_params: Any,
     policy_params: Any, 
     network: nn.Module,
     initial_observations: jnp.ndarray,
     rollout_length: int,
-    normalization_stats: Dict = None,
-    key: jax.random.PRNGKey = None
+    normalization_stats: Dict,
+    key: jax.random.PRNGKey = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """
-    Generate imagined rollouts using the world model.
-    
-    Args:
-        dynamics_params: Parameters of the trained world model
-        policy_params: Parameters of the policy network
-        network: The ActorCritic network
-        initial_observations: Starting observations for rollouts [num_rollouts, obs_dim]
-        rollout_length: Length of each rollout
-        normalization_stats: Statistics for observation normalization
-        key: Random key for sampling
-        
-    Returns:
-        observations, actions, rewards, values, log_probs arrays
-    """
-    # Import world model functions (assuming they exist in worldmodel.py)
-    from worldmodel import get_reward_from_observation
     
     if key is None:
         key = jax.random.PRNGKey(42)
     
-    num_rollouts = initial_observations.shape[0]
-    obs_dim = initial_observations.shape[1]
+    # Extract normalization stats
+    state_mean = normalization_stats['mean']
+    state_std = normalization_stats['std']
     
-    # Initialize arrays to store rollout data
-    observations = jnp.zeros((rollout_length, num_rollouts, obs_dim))
-    actions = jnp.zeros((rollout_length, num_rollouts), dtype=jnp.int32)
-    rewards = jnp.zeros((rollout_length, num_rollouts))
-    values = jnp.zeros((rollout_length, num_rollouts))
-    log_probs = jnp.zeros((rollout_length, num_rollouts))
-    initial_lstm_state = None  # Initialize LSTM state if needed
+    world_model = MODEL_ARCHITECTURE()
     
-    # Set initial observations
-    current_obs = initial_observations
-    observations = observations.at[0].set(current_obs)
-    
-
-    def rollout_step(carry, step_idx):
-        current_obs, key, lstm_state = carry
+    def single_rollout(carry, x):
+        """Process a single initial observation through a complete rollout."""
+        key, cur_obs = carry
         
-        # Get action from policy
-        key, subkey = jax.random.split(key)
-        pi, value = network.apply(policy_params, current_obs)
-        action = pi.sample(seed=subkey)
-        log_prob = pi.log_prob(action)
+        def rollout_step(step_carry, step_x):
+            """Single step of the rollout."""
+            key, obs, lstm_state = step_carry
+            
+            # Sample action from policy
+            key, subkey = jax.random.split(key)
+            pi, value = network.apply(policy_params, obs)
+            action = pi.sample(seed=subkey)
+            log_prob = pi.log_prob(action)
+            
+            # Normalize observation for world model
+            normalized_obs = (obs - state_mean) / state_std
+            
+            # Predict next state
+            normalized_next_obs, new_lstm_state = world_model.apply(
+                dynamics_params,
+                None,
+                normalized_obs,
+                jnp.array([action]),
+                lstm_state,
+            )
+            
+            # Denormalize
+            next_obs = jnp.round(normalized_next_obs * state_std + state_mean)
+            next_obs = next_obs.squeeze()
+            
+            # Get reward
+            reward = get_reward_from_observation(next_obs)
+            
+            # Prepare outputs for this step
+            step_outputs = {
+                'obs': next_obs,
+                'reward': reward,
+                'action': action,
+                'value': value,
+                'log_prob': log_prob
+            }
+            
+            new_carry = (key, next_obs, new_lstm_state)
+            return new_carry, step_outputs
         
-        # Apply world model and get next LSTM state
-        world_model = MODEL_ARCHITECTURE()
-        next_obs, next_lstm_state = world_model.apply(
-            dynamics_params,
-            None,
-            current_obs,
-            jnp.array([action]),
-            lstm_state,
+        # Initialize rollout
+        initial_reward = get_reward_from_observation(cur_obs)
+        lstm_state = None
+        
+        # Run rollout steps
+        init_carry = (key, cur_obs, lstm_state)
+        final_carry, step_outputs = lax.scan(
+            rollout_step, 
+            init_carry, 
+            None, 
+            length=rollout_length
         )
-
-        reward = get_reward_from_observation(next_obs)
-
-        # Store data
-        step_data = {
-            'obs': current_obs,
-            'action': action,
-            'reward': reward,
-            'value': value,
-            'log_prob': log_prob
+        
+        # Construct complete sequences
+        # Prepend initial observation and reward
+        observations = jnp.concatenate([
+            cur_obs[None, ...], 
+            step_outputs['obs']
+        ], axis=0)
+        
+        rewards = jnp.concatenate([
+            jnp.array([initial_reward]),
+            step_outputs['reward']
+        ])
+        
+        # Actions start with None (represented as zeros) for initial state
+        initial_action = jnp.zeros_like(step_outputs['action'][0])
+        actions = jnp.concatenate([
+            initial_action[None, ...],
+            step_outputs['action']
+        ])
+        
+        # Values and log_probs start with 0.0 for initial state
+        values = jnp.concatenate([
+            jnp.array([0.0]),
+            step_outputs['value']
+        ])
+        
+        log_probs = jnp.concatenate([
+            jnp.array([0.0]),
+            step_outputs['log_prob']
+        ])
+        
+        rollout_outputs = {
+            'observations': observations,
+            'rewards': rewards,
+            'actions': actions,
+            'values': values,
+            'log_probs': log_probs
         }
         
-        return (next_obs, key, next_lstm_state), step_data
-
-    # Run the rollout (assuming you have initial_lstm_state defined)
-    key, subkey = jax.random.split(key)
-    final_carry, rollout_data = jax.lax.scan(
-        rollout_step, 
-        (current_obs, subkey, initial_lstm_state), 
-        jnp.arange(rollout_length)
+        return final_carry[0], rollout_outputs  # Return updated key
+    
+    # Process all initial observations
+    init_carry = key
+    final_key, all_outputs = lax.scan(
+        single_rollout,
+        init_carry,
+        initial_observations
     )
     
-    # Extract arrays from rollout data
-    observations = rollout_data['obs']
-    actions = rollout_data['action'] 
-    rewards = rollout_data['reward']
-    values = rollout_data['value']
-    log_probs = rollout_data['log_prob']
-    
-    return observations, actions, rewards, values, log_probs
+    return (
+        all_outputs['observations'],
+        all_outputs['rewards'], 
+        all_outputs['actions'],
+        all_outputs['values'],
+        all_outputs['log_probs']
+    )
 
+
+# Alternative version that handles None LSTM state explicitly
+def generate_imagined_rollouts_handle_none(
+    dynamics_params: Any,
+    policy_params: Any, 
+    network: nn.Module,
+    initial_observations: jnp.ndarray,
+    rollout_length: int,
+    normalization_stats: Dict,
+    key: jax.random.PRNGKey = None,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    
+    if key is None:
+        key = jax.random.PRNGKey(42)
+    
+    # Extract normalization stats
+    state_mean = normalization_stats['mean']
+    state_std = normalization_stats['std']
+    world_model = MODEL_ARCHITECTURE()
+    
+    def single_trajectory_rollout(cur_obs, subkey):
+        """Generate a single trajectory starting from cur_obs."""
+        
+        def rollout_step(carry, x):
+            key, obs, lstm_state_valid, lstm_state = carry
+            
+            # Sample action from policy
+            key, action_key = jax.random.split(key)
+            pi, value = network.apply(policy_params, obs)
+            action = pi.sample(seed=action_key)
+            log_prob = pi.log_prob(action)
+            
+            # Normalize observation for world model
+            normalized_obs = (obs - state_mean) / state_std
+            
+            # Use None for first step, then use the actual state
+            actual_lstm_state = None if not lstm_state_valid else lstm_state
+            
+            # Predict next state
+            normalized_next_obs, new_lstm_state = world_model.apply(
+                dynamics_params,
+                None,
+                normalized_obs,
+                jnp.array([action]),
+                actual_lstm_state,
+            )
+            
+            # Denormalize
+            next_obs = jnp.round(normalized_next_obs * state_std + state_mean)
+            next_obs = next_obs.squeeze()
+            
+            # Get reward
+            reward = get_reward_from_observation(next_obs)
+            
+            step_data = (next_obs, reward, action, value, log_prob)
+            # After first step, we have a valid LSTM state
+            new_carry = (key, next_obs, True, new_lstm_state)
+            
+            return new_carry, step_data
+        
+        # Initialize with dummy LSTM state structure
+        initial_reward = get_reward_from_observation(cur_obs)
+        dummy_lstm_state = jnp.zeros((1, 64))  # Adjust based on your LSTM hidden size
+        
+        # Use flag to indicate if LSTM state is valid
+        init_carry = (subkey, cur_obs, False, dummy_lstm_state)
+        
+        # Run rollout
+        _, trajectory_data = lax.scan(rollout_step, init_carry, None, length=rollout_length)
+        
+        # Unpack trajectory data
+        next_obs_seq, rewards_seq, actions_seq, values_seq, log_probs_seq = trajectory_data
+        
+        # Build complete sequences including initial state
+        observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
+        rewards = jnp.concatenate([jnp.array([initial_reward]), rewards_seq])
+        
+        # Initial action/value/log_prob are placeholders
+        init_action = jnp.zeros_like(actions_seq[0])
+        actions = jnp.concatenate([init_action[None, ...], actions_seq])
+        values = jnp.concatenate([jnp.array([0.0]), values_seq])
+        log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
+        
+        return observations, rewards, actions, values, log_probs
+    
+    # Split keys for each trajectory
+    num_trajectories = initial_observations.shape[0]
+    keys = jax.random.split(key, num_trajectories)
+    
+    # Vectorize over all initial observations
+    rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0))
+    return rollout_fn(initial_observations, keys)
+
+# Alternative version with explicit vmap for clearer parallelization
+def generate_imagined_rollouts(
+    dynamics_params: Any,
+    policy_params: Any, 
+    network: nn.Module,
+    initial_observations: jnp.ndarray,
+    rollout_length: int,
+    normalization_stats: Dict,
+    key: jax.random.PRNGKey = None,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    
+    if key is None:
+        key = jax.random.PRNGKey(42)
+    
+    # Extract normalization stats
+    state_mean = normalization_stats['mean']
+    state_std = normalization_stats['std']
+    world_model = MODEL_ARCHITECTURE()
+    
+    def single_trajectory_rollout(cur_obs, subkey):
+        """Generate a single trajectory starting from cur_obs."""
+        
+        def rollout_step(carry, x):
+            key, obs, lstm_state = carry
+            
+            # Sample action from policy
+            key, action_key = jax.random.split(key)
+            pi, value = network.apply(policy_params, obs)
+            action = pi.sample(seed=action_key)
+            log_prob = pi.log_prob(action)
+            
+            # Normalize observation for world model
+            normalized_obs = (obs - state_mean) / state_std
+            
+            # Predict next state
+            normalized_next_obs, new_lstm_state = world_model.apply(
+                dynamics_params,
+                None,
+                normalized_obs,
+                jnp.array([action]),
+                lstm_state,
+            )
+            
+            # Denormalize
+            next_obs = jnp.round(normalized_next_obs * state_std + state_mean)
+            next_obs = next_obs.squeeze()
+            
+            # Get reward
+            reward = get_reward_from_observation(next_obs)
+            
+            step_data = (next_obs, reward, action, value, log_prob)
+            new_carry = (key, next_obs, new_lstm_state)
+            
+            return new_carry, step_data
+        
+        # Initialize LSTM state properly to maintain consistent pytree structure
+        initial_reward = get_reward_from_observation(cur_obs)
+        
+        # Get initial LSTM state structure by doing a dummy forward pass
+        dummy_normalized_obs = (cur_obs - state_mean) / state_std
+        dummy_action = jnp.zeros(1)  # Adjust size based on your action space
+        _, initial_lstm_state = world_model.apply(
+            dynamics_params,
+            None,
+            dummy_normalized_obs,
+            dummy_action,
+            None,
+        )
+        
+        # Use the properly structured LSTM state
+        init_carry = (subkey, cur_obs, initial_lstm_state)
+        
+        # Run rollout
+        _, trajectory_data = lax.scan(rollout_step, init_carry, None, length=rollout_length)
+        
+        # Unpack trajectory data
+        next_obs_seq, rewards_seq, actions_seq, values_seq, log_probs_seq = trajectory_data
+        
+        # Build complete sequences including initial state
+        observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
+        rewards = jnp.concatenate([jnp.array([initial_reward]), rewards_seq])
+        
+        # Initial action/value/log_prob are placeholders
+        init_action = jnp.zeros_like(actions_seq[0])
+        actions = jnp.concatenate([init_action[None, ...], actions_seq])
+        values = jnp.concatenate([jnp.array([0.0]), values_seq])
+        log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
+        
+        return observations, rewards, actions, values, log_probs
+    
+    # Split keys for each trajectory
+    num_trajectories = initial_observations.shape[0]
+    keys = jax.random.split(key, num_trajectories)
+    
+    # Vectorize over all initial observations
+    rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0))
+    return rollout_fn(initial_observations, keys)
+      
 
 def train_actor_critic(
     params: Any,

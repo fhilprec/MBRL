@@ -25,7 +25,7 @@ import distrax
 
 
 
-from worldmodel import collect_experience_sequential, train_world_model, get_reward_from_observation
+from worldmodel import collect_experience_sequential, train_world_model, get_reward_from_observation, compare_real_vs_model
 from ppo_with_rollouts import train_actor_critic, create_actor_critic_network, generate_imagined_rollouts
 
 
@@ -47,7 +47,7 @@ def main():
     
     # Hyperparameters for policy training
     rollout_length = 50  # Length of imagined rollouts
-    num_rollouts = 1000  # Number of rollouts per iteration
+    num_rollouts = 10  # Number of rollouts per iteration
     policy_epochs = 20   # Number of policy training epochs
     learning_rate = 3e-4
     
@@ -61,25 +61,65 @@ def main():
         )
         env = FlattenObservationWrapper(env)
 
-        obs, actions, rewards, _, boundaries = collect_experience_sequential(
-            env, num_episodes=5, max_steps_per_episode=10000, seed=i, policy_params=policy_params, network=network
-        )
+        # obs, actions, rewards, _, boundaries = collect_experience_sequential(
+        #     env, num_episodes=2, max_steps_per_episode=500, seed=i, policy_params=policy_params, network=network
+        # )
 
-        next_obs = obs[1:] 
-        obs = obs[:-1]  
+        # next_obs = obs[1:] 
+        # obs = obs[:-1]  
 
-        # Train world model
-        print("Training world model...")
-        dynamics_params, training_info = train_world_model(
-            obs,
-            actions,
-            next_obs,
-            rewards,
-            episode_boundaries=boundaries,
-            frame_stack_size=frame_stack_size,
-            num_epochs=100,
-        )
-        normalization_stats = training_info.get("normalization_stats", None)
+        # # Train world model
+        # print("Training world model...")
+        # dynamics_params, training_info = train_world_model(
+        #     obs,
+        #     actions,
+        #     next_obs,
+        #     rewards,
+        #     episode_boundaries=boundaries,
+        #     frame_stack_size=frame_stack_size,
+        #     num_epochs=10,
+        # )
+        # normalization_stats = training_info.get("normalization_stats", None)
+
+
+        #  #for debugging part ------------------------------------------------------------------------------------------------------------------------------------------
+        # with open("model.pkl", "wb") as f:
+        #     pickle.dump(
+        #         {
+        #             "dynamics_params": dynamics_params,
+        #             "normalization_stats": training_info.get(
+        #                 "normalization_stats", None
+        #             ),
+        #         },
+        #         f,
+        #     )
+        # with open("experience.pkl", "wb") as f:
+        #     pickle.dump(
+        #         {
+        #             "obs": obs,
+        #             "actions": actions,
+        #             "next_obs": next_obs,
+        #             "rewards": rewards,
+        #             "boundaries": boundaries,
+        #         },
+        #         f,
+        #     )
+
+        
+
+        if os.path.exists("model.pkl"):    
+            with open("model.pkl", "rb") as f:
+                saved_data = pickle.load(f)
+                dynamics_params = saved_data["dynamics_params"]
+                normalization_stats = saved_data.get("normalization_stats", None)
+            with open("experience.pkl", "rb") as f:
+                saved_data = pickle.load(f)
+                obs = (saved_data["obs"])
+                actions = (saved_data["actions"])
+                next_obs = (saved_data["next_obs"])
+                rewards = (saved_data["rewards"])
+        #for debugging part ------------------------------------------------------------------------------------------------------------------------------------------
+
 
         # Train policy using imagined rollouts exclusively from the world model
         print("Training policy with imagined rollouts...")
@@ -93,6 +133,10 @@ def main():
             key = jax.random.PRNGKey(42)
             dummy_obs = jnp.zeros((1,) + obs_shape)
             policy_params = network.init(key, dummy_obs)
+
+
+       
+        
         
         # Generate imagined rollouts using the world model
         print("Generating imagined rollouts...")
@@ -105,6 +149,31 @@ def main():
             normalization_stats=normalization_stats,
             key=jax.random.PRNGKey(i * 1000)
         )
+
+        print(imagined_obs.shape)
+
+        #only take one rollout for comparison
+        single_imagined_obs = imagined_obs[0:1]
+        single_imagined_actions = imagined_actions[0:1]
+        single_imagined_rewards = imagined_rewards[0:1]
+        single_imagined_values = imagined_values[0:1]
+        single_imagined_log_probs = imagined_log_probs[0:1]
+        
+
+        compare_real_vs_model(
+            num_steps = 1000,
+            render_scale=6,
+            obs=single_imagined_obs,
+            actions=single_imagined_actions,
+            normalization_stats=normalization_stats,
+            boundaries=None,
+            env=env,
+            starting_step=0,
+            steps_into_future=0,
+            render_debugging = True,
+            frame_stack_size=1
+        )
+
         
         # Train actor-critic on imagined rollouts
         print("Training actor-critic...")

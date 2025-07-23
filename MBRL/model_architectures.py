@@ -63,6 +63,7 @@ def V2_LSTM():
             lstm1_state = lstm1.initial_state(batch_size)
             lstm2_state = lstm2.initial_state(batch_size)
         else:
+    
             lstm1_state, lstm2_state = lstm_state
             
         # First LSTM layer

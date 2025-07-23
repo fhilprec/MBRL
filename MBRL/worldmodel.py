@@ -766,7 +766,9 @@ def compare_real_vs_model(
     frame_stack_size: int = 4,
 ):
 
-    
+    if len(obs) == 1:
+        obs = obs.squeeze(0)
+
     def debug_obs(step, real_obs, pred_obs, action,):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         # print(pred_obs)
@@ -850,7 +852,12 @@ def compare_real_vs_model(
 
 
     renderer = SeaquestRenderer()
-    model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
+    if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"):
+        model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
+    else:
+        model_path = "model.pkl"
+
+
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
@@ -898,7 +905,9 @@ def compare_real_vs_model(
     # Initialize LSTM state for model predictions
     lstm_state = None
     lsmt_real_state = None
-
+    print(obs.shape)
+    print(len(obs))
+ 
     while step_count < min(num_steps, len(obs) - 1):
         # for event in pygame.event.get():
         #     if event.type == pygame.QUIT:
@@ -912,7 +921,7 @@ def compare_real_vs_model(
         next_real_obs = obs[step_count + 1]
 
         # Check if we need to reset the model state before making prediction
-        if step_count % steps_into_future == 0 or step_count in boundaries:
+        if steps_into_future > 0 and (step_count % steps_into_future == 0 or step_count in boundaries):
             print("State reset")
             model_obs = obs[step_count]  # Reset to current real observation
             # We'll reset lstm_state to lsmt_real_state after computing it below
@@ -922,14 +931,18 @@ def compare_real_vs_model(
             model_obs - state_mean
         ) / state_std
 
+
+        if steps_into_future > 0:
         # Use the stateful model (returns both prediction and new LSTM state)
-        normalized_model_prediction, lstm_state = world_model.apply(
-            dynamics_params,
-            None,
-            normalized_flattened_model_obs,
-            jnp.array([action]),
-            lstm_state,
-        )
+            normalized_model_prediction, lstm_state = world_model.apply(
+                dynamics_params,
+                None,
+                normalized_flattened_model_obs,
+                jnp.array([action]),
+                lstm_state,
+            )
+        else:
+            normalized_model_prediction = normalized_flattened_model_obs
 
         # unnormalized_model_prediction = (
         #     normalized_model_prediction * state_std + state_mean
@@ -941,12 +954,15 @@ def compare_real_vs_model(
 
         model_obs = unnormalized_model_prediction
 
-        debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
+        if steps_into_future > 0:
+            debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
         # check_lstm_state_health(lstm_state, step_count)
         # analyze_prediction_errors(next_real_obs, unnormalized_model_prediction, step_count)
         # detect_game_events(next_real_obs, real_obs, step_count)
 
         # Rendering stuff start -------------------------------------------------------
+        print(real_obs)
+        print(real_obs.shape)
         real_base_state = flat_observation_to_state(
             real_obs, unflattener,  frame_stack_size=frame_stack_size
         )  # Get the last state for rendering
@@ -988,19 +1004,20 @@ def compare_real_vs_model(
         # Separate prediction just to have the lstm state for the current real trajectory at all times
         # This tracks the "ground truth" LSTM state
         real_obs = obs[step_count]  # Current real observation
-        normalized_real_obs = (
-            real_obs - state_mean
-        ) / state_std
-        _, lsmt_real_state = world_model.apply(
-            dynamics_params,
-            None,
-            normalized_real_obs,
-            jnp.array([action]),
-            lsmt_real_state,
-        )
+        if steps_into_future > 0:
+            normalized_real_obs = (
+                real_obs - state_mean
+            ) / state_std
+            _, lstm_real_state = world_model.apply(
+                dynamics_params,
+                None,
+                normalized_real_obs,
+                jnp.array([action]),
+                lstm_real_state,
+            )
 
         # Reset LSTM state if we're at a reset point
-        if step_count % steps_into_future == 0 or step_count in boundaries:
+        if steps_into_future > 0 and (step_count % steps_into_future == 0 or step_count in boundaries):
             # lstm_state = None
             lstm_state = lsmt_real_state
 
