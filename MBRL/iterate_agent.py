@@ -153,27 +153,27 @@ def main():
 
         print(imagined_obs.shape)
 
-        #only take one rollout for comparison
-        single_imagined_obs = imagined_obs[0:1]
-        single_imagined_actions = imagined_actions[0:1]
-        single_imagined_rewards = imagined_rewards[0:1]
-        single_imagined_values = imagined_values[0:1]
-        single_imagined_log_probs = imagined_log_probs[0:1]
+        # #only take one rollout for comparison
+        # single_imagined_obs = imagined_obs[0:1]
+        # single_imagined_actions = imagined_actions[0:1]
+        # single_imagined_rewards = imagined_rewards[0:1]
+        # single_imagined_values = imagined_values[0:1]
+        # single_imagined_log_probs = imagined_log_probs[0:1]
         
 
-        compare_real_vs_model(
-            num_steps = 1000,
-            render_scale=6,
-            obs=single_imagined_obs,
-            actions=single_imagined_actions,
-            normalization_stats=normalization_stats,
-            boundaries=None,
-            env=env,
-            starting_step=0,
-            steps_into_future=0,
-            render_debugging = True,
-            frame_stack_size=1
-        )
+        # # compare_real_vs_model(
+        # #     num_steps = 1000,
+        # #     render_scale=6,
+        # #     obs=single_imagined_obs,
+        # #     actions=single_imagined_actions,
+        # #     normalization_stats=normalization_stats,
+        # #     boundaries=None,
+        # #     env=env,
+        # #     starting_step=0,
+        # #     steps_into_future=0,
+        # #     render_debugging = True,
+        # #     frame_stack_size=1
+        # # )
 
         
         # Train actor-critic on imagined rollouts

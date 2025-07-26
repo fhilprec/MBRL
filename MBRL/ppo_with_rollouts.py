@@ -568,14 +568,14 @@ def train_actor_critic(
             epoch_metrics.append(metrics)
         
         # Average metrics for this epoch
-        epoch_avg_metrics = jax.tree_map(
+        epoch_avg_metrics = jax.tree.map(
             lambda *x: jnp.mean(jnp.array(x)),
             *epoch_metrics
         )
         metrics_history.append(epoch_avg_metrics)
     
     # Average final metrics
-    final_metrics = jax.tree_map(
+    final_metrics = jax.tree.map(
         lambda *x: jnp.mean(jnp.array(x)),
         *metrics_history
     )
