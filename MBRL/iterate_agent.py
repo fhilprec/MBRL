@@ -1,6 +1,8 @@
 import os
 import os
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'  # Must be set before importing JAX
+
 import pygame
 import time
 import jax
@@ -21,8 +23,7 @@ import flax.linen as nn
 from flax.training.train_state import TrainState
 from flax.linen.initializers import constant, orthogonal
 import distrax
-
-
+from rtpt import RTPT
 
 
 from worldmodel import collect_experience_sequential, train_world_model, get_reward_from_observation, compare_real_vs_model
@@ -214,5 +215,14 @@ def main():
         print("-" * 50)
 
 
-if __name__ == "__main__":    
+
+
+
+
+if __name__ == "__main__":
+        # Create RTPT object
+    rtpt = RTPT(name_initials='FH', experiment_name='TestingIterateAgent', max_iterations=3)
+
+    # Start the RTPT tracking
+    rtpt.start()    
     main()
