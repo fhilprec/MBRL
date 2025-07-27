@@ -38,7 +38,7 @@ from ppo_with_rollouts import train_actor_critic, create_actor_critic_network, g
 
 def main():
 
-    iterations = 3
+    iterations = 5
     frame_stack_size = 1
     
     # Initialize policy parameters and network
@@ -62,49 +62,49 @@ def main():
         )
         env = FlattenObservationWrapper(env)
 
-        # obs, actions, rewards, _, boundaries = collect_experience_sequential(
-        #     env, num_episodes=2, max_steps_per_episode=500, seed=i, policy_params=policy_params, network=network
-        # )
+        obs, actions, rewards, _, boundaries = collect_experience_sequential(
+            env, num_episodes=10, max_steps_per_episode=10000, seed=i, policy_params=policy_params, network=network
+        )
 
-        # next_obs = obs[1:] 
-        # obs = obs[:-1]  
+        next_obs = obs[1:] 
+        obs = obs[:-1]  
 
-        # # Train world model
-        # print("Training world model...")
-        # dynamics_params, training_info = train_world_model(
-        #     obs,
-        #     actions,
-        #     next_obs,
-        #     rewards,
-        #     episode_boundaries=boundaries,
-        #     frame_stack_size=frame_stack_size,
-        #     num_epochs=10,
-        # )
-        # normalization_stats = training_info.get("normalization_stats", None)
+        # Train world model
+        print("Training world model...")
+        dynamics_params, training_info = train_world_model(
+            obs,
+            actions,
+            next_obs,
+            rewards,
+            episode_boundaries=boundaries,
+            frame_stack_size=frame_stack_size,
+            num_epochs=1000,
+        )
+        normalization_stats = training_info.get("normalization_stats", None)
 
 
-        #  #for debugging part ------------------------------------------------------------------------------------------------------------------------------------------
-        # with open("model.pkl", "wb") as f:
-        #     pickle.dump(
-        #         {
-        #             "dynamics_params": dynamics_params,
-        #             "normalization_stats": training_info.get(
-        #                 "normalization_stats", None
-        #             ),
-        #         },
-        #         f,
-        #     )
-        # with open("experience.pkl", "wb") as f:
-        #     pickle.dump(
-        #         {
-        #             "obs": obs,
-        #             "actions": actions,
-        #             "next_obs": next_obs,
-        #             "rewards": rewards,
-        #             "boundaries": boundaries,
-        #         },
-        #         f,
-        #     )
+         #for debugging part ------------------------------------------------------------------------------------------------------------------------------------------
+        with open("model.pkl", "wb") as f:
+            pickle.dump(
+                {
+                    "dynamics_params": dynamics_params,
+                    "normalization_stats": training_info.get(
+                        "normalization_stats", None
+                    ),
+                },
+                f,
+            )
+        with open("experience.pkl", "wb") as f:
+            pickle.dump(
+                {
+                    "obs": obs,
+                    "actions": actions,
+                    "next_obs": next_obs,
+                    "rewards": rewards,
+                    "boundaries": boundaries,
+                },
+                f,
+            )
 
         
 

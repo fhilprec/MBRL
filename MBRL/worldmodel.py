@@ -769,6 +769,7 @@ def compare_real_vs_model(
     if len(obs) == 1:
         obs = obs.squeeze(0)
 
+
     def debug_obs(step, real_obs, pred_obs, action,):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         # print(pred_obs)
@@ -852,10 +853,13 @@ def compare_real_vs_model(
 
 
     renderer = SeaquestRenderer()
-    if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"):
-        model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
+    if sys.argv[4].startswith('check'):
+        model_path = sys.argv[4]
     else:
-        model_path = "model.pkl"
+        if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"):
+            model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
+        else:
+            model_path = "model.pkl"
 
 
     with open(model_path, "rb") as f:
@@ -904,7 +908,7 @@ def compare_real_vs_model(
 
     # Initialize LSTM state for model predictions
     lstm_state = None
-    lsmt_real_state = None
+    lstm_real_state = None
     print(obs.shape)
     print(len(obs))
  
@@ -961,8 +965,7 @@ def compare_real_vs_model(
         # detect_game_events(next_real_obs, real_obs, step_count)
 
         # Rendering stuff start -------------------------------------------------------
-        print(real_obs)
-        print(real_obs.shape)
+
         real_base_state = flat_observation_to_state(
             real_obs, unflattener,  frame_stack_size=frame_stack_size
         )  # Get the last state for rendering
@@ -1019,7 +1022,7 @@ def compare_real_vs_model(
         # Reset LSTM state if we're at a reset point
         if steps_into_future > 0 and (step_count % steps_into_future == 0 or step_count in boundaries):
             # lstm_state = None
-            lstm_state = lsmt_real_state
+            lstm_state = lstm_real_state
 
 
 
@@ -1124,7 +1127,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-    experience_its = 15
+    experience_its = 5
 
     if not os.path.exists('experience_data_LSTM_0.pkl'):
         print(
@@ -1243,6 +1246,9 @@ if __name__ == "__main__":
         next_obs = (saved_data["next_obs"])
         rewards = (saved_data["rewards"])
         boundaries = (saved_data["boundaries"])
+
+
+    
 
 
     if len(args := sys.argv) > 2 and args[2] == "render":
