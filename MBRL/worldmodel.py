@@ -26,7 +26,7 @@ from model_architectures import *
 def get_reward_from_observation(obs):
     if len(obs) != 180:
         raise ValueError(f"Observation must have 180 elements, got {len(obs)}")
-    return obs[176]
+    return obs[177]
 
 
 # get the model architecture from the command line argument
@@ -849,8 +849,9 @@ def compare_real_vs_model(
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         # print(pred_obs)
         print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]}"
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]} Predicted Score : {get_reward_from_observation(pred_obs[0])} | Real Score: {get_reward_from_observation(real_obs)}"
         )
+        print(real_obs)
 
         if error > 20 and render_debugging:
             print(
@@ -940,7 +941,7 @@ def compare_real_vs_model(
     state_std = normalization_stats["std"]
 
     renderer = SeaquestRenderer()
-    if sys.argv[4].startswith("check"):
+    if len(sys.argv) > 4 and sys.argv[4].startswith("check"):
         model_path = sys.argv[4]
     else:
         if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"):
@@ -1211,7 +1212,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-    experience_its = 5
+    experience_its = 2
 
     if not os.path.exists("experience_data_LSTM_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
@@ -1220,7 +1221,7 @@ if __name__ == "__main__":
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = collect_experience_sequential(
-                env, num_episodes=50, max_steps_per_episode=10000, seed=i
+                env, num_episodes=2, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
             obs = obs[:-1]
