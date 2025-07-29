@@ -346,11 +346,20 @@ def render_agent(model_path, num_episodes=5, fps=60, record=False, output_path=N
     print("Rendering completed successfully!")
 
 
+
 def update_pygame(screen, raster, scale, width, height):
     """Update the pygame display with the current frame."""
     # Convert raster to a format pygame can use
     raster_np = np.array(raster * 255, dtype=np.uint8)
-    surface = pygame.surfarray.make_surface(raster_np.transpose(1, 0, 2))
+    
+    # Try without transpose first
+    surface = pygame.surfarray.make_surface(raster_np)
+    
+    # If that doesn't look right, try different transpose options:
+    # surface = pygame.surfarray.make_surface(raster_np.transpose(0, 1, 2))  # no transpose
+    # surface = pygame.surfarray.make_surface(raster_np.transpose(1, 0, 2))  # swap width/height
+    # surface = pygame.surfarray.make_surface(raster_np.transpose(0, 1, 2)[::-1])  # flip vertically
+    # surface = pygame.surfarray.make_surface(raster_np.transpose(0, 1, 2)[:, ::-1])  # flip horizontally
 
     # Scale the surface to the desired size
     scaled_surface = pygame.transform.scale(surface, (width * scale, height * scale))
