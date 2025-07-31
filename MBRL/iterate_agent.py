@@ -71,7 +71,7 @@ def main():
 
         obs, actions, rewards, _, boundaries = collect_experience_sequential(
             env,
-            num_episodes=10,
+            num_episodes=50,
             max_steps_per_episode=10000,
             seed=i,
             policy_params=policy_params,
@@ -90,7 +90,7 @@ def main():
             rewards,
             episode_boundaries=boundaries,
             frame_stack_size=frame_stack_size,
-            num_epochs=1000,
+            num_epochs=200,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 

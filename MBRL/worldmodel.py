@@ -1,5 +1,5 @@
 import os
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Must be set before importing JAX
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
 import pygame
 import time
@@ -17,7 +17,7 @@ from jaxatari.games.jax_seaquest import SeaquestRenderer, JaxSeaquest
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 from jax import lax
 import gc
-
+from rtpt import RTPT
 from obs_state_converter import flat_observation_to_state, OBSERVATION_INDEX_MAP
 
 from model_architectures import *
@@ -1188,7 +1188,8 @@ def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
     return noisy_obs, noisy_actions, noisy_next_obs, rewards
 
 
-if __name__ == "__main__":
+
+def  main():
 
     frame_stack_size = 1
 
@@ -1212,7 +1213,7 @@ if __name__ == "__main__":
 
     # print(((next_states[300][:-2] - pred) ** 2))
 
-    experience_its = 2
+    experience_its = 5
 
     if not os.path.exists("experience_data_LSTM_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
@@ -1221,7 +1222,7 @@ if __name__ == "__main__":
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = collect_experience_sequential(
-                env, num_episodes=2, max_steps_per_episode=10000, seed=i
+                env, num_episodes=50, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
             obs = obs[:-1]
@@ -1331,3 +1332,14 @@ if __name__ == "__main__":
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
         )
+
+
+
+if __name__ == "__main__":
+    rtpt = RTPT(
+        name_initials="FH", experiment_name="TestingIterateAgent", max_iterations=3
+    )
+
+    # Start the RTPT tracking
+    rtpt.start()
+    main()
