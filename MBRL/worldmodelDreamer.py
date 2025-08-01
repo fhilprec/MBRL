@@ -921,9 +921,10 @@ def compare_real_vs_model(
     clock_speed=10,
     boundaries=None,
     env=None,
-    starting_step: int = 0,
+    starting_step: int = 100,
     render_debugging: bool = False,
     frame_stack_size: int = 4,
+    steps_to_predict: int = 10,
 ):
     """Compare real environment with Dreamer world model predictions."""
     if len(obs) == 1:
@@ -988,8 +989,8 @@ def compare_real_vs_model(
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
     # Initialize observations and state
-    real_obs = obs[0]
-    model_obs = obs[0]
+    real_obs = obs[starting_step]
+    model_obs = obs[starting_step]
     rssm_state = None  # Initial RSSM state
     step_count = 0 + starting_step
     clock = pygame.time.Clock()
@@ -1059,7 +1060,7 @@ def compare_real_vs_model(
         font = pygame.font.SysFont(None, 24)
         real_text = font.render("Real Environment", True, (255, 255, 255))
         model_text = font.render("Dreamer World Model", True, (255, 255, 255))
-        step_text = font.render(f"Step: {step_count} Action: {action_map[action]}", True, (255, 255, 255))
+        step_text = font.render(f"Step: {step_count} Action: {action_map[int(action)]}", True, (255, 255, 255))
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         screen.blit(step_text, (20, HEIGHT * render_scale - 30))
@@ -1246,7 +1247,7 @@ def main():
             normalization_stats=normalization_stats,
             boundaries=boundaries,
             env=env,
-            starting_step=0,
+            starting_step=100,
             steps_into_future=10,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
