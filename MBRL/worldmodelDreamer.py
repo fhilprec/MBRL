@@ -1,6 +1,8 @@
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"  # Must be set before importing JAX
+
 import pygame
 import time
 import jax
@@ -23,26 +25,217 @@ from obs_state_converter import flat_observation_to_state, OBSERVATION_INDEX_MAP
 from model_architectures import *
 
 
+
 def get_reward_from_observation(obs):
     if len(obs) != 180:
         raise ValueError(f"Observation must have 180 elements, got {len(obs)}")
     return obs[177]
 
 
-# get the model architecture from the command line argument
-if len(sys.argv) > 1:
-    model_architecture_name = sys.argv[1]
-    if model_architecture_name == "V2_NO_SEP":
-        MODEL_ARCHITECTURE = V2_NO_SEP
-    elif model_architecture_name == "V2":
-        MODEL_ARCHITECTURE = V2_LSTM
-    elif model_architecture_name == "MLP":
-        MODEL_ARCHITECTURE = MLP
-    else:
-        raise ValueError(f"Unknown model architecture: {model_architecture_name}")
-else:
-    # Default model if no argument provided
-    MODEL_ARCHITECTURE = V2_LSTM
+
+import jax
+import jax.numpy as jnp
+import haiku as hk
+from typing import Any, Dict, Tuple, NamedTuple
+
+class RSSMState(NamedTuple):
+    """State of the RSSM."""
+    stoch: jnp.ndarray  # Stochastic state component
+    deter: jnp.ndarray  # Deterministic state component
+    mean: jnp.ndarray   # Mean of stochastic state prior/posterior
+    std: jnp.ndarray    # Std deviation of stochastic state prior/posterior
+
+class RSSM(hk.Module):
+    """Recurrent State Space Model from Dreamer."""
+    
+    def __init__(self, 
+                 stoch_size=30, 
+                 deter_size=200, 
+                 hidden_size=200,
+                 min_std=0.1,
+                 name="rssm"):
+        super().__init__(name=name)
+        self.stoch_size = stoch_size
+        self.deter_size = deter_size
+        self.hidden_size = hidden_size
+        self.min_std = min_std
+        
+    def initial_state(self, batch_size=1):
+        """Return initial RSSM state."""
+        return RSSMState(
+            stoch=jnp.zeros((batch_size, self.stoch_size)),
+            deter=jnp.zeros((batch_size, self.deter_size)),
+            mean=jnp.zeros((batch_size, self.stoch_size)),
+            std=jnp.ones((batch_size, self.stoch_size)),
+        )
+    
+    def __call__(self, obs, action, prev_state=None, training=True):
+        """Forward pass through the RSSM."""
+        # Ensure inputs have correct batch dimensions
+        if obs.ndim == 1:
+            obs = obs[None, :]  # Add batch dimension
+        
+        if action.ndim == 1:
+            action = action[None, :]  # Add batch dimension
+            
+        batch_size = obs.shape[0]
+        
+        if prev_state is None:
+            prev_state = self.initial_state(batch_size)
+        
+        # Ensure action has the same batch size as prev_state.stoch
+        if action.shape[0] != prev_state.stoch.shape[0]:
+            action = jnp.repeat(action, prev_state.stoch.shape[0], axis=0)
+
+        # Concatenate stochastic state and action
+        x = jnp.concatenate([prev_state.stoch, action], axis=-1)
+        print(f"Step 1 - After concatenation: x type = {type(x)}, x shape = {x.shape}")
+        
+        # Apply first linear transformation
+        x = hk.Linear(self.hidden_size)(x)
+        print(f"Step 2 - After first hk.Linear: x type = {type(x)}, x shape = {x.shape}")
+        
+        # Apply activation
+        x = jax.nn.elu(x)
+        print(f"Step 3 - After jax.nn.elu: x type = {type(x)}, x shape = {x.shape}")
+        
+        # Apply second linear transformation
+        x = hk.Linear(self.hidden_size)(x)
+        print(f"Step 4 - After second hk.Linear: x type = {type(x)}, x shape = {x.shape}")
+        
+        # Apply activation
+        x = jax.nn.elu(x)
+        print(f"Step 5 - After second jax.nn.elu: x type = {type(x)}, x shape = {x.shape}")
+        
+        # GRU update
+        gru = hk.GRU(self.deter_size)
+        deter, new_state = gru(x, prev_state.deter)  # Unpack the GRU output
+        print(f"Step 6 - After GRU update: deter type = {type(deter)}, deter shape = {deter.shape}")
+        
+        # Get prior distribution parameters
+        x = deter
+        x = hk.Linear(self.hidden_size)(x)
+        print(f"Step 7 - After third hk.Linear: x type = {type(x)}, x shape = {x.shape}")
+        
+        x = jax.nn.elu(x)
+        print(f"Step 8 - After third jax.nn.elu: x type = {type(x)}, x shape = {x.shape}")
+        
+        mean = hk.Linear(self.stoch_size)(x)
+        print(f"Step 9 - After mean hk.Linear: mean type = {type(mean)}, mean shape = {mean.shape}")
+        
+        std = hk.Linear(self.stoch_size)(x)
+        print(f"Step 10 - After std hk.Linear: std type = {type(std)}, std shape = {std.shape}")
+        
+        std = jax.nn.softplus(std) + self.min_std
+        print(f"Step 11 - After jax.nn.softplus: std type = {type(std)}, std shape = {std.shape}")
+        
+        # Sample from prior during training, or use mean during eval
+        if training:
+            key = hk.next_rng_key()
+            stoch = mean + std * jax.random.normal(key, mean.shape)
+        else:
+            stoch = mean
+        print(f"Step 12 - After sampling: stoch type = {type(stoch)}, stoch shape = {stoch.shape}")
+        
+        prior = RSSMState(stoch=stoch, deter=deter, mean=mean, std=std)
+        
+        # Posterior model: q(z_t | h_t, o_t)
+        # Ensure obs has the same batch size as deter
+        if obs.shape[0] != deter.shape[0]:
+            obs = jnp.repeat(obs, deter.shape[0], axis=0)
+
+        # Concatenate deterministic state and observation
+        x = jnp.concatenate([deter, obs], axis=-1)
+        print(f"Step 13 - After concatenating deter and obs: x type = {type(x)}, x shape = {x.shape}")
+        x = hk.Linear(self.hidden_size)(x)
+        print(f"Step 14 - After fourth hk.Linear: x type = {type(x)}, x shape = {x.shape}")
+        
+        x = jax.nn.elu(x)
+        print(f"Step 15 - After fourth jax.nn.elu: x type = {type(x)}, x shape = {x.shape}")
+        
+        x = hk.Linear(self.hidden_size)(x)
+        print(f"Step 16 - After fifth hk.Linear: x type = {type(x)}, x shape = {x.shape}")
+        
+        x = jax.nn.elu(x)
+        print(f"Step 17 - After fifth jax.nn.elu: x type = {type(x)}, x shape = {x.shape}")
+        
+        mean = hk.Linear(self.stoch_size)(x)
+        print(f"Step 18 - After posterior mean hk.Linear: mean type = {type(mean)}, mean shape = {mean.shape}")
+        
+        std = hk.Linear(self.stoch_size)(x)
+        print(f"Step 19 - After posterior std hk.Linear: std type = {type(std)}, std shape = {std.shape}")
+        
+        std = jax.nn.softplus(std) + self.min_std
+        print(f"Step 20 - After posterior jax.nn.softplus: std type = {type(std)}, std shape = {std.shape}")
+        
+        if training:
+            key = hk.next_rng_key()
+            stoch = mean + std * jax.random.normal(key, mean.shape)
+        else:
+            stoch = mean
+        print(f"Step 21 - After posterior sampling: stoch type = {type(stoch)}, stoch shape = {stoch.shape}")
+        
+        posterior = RSSMState(stoch=stoch, deter=deter, mean=mean, std=std)
+        
+        return prior, posterior
+
+
+# Define the DreamerWorldModel as a Haiku module
+class DreamerWorldModel(hk.Module):
+    """World Model using RSSM architecture from Dreamer."""
+    
+    def __init__(self, 
+                obs_size=160,
+                action_size=18,
+                stoch_size=30, 
+                deter_size=200, 
+                hidden_size=200,
+                min_std=0.1,
+                name="dreamer_world_model"):
+        super().__init__(name=name)
+        self.obs_size = obs_size
+        self.action_size = action_size
+        self.stoch_size = stoch_size
+        self.deter_size = deter_size
+        self.hidden_size = hidden_size
+        self.min_std = min_std
+        
+    def __call__(self, obs, action, rssm_state=None, training=True):
+        """Forward pass through the world model."""
+        # Print shapes for debugging
+        print(f"DreamerWorldModel input - obs.shape: {obs.shape}, action.shape: {action.shape}")
+        print(f"DreamerWorldModel rssm_state: {rssm_state}")
+        
+        # Ensure inputs have proper batch dimensions
+        if obs.ndim == 1:
+            obs = obs[None, :]  # Add batch dimension
+        if action.ndim == 1:
+            action = action[None, :]  # Add batch dimension
+            
+        # Create RSSM component
+        rssm = RSSM(self.stoch_size, self.deter_size, self.hidden_size, self.min_std)
+        
+        # Process through RSSM
+        prior, posterior = rssm(obs, action, rssm_state, training)
+        
+        # Feature representation combines stochastic and deterministic parts
+        features = jnp.concatenate([posterior.stoch, posterior.deter], axis=-1)
+        
+        # Observation model: p(o_t | z_t, h_t)
+        x = features
+        x = hk.Linear(self.hidden_size)(x)
+        x = jax.nn.elu(x)
+        x = hk.Linear(self.hidden_size)(x)
+        x = jax.nn.elu(x)
+        next_obs = hk.Linear(self.obs_size)(x)
+        
+        # Reward prediction model
+        x = features
+        x = hk.Linear(self.hidden_size)(x)
+        x = jax.nn.elu(x)
+        reward_pred = hk.Linear(1)(x)
+        
+        return next_obs, posterior, prior, reward_pred
 
 
 VERBOSE = True
@@ -70,78 +263,7 @@ action_map = {
 }
 
 
-def render_trajectory(
-    states, num_frames: int = 100, render_scale: int = 3, delay: int = 50
-):
-    """
-    Render a trajectory of states in a single window.
-    Args:
-        states: PyTree containing the collected states to visualize
-        num_frames: Maximum number of frames to show
-        render_scale: Scaling factor for rendering
-        delay: Milliseconds to delay between frames
-    """
-    import pygame
-    import time
 
-    pygame.init()
-    renderer = SeaquestRenderer()
-    WIDTH = 160
-    HEIGHT = 210
-    WINDOW_WIDTH = WIDTH * render_scale
-    WINDOW_HEIGHT = HEIGHT * render_scale
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("State Trajectory Visualization")
-    surface = pygame.Surface((WIDTH, HEIGHT))
-    font = pygame.font.SysFont(None, 24)
-    if isinstance(states, dict) or hasattr(states, "env_state"):
-        total_frames = 1
-    else:
-        first_field = jax.tree_util.tree_leaves(states)[0]
-        total_frames = first_field.shape[0] if hasattr(first_field, "shape") else 1
-    frames_to_show = min(total_frames, num_frames)
-    print(f"Rendering trajectory with {frames_to_show} frames...")
-    running = True
-    frame_idx = 0
-    while running and frame_idx < frames_to_show:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-        if total_frames > 1:
-            current_state = jax.tree.map(
-                lambda x: (
-                    x[frame_idx]
-                    if hasattr(x, "shape") and x.shape[0] > frame_idx
-                    else x
-                ),
-                states,
-            )
-        else:
-            current_state = states
-        try:
-            raster = renderer.render(current_state)
-            img = np.array(raster * 255, dtype=np.uint8)
-            pygame.surfarray.blit_array(surface, img)
-            screen.fill((0, 0, 0))
-            scaled_surface = pygame.transform.scale(
-                surface, (WIDTH * render_scale, HEIGHT * render_scale)
-            )
-            screen.blit(scaled_surface, (0, 0))
-            frame_text = font.render(
-                f"Frame: {frame_idx + 1}/{frames_to_show}", True, (255, 255, 255)
-            )
-            screen.blit(frame_text, (10, 10))
-            pygame.display.flip()
-        except Exception as e:
-            print(f"Error rendering frame {frame_idx}: {e}")
-            frame_idx += 1
-            continue
-        pygame.time.wait(delay)
-        frame_idx += 1
-    if running:
-        pygame.time.wait(1000)
-    pygame.quit()
-    print(f"Rendered {frame_idx} frames from trajectory")
 
 
 def flatten_obs(
@@ -160,7 +282,6 @@ def flatten_obs(
             flat_state, _ = jax.flatten_util.ravel_pytree(s)
             flat_states.append(flat_state)
         flat_states = jnp.stack(flat_states, axis=0)  # Shape: (1626, 160)
-        print(flat_states.shape)
         return flat_states
 
     if single_state:
@@ -392,11 +513,11 @@ def train_world_model(
     episode_boundaries=None,
     frame_stack_size=4,
 ):
-
-    gpu_batch_size = 250
-
+    """Train a JAX-based Dreamer-style world model on structured observations."""
+    
+    gpu_batch_size = 125
     gpu_batch_size = gpu_batch_size // frame_stack_size
-
+    
     # Calculate normalization statistics from the flattened obs
     state_mean = jnp.mean(obs, axis=0)
     state_std = jnp.std(obs, axis=0) + 1e-8
@@ -407,7 +528,7 @@ def train_world_model(
     # Normalize obs and next_obs
     normalized_obs = (obs - state_mean) / state_std
     normalized_next_obs = (next_obs - state_mean) / state_std
-
+    
     # Create sequential batches that respect episode boundaries
     def create_sequential_batches(batch_size=32):
         """
@@ -463,8 +584,6 @@ def train_world_model(
                     sequences.append((padded_obs, padded_actions, padded_next_obs))
                     continue
 
-                # print("Creating sequence from index:", start_idx + j)
-                # print("Creating sequence to index:", start_idx + j + sequence_length)
                 sequences.append(
                     (
                         normalized_obs[start_idx + j : start_idx + j + sequence_length],
@@ -498,328 +617,298 @@ def train_world_model(
     print(
         f"Training batches: {len(train_batches)}, Validation batches: {len(val_batches)}"
     )
+    
+    
+    
+    # Define the forward function for the world model
+    def forward_fn(obs, action, state=None, training=True):
+        """Forward function with proper handling of action dimensions."""
+        
+        print(f"forward_fn input - obs type: {type(obs)}, action type: {type(action)}")
+        print(f"forward_fn input - obs.shape: {obs.shape}, action.shape: {action.shape}")
+        
+        # Handle batch dimensions properly
+        if obs.ndim == 2:  # Already has batch dimension
+            batch_obs = obs
+        else:
+            batch_obs = obs[None, :]  # Add batch dimension
+            
+        if action.ndim == 2:  # Already has batch dimension
+            batch_action = action
+        elif action.ndim == 0:  # Single scalar action
+            # Convert scalar action to one-hot encoding with batch dimension
+            batch_action = jax.nn.one_hot(jnp.array([action]), num_classes=18)
+        elif action.ndim == 1:
+            if action.shape[0] == 18:  # Already one-hot encoded
+                batch_action = action[None, :]  # Add batch dimension
+            else:  # Single action index
+                batch_action = jax.nn.one_hot(action, num_classes=18)[None, :]  # One-hot and add batch dim
+        else:
+            batch_action = action
+        
+        # Ensure batch dimensions match
+        if batch_action.shape[0] != batch_obs.shape[0]:
+            batch_action = jnp.repeat(batch_action, batch_obs.shape[0], axis=0)
+        
+        print(f"forward_fn processed - batch_obs.shape: {batch_obs.shape}, batch_action.shape: {batch_action.shape}")
+        
+        model = DreamerWorldModel(
+            obs_size=batch_obs.shape[-1],
+            action_size=18  # Hardcoded since we're using one-hot actions
+        )
+        
+        return model(batch_obs, batch_action, state, training)
+    
+    # Transform the forward function
+    forward = hk.transform(forward_fn)
+    
+    # Initialize parameters with a dummy batch
+    rng = jax.random.PRNGKey(42)
 
-    model = MODEL_ARCHITECTURE()
+    # Create properly shaped dummy inputs
+    dummy_obs = normalized_obs[0:1]  # Shape: (1, obs_size)
+    dummy_action = jnp.zeros((1, 18))  # Create a dummy one-hot action
 
-    # Improved optimizer with learning rate scheduling
+    print(f"Dummy obs shape: {dummy_obs.shape}, Dummy action shape: {dummy_action.shape}")
+
+    # Initialize parameters with simplified forward pass to avoid complex tensor operations
+    try:
+        params = forward.init(rng, dummy_obs, dummy_action)
+    except Exception as e:
+        print(f"Error during initialization: {e}")
+        # Fallback initialization with different inputs
+        rng, new_key = jax.random.split(rng)
+        dummy_obs_simple = jnp.zeros((1, normalized_obs.shape[1]))  # Simple zeros array
+        dummy_action_simple = jnp.zeros((1, 18))  # Simple zeros array
+        params = forward.init(new_key, dummy_obs_simple, dummy_action_simple)
+    
+    # Define optimizer with learning rate scheduling
     lr_schedule = optax.cosine_decay_schedule(
         init_value=learning_rate,
         decay_steps=num_epochs,
-        alpha=0.1,  # Final learning rate will be 0.1 * initial
+        alpha=0.1,
     )
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),  # Gradient clipping
+        optax.clip_by_global_norm(1.0),
         optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
     )
-
-    rng = jax.random.PRNGKey(42)
-    dummy_state = normalized_obs[:1]
-    dummy_action = actions[:1]
-    params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
-
-    # Pre-initialize LSTM state template
-    _, lstm_state_template = model.apply(params, None, dummy_state, dummy_action, None)
-
-    # Improved loss function with multiple components
+    
+    # Define KL divergence between two Gaussian distributions
+    def kl_divergence(prior, posterior):
+        """KL divergence between Gaussian distributions."""
+        return jnp.sum(
+            jnp.log(prior.std) - jnp.log(posterior.std) + 
+            (posterior.std**2 + (posterior.mean - prior.mean)**2) / 
+            (2 * prior.std**2) - 0.5
+        )
+    
+    # Define single-sequence loss function
     @jax.jit
-    def single_sequence_loss(
-        params,
-        state_batch,
-        action_batch,
-        next_state_batch,
-        lstm_template,
-        epoch,
-        max_epochs,
-    ):
-        """Enhanced loss with feature-specific weighting"""
-        seq_len, state_dim = state_batch.shape
-
-        def scan_fn(lstm_state, inputs):
-            current_state, current_action, target_next_state = inputs
-
-            pred_next_state, new_lstm_state = model.apply(
-                params, None, current_state[None, :], current_action[None], lstm_state
+    def sequence_loss(params, seq_obs, seq_actions, seq_next_obs, seq_rewards, key, beta=0.1):
+        """Compute loss for a sequence of transitions."""
+        seq_len = seq_obs.shape[0]
+        
+        def step_fn(carry, inputs):
+            rssm_state, key = carry
+            obs, action, target_obs, target_reward = inputs
+            
+            key, subkey = jax.random.split(key)
+            
+            # Process action to ensure it has the right shape
+            if action.ndim == 0:  # Scalar action
+                action = jax.nn.one_hot(jnp.array([action]), num_classes=18)[0]
+            
+            # Ensure obs has correct shape
+            if obs.ndim == 0:
+                obs = obs.reshape(1)  # Reshape to 1D array
+            
+            # Forward pass through model - properly handle state
+            pred_obs, posterior, prior, pred_reward = forward.apply(
+                params, subkey, jnp.expand_dims(obs, 0), jnp.expand_dims(action, 0), rssm_state, True
             )
-
-            pred_next_state = pred_next_state.squeeze()
-
-            # # Simpler, more balanced weighting
-            # static_weight = 1.0
-            # dynamic_weight = 1.0  # Equal weighting instead of 2.0
-
-            # # Create weight mask
-            # weights = jnp.concatenate([
-            #     jnp.full((170,), static_weight),
-            #     jnp.full((9,), dynamic_weight),
-            #     jnp.full((state_dim - 179,), static_weight)
-            # ])
-
-            # Standard weighted MSE loss
-            mse_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
-            # mse_loss = jnp.mean(weights * (target_next_state - pred_next_state) ** 2)
-
-            # Remove the additional stability loss for now
-            total_loss = mse_loss
-
-            return new_lstm_state, total_loss
-
-        scan_inputs = (state_batch, action_batch, next_state_batch)
-        _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
-
-        return jnp.mean(step_losses)
-
-    @jax.jit
-    def multi_step_sequence_loss(
-        params,
-        state_batch,
-        action_batch,
-        next_state_batch,
-        lstm_template,
-        epoch,
-        max_epochs,
-        num_steps=30,
-    ):
-        """Loss that includes multi-step predictions"""
-        seq_len, state_dim = state_batch.shape
-
-        def scan_fn(lstm_state, inputs):
-            current_state, current_action, target_next_state = inputs
-
-            # Single step prediction
-            pred_next_state, new_lstm_state = model.apply(
-                params, None, current_state[None, :], current_action[None], lstm_state
-            )
-            pred_next_state = pred_next_state.squeeze()
-
-            # Multi-step predictions using the model iteratively
-            multi_step_losses = []
-            temp_state = pred_next_state
-            temp_lstm_state = new_lstm_state
-
-            # Predict 2, 3, ... steps ahead
-            for step in range(1, min(num_steps, seq_len - inputs[0].shape[0] + 1)):
-                if inputs[0].shape[0] + step < seq_len:  # Make sure we have target
-                    next_action = action_batch[inputs[0].shape[0] + step]
-                    target_future = next_state_batch[inputs[0].shape[0] + step]
-
-                    pred_future, temp_lstm_state = model.apply(
-                        params,
-                        None,
-                        temp_state[None, :],
-                        next_action[None],
-                        temp_lstm_state,
-                    )
-                    pred_future = pred_future.squeeze()
-
-                    # Weight decreases with prediction horizon
-                    weight = 0.8**step
-                    multi_step_loss = weight * jnp.mean(
-                        (target_future - pred_future) ** 2
-                    )
-                    multi_step_losses.append(multi_step_loss)
-
-                    temp_state = pred_future
-
-            # Combine single-step and multi-step losses
-            single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
-            total_multi_step_loss = (
-                jnp.sum(jnp.array(multi_step_losses)) if multi_step_losses else 0.0
-            )
-
-            total_loss = (
-                single_step_loss + 0.5 * total_multi_step_loss
-            )  # Weight multi-step contribution
-
-            return new_lstm_state, total_loss
-
-        scan_inputs = (state_batch, action_batch, next_state_batch)
-        _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
-
-        return jnp.mean(step_losses)
-
-    @jax.jit
-    def scheduled_sampling_loss(
-        params,
-        state_batch,
-        action_batch,
-        next_state_batch,
-        lstm_template,
-        epoch,
-        max_epochs,
-    ):
-        """Loss with scheduled sampling - gradually use model predictions instead of ground truth"""
-        seq_len, state_dim = state_batch.shape
-
-        # Probability of using model prediction increases with training progress
-        use_prediction_prob = jnp.minimum(0.2, epoch / (max_epochs * 10))
-
-        def scan_fn(carry, inputs):
-            lstm_state, previous_state = carry
-            current_action, target_next_state, step_idx = inputs
-
-            # Decide whether to use ground truth or model prediction as input
-            key = jax.random.PRNGKey(step_idx.astype(int))
-            use_prediction = jax.random.uniform(key) < use_prediction_prob
-
-            # Use either ground truth or previous model prediction
-            input_state = jnp.where(use_prediction, previous_state, target_next_state)
-
-            pred_next_state, new_lstm_state = model.apply(
-                params, None, input_state[None, :], current_action[None], lstm_state
-            )
-            pred_next_state = pred_next_state.squeeze()
-
-            loss = jnp.mean((target_next_state - pred_next_state) ** 2)
-
-            return (new_lstm_state, pred_next_state), loss
-
-        # Prepare inputs for scan
-        step_indices = jnp.arange(seq_len)
-        scan_inputs = (action_batch, next_state_batch, step_indices)
-
-        # Start with first ground truth state
-        initial_carry = (lstm_template, state_batch[0])
-        _, step_losses = lax.scan(scan_fn, initial_carry, scan_inputs)
-
-        return jnp.mean(step_losses)
-
-    # Vectorize loss over batch dimension
-    batched_loss_fn = jax.vmap(
-        single_sequence_loss, in_axes=(None, 0, 0, 0, None, None, None)
+            
+            # Remove batch dimension
+            if pred_reward.shape[-1] == 1:
+                pred_reward = pred_reward.squeeze(-1)
+            
+            # Compute losses
+            reconstruction_loss = jnp.mean((pred_obs - target_obs) ** 2)
+            reward_loss = jnp.mean((pred_reward - target_reward) ** 2) if target_reward is not None else 0.0
+            kl_loss = kl_divergence(prior, posterior)
+            
+            # Total loss with weighting
+            total_loss = reconstruction_loss + beta * kl_loss + 0.1 * reward_loss
+            
+            return (posterior, key), (total_loss, reconstruction_loss, kl_loss, reward_loss)
+        
+        # Initialize the carry with an initial RSSM state and the key
+        batch_size = seq_obs.shape[1]  # Assuming seq_obs has shape (seq_len, batch_size, feature_dim)
+        initial_rssm_state = RSSMState(
+            stoch=jnp.zeros((batch_size, 30)),  # Replace 30 with your `stoch_size`
+            deter=jnp.zeros((batch_size, 200)),  # Replace 200 with your `deter_size`
+            mean=jnp.zeros((batch_size, 30)),  # Replace 30 with your `stoch_size`
+            std=jnp.ones((batch_size, 30))  # Replace 30 with your `stoch_size`
+        )
+        init_carry = (initial_rssm_state, key)
+        
+        # Set up scan inputs
+        inputs = (seq_obs, seq_actions, seq_next_obs, seq_rewards)
+        
+        # Run scan through sequence
+        (_, _), (losses, rec_losses, kl_losses, reward_losses) = jax.lax.scan(
+            step_fn, init_carry, inputs
+        )
+        
+        # Return mean losses
+        mean_loss = jnp.mean(losses)
+        mean_rec_loss = jnp.mean(rec_losses)
+        mean_kl_loss = jnp.mean(kl_losses)
+        mean_reward_loss = jnp.mean(reward_losses)
+        
+        return mean_loss, (mean_rec_loss, mean_kl_loss, mean_reward_loss)
+    
+    # Vectorize loss function for batch processing
+    batched_sequence_loss = jax.vmap(
+        sequence_loss, in_axes=(None, 0, 0, 0, 0, None, None)
     )
-
+    
+    # Define update step function
     @jax.jit
-    def update_step_batched(
-        params,
-        opt_state,
-        batch_states,
-        batch_actions,
-        batch_next_states,
-        lstm_template,
-        epoch=0,
-        num_epochs=20000,
-    ):
-        # Compute loss for all sequences in parallel
+    def update_step(params, opt_state, batch_obs, batch_actions, batch_next_obs, batch_rewards, key, beta):
+        """Update model parameters using a batch of sequences."""
+        
         def loss_fn(p):
-            losses = batched_loss_fn(
-                p,
-                batch_states,
-                batch_actions,
-                batch_next_states,
-                lstm_template,
-                epoch,
-                num_epochs,
+            total_losses, component_losses = batched_sequence_loss(
+                p, batch_obs, batch_actions, batch_next_obs, batch_rewards, key, beta
             )
-            return jnp.mean(losses)
-
-        loss, grads = jax.value_and_grad(loss_fn)(params)
+            return jnp.mean(total_losses), component_losses
+        
+        (loss, component_losses), grads = jax.value_and_grad(loss_fn, has_aux=True)(params)
         updates, new_opt_state = optimizer.update(grads, opt_state, params)
         new_params = optax.apply_updates(params, updates)
-        return new_params, new_opt_state, loss
-
+        
+        return new_params, new_opt_state, loss, component_losses
+    
     @jax.jit
-    def compute_validation_loss(
-        params,
-        batch_states,
-        batch_actions,
-        batch_next_states,
-        lstm_template,
-        epoch,
-        num_epochs,
-    ):
-        """Compute validation loss without updating parameters"""
-        losses = batched_loss_fn(
-            params,
-            batch_states,
-            batch_actions,
-            batch_next_states,
-            lstm_template,
-            epoch,
-            num_epochs,
+    def compute_validation_loss(params, batch_obs, batch_actions, batch_next_obs, batch_rewards, key, beta):
+        """Compute loss on validation data."""
+        total_losses, component_losses = batched_sequence_loss(
+            params, batch_obs, batch_actions, batch_next_obs, batch_rewards, key, beta
         )
-        return jnp.mean(losses)
-
+        return jnp.mean(total_losses), component_losses
+    
     # Convert training and validation batches to arrays
     train_batch_states = jnp.stack([batch[0] for batch in train_batches])
     train_batch_actions = jnp.stack([batch[1] for batch in train_batches])
     train_batch_next_states = jnp.stack([batch[2] for batch in train_batches])
-
+    # Create reward batches (zeros if rewards are not used)
+    train_batch_rewards = jnp.zeros((train_batch_states.shape[0], train_batch_states.shape[1], 1))
+    
     val_batch_states = jnp.stack([batch[0] for batch in val_batches])
     val_batch_actions = jnp.stack([batch[1] for batch in val_batches])
     val_batch_next_states = jnp.stack([batch[2] for batch in val_batches])
-
-    # Shuffle indices for each epoch
-    rng_shuffle = jax.random.PRNGKey(123)
-
+    # Create reward batches (zeros if rewards are not used)
+    val_batch_rewards = jnp.zeros((val_batch_states.shape[0], val_batch_states.shape[1], 1))
+    
     # Training loop with validation tracking
     best_loss = float("inf")
     patience = 50
     no_improve_count = 0
-
+    rng_train = jax.random.PRNGKey(123)
+    
+    # KL divergence weight annealing schedule
+    kl_beta = lambda epoch: min(1.0, 0.1 + epoch / (num_epochs * 0.5))
+    
     for epoch in range(num_epochs):
         # Shuffle data each epoch
-        rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
+        rng_train, shuffle_key = jax.random.split(rng_train)
         indices = jax.random.permutation(shuffle_key, len(train_batches))
 
-        shuffled_train_states = train_batch_states[train_indices]
-        shuffled_train_actions = train_batch_actions[train_indices]
-        shuffled_train_next_states = train_batch_next_states[train_indices]
+        shuffled_train_states = train_batch_states[indices]
+        shuffled_train_actions = train_batch_actions[indices]
+        shuffled_train_next_states = train_batch_next_states[indices]
 
-        # only use gpu_batch_size elements for training
+        # Extract rewards from observations using the provided function
+        shuffled_train_rewards = jnp.array([
+            get_reward_from_observation(obs) for obs in shuffled_train_states.reshape(-1, shuffled_train_states.shape[-1])
+        ]).reshape(shuffled_train_states.shape[0], shuffled_train_states.shape[1], 1)
 
-        # will increase the amount of epochs a lot
+        # Only use gpu_batch_size elements for training to avoid OOM
         if shuffled_train_states.shape[0] > gpu_batch_size:
             shuffled_train_states = shuffled_train_states[:gpu_batch_size]
             shuffled_train_actions = shuffled_train_actions[:gpu_batch_size]
             shuffled_train_next_states = shuffled_train_next_states[:gpu_batch_size]
-
-        params, opt_state, train_loss = update_step_batched(
+            shuffled_train_rewards = shuffled_train_rewards[:gpu_batch_size]
+        
+        # Current beta for KL divergence weighting
+        current_beta = kl_beta(epoch)
+        
+        # Update model parameters
+        rng_train, update_key = jax.random.split(rng_train)
+        params, opt_state, train_loss, (rec_loss, kl_loss, reward_loss) = update_step(
             params,
             opt_state,
             shuffled_train_states,
             shuffled_train_actions,
             shuffled_train_next_states,
-            lstm_state_template,
-            epoch,
-            num_epochs,
+            shuffled_train_rewards,
+            update_key,
+            current_beta
         )
-
+        
         # Early stopping
         if train_loss < best_loss:
             best_loss = train_loss
             no_improve_count = 0
         else:
             no_improve_count += 1
-
-        if False:
-            # if no_improve_count >= patience:
+        
+        if no_improve_count >= patience:
             print(f"Early stopping at epoch {epoch + 1}")
             break
-
-        if VERBOSE and (epoch + 1) % 1 == 0:
-            # if VERBOSE and ((epoch + 1) % max(1, num_epochs // 10) or epoch == 0) == 0:
-            val_loss = compute_validation_loss(
+        
+        # Compute validation loss occasionally
+        if VERBOSE and (epoch + 1) % 10 == 0:
+            rng_train, val_key = jax.random.split(rng_train)
+            val_loss, (val_rec_loss, val_kl_loss, val_reward_loss) = compute_validation_loss(
                 params,
                 val_batch_states,
                 val_batch_actions,
                 val_batch_next_states,
-                lstm_state_template,
-                epoch,
-                num_epochs,
+                val_batch_rewards,
+                val_key,
+                current_beta
             )
-
+            
             current_lr = lr_schedule(epoch)
             print(
-                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}"
+                f"Epoch {epoch + 1}/{num_epochs}, "
+                f"Train Loss: {jnp.mean(train_loss).item():.4f} (Rec: {jnp.mean(rec_loss).item():.4f}, KL: {jnp.mean(kl_loss).item():.4f}), "
+                f"Val Loss: {jnp.mean(val_loss).item():.4f} (Rec: {jnp.mean(val_rec_loss).item():.4f}, KL: {jnp.mean(val_kl_loss).item():.4f}), "
+                f"LR: {current_lr:.2e}, Beta: {current_beta:.2f}"
             )
-
+        elif VERBOSE and (epoch + 1) % 1 == 0:
+            current_lr = lr_schedule(epoch)
+            print(
+                f"Epoch {epoch + 1}/{num_epochs}, "
+                f"Train Loss: {jnp.mean(train_loss).item():.4f} (Rec: {jnp.mean(rec_loss).item():.4f}, KL: {jnp.mean(kl_loss).item():.4f}), "
+                f"LR: {current_lr:.2e}, Beta: {current_beta:.2f}"
+            )
+    
     print("Training completed")
     return params, {
         "final_loss": train_loss,
         "normalization_stats": normalization_stats,
         "best_loss": best_loss,
+        "forward_fn": forward_fn,  # Store the function for later use
     }
+
+
+
+
+
+
 
 
 def compare_real_vs_model(
@@ -836,142 +925,58 @@ def compare_real_vs_model(
     render_debugging: bool = False,
     frame_stack_size: int = 4,
 ):
-
+    """Compare real environment with Dreamer world model predictions."""
     if len(obs) == 1:
         obs = obs.squeeze(0)
 
-    def debug_obs(
-        step,
-        real_obs,
-        pred_obs,
-        action,
-    ):
-        error = jnp.mean((real_obs - pred_obs[0]) ** 2)
-        # print(pred_obs)
-        print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map[int(action)]} Predicted Score : {get_reward_from_observation(pred_obs[0])} | Real Score: {get_reward_from_observation(real_obs)}"
+    # Load the saved model
+    with open("world_model.pkl", "rb") as f:
+        saved_data = pickle.load(f)
+        dynamics_params = saved_data["dynamics_params"]
+        normalization_stats = saved_data.get("normalization_stats", None)
+    
+    # Define or load forward function
+    def forward_fn(obs, action, state=None, training=True):
+        # Handle observation dimensions
+        if obs.ndim == 1:
+            obs = obs[None, :]  # Add batch dimension
+        
+        # Handle action dimensions
+        if isinstance(action, int) or (action.ndim == 0):  # Scalar action
+            action = jax.nn.one_hot(jnp.array([action]), num_classes=18)
+        elif action.ndim == 1 and action.shape[0] == 1:  # Single action in a batch
+            action = jax.nn.one_hot(action, num_classes=18)
+        elif action.ndim == 1 and action.shape[0] != 18:  # Multiple actions without batch dim
+            action = action[None, :]
+        
+        # Ensure batch dimensions match
+        if action.shape[0] != obs.shape[0]:
+            action = jnp.repeat(action, obs.shape[0], axis=0)
+        
+        model = DreamerWorldModel(
+            obs_size=obs.shape[-1],
+            action_size=18  # Hardcoded since we're using one-hot actions
         )
-        print(real_obs)
+        
+        return model(obs, action, state, training)
+    
+    # Transform the forward function
+    forward = hk.transform(forward_fn)
 
-        if error > 20 and render_debugging:
-            print(
-                "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
-            )
-            print("Indexes where difference > 1:")
-            for j in range(len(pred_obs[0])):
-                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
-                    print(
-                        f"Prediction Index ({OBSERVATION_INDEX_MAP[j]}) {j}: {pred_obs[0][j]} vs Real Index {real_obs[j]}"
-                    )
-            # print(f"Difference: {pred_obs[0] - real_obs}")
-            print(
-                "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
-            )
-
-    def check_lstm_state_health(lstm_state, step):
-        if lstm_state is not None:
-            # V2_LSTM returns (lstm1_state, lstm2_state) tuple
-            lstm1_state, lstm2_state = lstm_state
-
-            # Check first LSTM layer
-            hidden1_norm = jnp.linalg.norm(lstm1_state.hidden)
-            cell1_norm = jnp.linalg.norm(lstm1_state.cell)
-
-            # Check second LSTM layer
-            hidden2_norm = jnp.linalg.norm(lstm2_state.hidden)
-            cell2_norm = jnp.linalg.norm(lstm2_state.cell)
-
-            # Check for problems in either layer
-            max_norm = max(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
-            min_norm = min(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
-
-            if max_norm > 5.0:
-                print(
-                    f"Step {step}: LSTM state explosion - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
-                )
-            elif min_norm < 0.01:
-                print(
-                    f"Step {step}: LSTM state vanishing - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
-                )
-            else:
-                # Only print occasionally when healthy to avoid spam
-                if step % 50 == 0:  # Print every 50 steps when healthy
-                    print(
-                        f"Step {step}: LSTM states healthy - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
-                    )
-
-    def detect_game_events(real_obs, prev_obs, step):
-        # Detect significant state changes that might confuse the model
-        if prev_obs is not None:
-            total_change = jnp.sum(jnp.abs(real_obs - prev_obs))
-
-            # Detect potential death/reset events
-            if total_change > 50:  # Threshold to tune
-                print(
-                    f"Step {step}: Major state change detected (change: {total_change:.2f})"
-                )
-
-            # Check for specific entity spawn/despawn
-            dynamic_change = jnp.sum(jnp.abs(real_obs[170:179] - prev_obs[170:179]))
-            if dynamic_change > 20:
-                print(
-                    f"Step {step}: Entity spawn/despawn (dynamic change: {dynamic_change:.2f})"
-                )
-
-    def analyze_prediction_errors(real_obs, pred_obs, step):
-        error_agg = jnp.mean((real_obs - pred_obs[0]) ** 2)
-        error = jnp.abs(real_obs - pred_obs[0])
-        # Check which parts are wrong
-        static_error = jnp.mean(error[:170])
-        dynamic_error = jnp.mean(error[170:179])
-        other_error = jnp.mean(error[179:])
-
-        if error_agg > 10:  # Large error threshold
-            print(f"  LARGE ERROR BREAKDOWN:")
-            print(f"    Static (background): {static_error:.1f}")
-            print(f"    Dynamic (entities): {dynamic_error:.1f}")
-            print(f"    Other: {other_error:.1f}")
-
-            # Find the worst predictions
-            worst_indices = jnp.where(error > 20)[0]
-            if len(worst_indices) > 0:
-                print(f"    Worst predictions at indices: {worst_indices[:5]}")
-
-    state_mean = normalization_stats["mean"]
-    state_std = normalization_stats["std"]
-
+    # Setup rendering
     renderer = SeaquestRenderer()
-    if len(sys.argv) > 4 and sys.argv[4].startswith("check"):
-        model_path = sys.argv[4]
-    else:
-        if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"):
-            model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
-        else:
-            model_path = "model.pkl"
-
-    with open(model_path, "rb") as f:
-        model_data = pickle.load(f)
-        dynamics_params = model_data["dynamics_params"]
-        normalization_stats = model_data.get("normalization_stats", None)
-    world_model = MODEL_ARCHITECTURE()
-
     pygame.init()
     WIDTH = 160
     HEIGHT = 210
     WINDOW_WIDTH = WIDTH * render_scale * 2 + 20
     WINDOW_HEIGHT = HEIGHT * render_scale
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption(
-        "Real Environment vs World Model (AtariWrapper Frame Stack)"
-    )
+    pygame.display.set_caption("Real Environment vs Dreamer World Model")
 
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
 
-    step_count = 0 + starting_step
-    clock = pygame.time.Clock()
-
-    # code to get the unflattener
+    # Get unflattener for rendering
     game = JaxSeaquest()
     env = AtariWrapper(
         game,
@@ -982,85 +987,64 @@ def compare_real_vs_model(
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
-    # init the first observation and model observation
+    # Initialize observations and state
     real_obs = obs[0]
-    model_obs = obs[0]  # Start identical
-
-    # Initialize LSTM state for model predictions
-    lstm_state = None
-    lstm_real_state = None
-    print(obs.shape)
-    print(len(obs))
-
+    model_obs = obs[0]
+    rssm_state = None  # Initial RSSM state
+    step_count = 0 + starting_step
+    clock = pygame.time.Clock()
+    
+    # Main loop
     while step_count < min(num_steps, len(obs) - 1):
-        # for event in pygame.event.get():
-        #     if event.type == pygame.QUIT:
-        #         running = False
+        # Process events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return
 
-        # Use the saved action
+        # Get action from saved actions
         action = actions[step_count]
-        # action = 5
-
-        # Use the saved next state directly instead of environment stepping
+        
+        # Get next real observation from data
         next_real_obs = obs[step_count + 1]
 
-        # Check if we need to reset the model state before making prediction
-        if steps_into_future > 0 and (
-            step_count % steps_into_future == 0 or step_count in boundaries
-        ):
-            print("State reset")
+        # Check if we need to reset the model state
+        if steps_into_future > 0 and (step_count % steps_into_future == 0 or step_count in boundaries):
             model_obs = obs[step_count]  # Reset to current real observation
-            # We'll reset lstm_state to lsmt_real_state after computing it below
+            rssm_state = None  # Reset state
+            print(f"State reset at step {step_count}")
 
-        # Apply model prediction with normalization and LSTM state
-        normalized_flattened_model_obs = (model_obs - state_mean) / state_std
-
-        if steps_into_future > 0:
-            # Use the stateful model (returns both prediction and new LSTM state)
-            normalized_model_prediction, lstm_state = world_model.apply(
-                dynamics_params,
-                None,
-                normalized_flattened_model_obs,
-                jnp.array([action]),
-                lstm_state,
-            )
-        else:
-            normalized_model_prediction = normalized_flattened_model_obs
-
-        # unnormalized_model_prediction = (
-        #     normalized_model_prediction * state_std + state_mean
-        # )
-
-        # Convert model predictions to integers
-        unnormalized_model_prediction = jnp.round(
-            normalized_model_prediction * state_std + state_mean
+        # Use model to predict next observation
+        model_prediction, rssm_state = dreamer_predict_next_state(
+            dynamics_params, 
+            forward,
+            model_obs, 
+            action, 
+            rssm_state, 
+            normalization_stats
         )
-
-        model_obs = unnormalized_model_prediction
-
-        if steps_into_future > 0:
-            debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
-        # check_lstm_state_health(lstm_state, step_count)
-        # analyze_prediction_errors(next_real_obs, unnormalized_model_prediction, step_count)
-        # detect_game_events(next_real_obs, real_obs, step_count)
-
-        # Rendering stuff start -------------------------------------------------------
-
+        
+        # Update model observation
+        model_obs = model_prediction
+        
+        # Convert observations to state representations for rendering
         real_base_state = flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size
-        )  # Get the last state for rendering
+        )
         model_base_state = flat_observation_to_state(
-            model_obs.squeeze(), unflattener, frame_stack_size=frame_stack_size
-        )  # Get the last state for renderi
-
-        # print(real_base_state)
-
+            model_obs, unflattener, frame_stack_size=frame_stack_size
+        )
+        
+        # Render both observations
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
+        
         model_raster = renderer.render(model_base_state)
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
+        
+        # Display on screen
         screen.fill((0, 0, 0))
         scaled_real = pygame.transform.scale(
             real_surface, (WIDTH * render_scale, HEIGHT * render_scale)
@@ -1070,125 +1054,34 @@ def compare_real_vs_model(
             model_surface, (WIDTH * render_scale, HEIGHT * render_scale)
         )
         screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
+        
+        # Add labels
         font = pygame.font.SysFont(None, 24)
         real_text = font.render("Real Environment", True, (255, 255, 255))
-        model_text = font.render("World Model (4 Frames)", True, (255, 255, 255))
+        model_text = font.render("Dreamer World Model", True, (255, 255, 255))
+        step_text = font.render(f"Step: {step_count} Action: {action_map[action]}", True, (255, 255, 255))
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
+        screen.blit(step_text, (20, HEIGHT * render_scale - 30))
+        
         pygame.display.flip()
-
-        # Rendering stuff end -------------------------------------------------------
-
-        # Separate prediction just to have the lstm state for the current real trajectory at all times
-        # This tracks the "ground truth" LSTM state
-        real_obs = obs[step_count]  # Current real observation
-        if steps_into_future > 0:
-            normalized_real_obs = (real_obs - state_mean) / state_std
-            _, lstm_real_state = world_model.apply(
-                dynamics_params,
-                None,
-                normalized_real_obs,
-                jnp.array([action]),
-                lstm_real_state,
-            )
-
-        # Reset LSTM state if we're at a reset point
-        if steps_into_future > 0 and (
-            step_count % steps_into_future == 0 or step_count in boundaries
-        ):
-            # lstm_state = None
-            lstm_state = lstm_real_state
-
+        
+        # Update for next iteration
+        real_obs = next_real_obs
         step_count += 1
-        # print(obs[step_count][:-2])
         clock.tick(clock_speed)
-        # Rendering stuff end -------------------------------------------------------
 
     pygame.quit()
     print("Comparison completed")
 
 
-def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
-    """Add various types of noise to training data for improved robustness"""
-
-    if noise_config is None:
-        noise_config = {
-            "observation_noise": 0.01,  # Gaussian noise on observations
-            "action_dropout": 0.02,  # Randomly change some actions
-            "state_dropout": 0.005,  # Randomly zero out some state features
-            "temporal_noise": 0.01,  # Small time-shift noise
-            "entity_noise": 0.02,  # Extra noise on entity positions
-        }
-
-    key = jax.random.PRNGKey(42)
-    noisy_obs = obs.copy()
-    noisy_actions = actions.copy()
-    noisy_next_obs = next_obs.copy()
-
-    # 1. Observation noise - general Gaussian noise
-    if noise_config["observation_noise"] > 0:
-        key, subkey = jax.random.split(key)
-        obs_noise = (
-            jax.random.normal(subkey, obs.shape) * noise_config["observation_noise"]
-        )
-        noisy_obs = noisy_obs + obs_noise
-
-        key, subkey = jax.random.split(key)
-        next_obs_noise = (
-            jax.random.normal(subkey, next_obs.shape)
-            * noise_config["observation_noise"]
-        )
-        noisy_next_obs = noisy_next_obs + next_obs_noise
-
-    # 2. Action dropout - randomly change some actions
-    if noise_config["action_dropout"] > 0:
-        key, subkey = jax.random.split(key)
-        action_mask = (
-            jax.random.uniform(subkey, (len(actions),)) < noise_config["action_dropout"]
-        )
-        key, subkey = jax.random.split(key)
-        random_actions = jax.random.randint(subkey, (len(actions),), 0, 18)
-        noisy_actions = jnp.where(action_mask, random_actions, actions)
-
-    # 3. State feature dropout - randomly zero some features
-    if noise_config["state_dropout"] > 0:
-        key, subkey = jax.random.split(key)
-        dropout_mask = (
-            jax.random.uniform(subkey, obs.shape) < noise_config["state_dropout"]
-        )
-        noisy_obs = jnp.where(dropout_mask, 0, noisy_obs)
-
-        key, subkey = jax.random.split(key)
-        dropout_mask = (
-            jax.random.uniform(subkey, next_obs.shape) < noise_config["state_dropout"]
-        )
-        noisy_next_obs = jnp.where(dropout_mask, 0, noisy_next_obs)
-
-    # 4. Entity-specific noise (higher noise on dynamic entities)
-    if noise_config["entity_noise"] > 0:
-        # Add extra noise to missile positions (indices 170-174) and entity positions
-        key, subkey = jax.random.split(key)
-        entity_noise = (
-            jax.random.normal(subkey, noisy_obs[..., 5:175].shape)
-            * noise_config["entity_noise"]
-        )
-        noisy_obs = noisy_obs.at[..., 5:175].add(entity_noise)
-
-        key, subkey = jax.random.split(key)
-        entity_noise = (
-            jax.random.normal(subkey, noisy_next_obs[..., 5:175].shape)
-            * noise_config["entity_noise"]
-        )
-        noisy_next_obs = noisy_next_obs.at[..., 5:175].add(entity_noise)
-
-    # 5. Ensure observations stay in reasonable bounds
-    noisy_obs = jnp.clip(noisy_obs, -100, 300)
-    noisy_next_obs = jnp.clip(noisy_next_obs, -100, 300)
-
-    return noisy_obs, noisy_actions, noisy_next_obs, rewards
 
 
-if __name__ == "__main__":
+
+
+
+
+def main():
 
     frame_stack_size = 1
 
@@ -1201,9 +1094,8 @@ if __name__ == "__main__":
     )
     env = FlattenObservationWrapper(env)
 
-    save_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
+    save_path = f"world_model.pkl"
     experience_data_path = "experience_data_LSTM.pkl"
-    model = MODEL_ARCHITECTURE()
     normalization_stats = None
 
     # print(next_states[300][:-2])
@@ -1331,3 +1223,14 @@ if __name__ == "__main__":
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
         )
+
+
+
+
+if __name__ == "__main__":
+    from rtpt import RTPT
+    rtpt = RTPT(
+        name_initials="FH", experiment_name="World model Dreamer", max_iterations=1000
+    )
+    rtpt.start()
+    main()
