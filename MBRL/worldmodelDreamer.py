@@ -1075,7 +1075,35 @@ def compare_real_vs_model(
     print("Comparison completed")
 
 
-
+def dreamer_predict_next_state(params, forward, current_obs, action, state=None, normalization_stats=None):
+    """Predict next state using the Dreamer world model."""
+    # Normalize observation
+    if normalization_stats:
+        state_mean = normalization_stats["mean"]
+        state_std = normalization_stats["std"]
+        normalized_obs = (current_obs - state_mean) / state_std
+    else:
+        normalized_obs = current_obs
+    
+    # Process action to one-hot if it's a scalar
+    if isinstance(action, (int, np.int32, np.int64)) or (action.ndim == 0):
+        action = jax.nn.one_hot(jnp.array([action]), num_classes=18)[0]
+    
+    # Forward pass through the model
+    next_obs, posterior, _, _ = forward.apply(
+        params, 
+        jax.random.PRNGKey(0), 
+        normalized_obs[None] if normalized_obs.ndim == 1 else normalized_obs, 
+        action[None] if action.ndim == 1 else action,
+        state,
+        training=False
+    )
+    
+    # Denormalize prediction
+    if normalization_stats:
+        next_obs = next_obs * state_std + state_mean
+    
+    return next_obs.squeeze(0), posterior
 
 
 
