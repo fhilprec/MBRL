@@ -9,5 +9,4 @@ results/
 .DS_Store
 docs/build/
 experience*.pkl
-*model*.pkl
 checkpoint_iter_[0-3].pkl
