@@ -42,8 +42,12 @@ if len(sys.argv) > 1:
         MODEL_ARCHITECTURE = MLP
     elif model_architecture_name == "PongLSTM":
         MODEL_ARCHITECTURE = PongLSTM
-    elif model_architecture_name == "PongRSSM":
-        MODEL_ARCHITECTURE = PongRSSM
+    elif model_architecture_name == "PongDreamer":
+        MODEL_ARCHITECTURE = PongDreamer
+    elif model_architecture_name == "PongLSTMStable":
+        MODEL_ARCHITECTURE = PongLSTMStable
+    elif model_architecture_name == "PongLSTMFixed":
+        MODEL_ARCHITECTURE = PongLSTMFixed
     else:
         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
 else:
@@ -152,7 +156,7 @@ def flatten_obs(
         flat_states = []
 
         for s in state:
-            flat_state = jax.flatten_util.ravel_pytree(s)
+            flat_state, _ = jax.flatten_util.ravel_pytree(s)  # Extract only the flattened array
             flat_states.append(flat_state)
         flat_states = jnp.stack(flat_states, axis=0)
         print(flat_states.shape)
@@ -230,6 +234,50 @@ def collect_experience_sequential(
         rng, action_key = jax.random.split(rng)
         action = jax.random.randint(action_key, (), 0, 6)
         return action
+    def perfect_policy(obs, rng):
+        '''
+            class EntityPosition(NamedTuple):
+            x: jnp.ndarray
+            y: jnp.ndarray
+            width: jnp.ndarray
+            height: jnp.ndarray
+
+
+        class PongObservation(NamedTuple):
+            player: EntityPosition
+            enemy: EntityPosition
+            ball: EntityPosition
+            score_player: jnp.ndarray
+            score_enemy: jnp.ndarray
+
+        Actions are:
+        0: NOOP
+        1: FIRE
+        2: RIGHT
+        3: LEFT
+        4: RIGHTFIRE
+        5: LEFTFIRE
+        '''
+
+        rng, action_key = jax.random.split(rng)
+        if jax.random.uniform(action_key) < 0.2:
+            action = jax.random.randint(action_key, (), 0, 6)
+            return action
+
+
+        if obs.player.y[3] > obs.ball.y[3]:
+            return 4 #meaning  down
+        if obs.player.y[3] < obs.ball.y[3]:
+            return 3 #meaning up
+        if obs.player.y[3] == obs.ball.y[3]:
+            return 0
+
+        
+
+
+
+
+
 
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
@@ -249,7 +297,7 @@ def collect_experience_sequential(
                 pi, _ = network.apply(policy_params, flat_obs)
                 action = pi.sample(seed=action_key)
             else:
-                action = pong_tracking_policy(rng, step)
+                action = perfect_policy(obs, rng)
 
             # Take a step in the environment
             rng, step_key = jax.random.split(rng)
@@ -327,6 +375,9 @@ def train_world_model(
     # Calculate normalization statistics from the flattened obs
     state_mean = jnp.mean(obs, axis=0)
     state_std = jnp.std(obs, axis=0) + 1e-8
+
+    state_mean = 0
+    state_std = 1
 
     # Store normalization stats for later use
     normalization_stats = {"mean": state_mean, "std": state_std}
@@ -593,7 +644,7 @@ def train_world_model(
             )
             break
 
-        if VERBOSE and (epoch + 1) % 20 == 0:
+        if VERBOSE and (epoch + 1) % (num_epochs // 10) == 0:
             val_loss = compute_validation_loss(
                 params,
                 val_batch_states,
@@ -642,10 +693,10 @@ def compare_real_vs_model(
         action,
     ):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
-        # print(
-        #     f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), 'UNKNOWN')} | Real Score: {get_reward_from_observation(real_obs)}"
-        # )
-        print(real_obs)
+        print(
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)}"
+        )
+        # print(real_obs)
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -853,7 +904,7 @@ def compare_real_vs_model(
 
 def main():
 
-    frame_stack_size = 1
+    frame_stack_size = 4
 
     game = JaxPong()
     env = AtariWrapper(
@@ -878,7 +929,7 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = collect_experience_sequential(
-                env, num_episodes=50, max_steps_per_episode=10000, seed=i
+                env, num_episodes=20, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
             obs = obs[:-1]
