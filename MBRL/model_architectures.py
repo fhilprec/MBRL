@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import haiku as hk
 
 
-MODEL_SCALE_FACTOR = 2
+MODEL_SCALE_FACTOR = 0.25
 
 
 def V2_LSTM():
@@ -146,9 +146,9 @@ def V2_NO_SEP():
             flat_state_full = state
 
         flat_state = flat_state_full[..., :]
-        action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
         if len(state.shape) == 1:
-            action_one_hot = action_one_hot.reshape(1, 18)
+            action_one_hot = action_one_hot.reshape(1, 6)
 
         # Unified feature processing
         state_features = hk.Linear(int(256 * MODEL_SCALE_FACTOR))(flat_state)
@@ -230,43 +230,43 @@ def MLP():
             flat_state_full = state
 
         flat_state = flat_state_full[..., :]
-        action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
         if len(state.shape) == 1:
-            action_one_hot = action_one_hot.reshape(1, 18)
+            action_one_hot = action_one_hot.reshape(1, 6)
 
         # State processing branch
-        state_features = hk.Linear(512)(flat_state)
+        state_features = hk.Linear(int(512 * MODEL_SCALE_FACTOR))(flat_state)
         state_features = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(
             state_features
         )
         state_features = jax.nn.gelu(state_features)
-        state_features = hk.Linear(256)(state_features)
+        state_features = hk.Linear(int(256 * MODEL_SCALE_FACTOR))(state_features)
         state_features = jax.nn.gelu(state_features)
 
         # Action processing branch
-        action_features = hk.Linear(128)(action_one_hot)
+        action_features = hk.Linear(int(128 * MODEL_SCALE_FACTOR))(action_one_hot)
         action_features = jax.nn.gelu(action_features)
-        action_features = hk.Linear(64)(action_features)
+        action_features = hk.Linear(int(64 * MODEL_SCALE_FACTOR))(action_features)
         action_features = jax.nn.gelu(action_features)
 
         # Combine features
         combined = jnp.concatenate([state_features, action_features], axis=1)
-        x = hk.Linear(512)(combined)
+        x = hk.Linear(int(512 * MODEL_SCALE_FACTOR))(combined)
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
         x = jax.nn.gelu(x)
 
         # Additional MLP layers instead of LSTM
-        x = hk.Linear(1024)(x)
+        x = hk.Linear(int(1024 * MODEL_SCALE_FACTOR))(x)
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
         x = jax.nn.gelu(x)
-        x = hk.Linear(512)(x)
+        x = hk.Linear(int(512 * MODEL_SCALE_FACTOR))(x)
         x = jax.nn.gelu(x)
 
         # Multi-layer output processing
-        output = hk.Linear(512)(x)
+        output = hk.Linear(int(512 * MODEL_SCALE_FACTOR))(x)
         output = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(output)
         output = jax.nn.gelu(output)
-        output = hk.Linear(256)(output)
+        output = hk.Linear(int(256 * MODEL_SCALE_FACTOR))(output)
         output = jax.nn.gelu(output)
 
         # Final prediction with residual connection
@@ -281,3 +281,45 @@ def MLP():
         return prediction, dummy_lstm_state
 
     return hk.transform(forward)
+
+
+
+
+def PongLSTM():
+    def forward(state, action, lstm_state=None):
+        # Much simpler architecture for Pong
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+
+        x = hk.Linear(int(128 * MODEL_SCALE_FACTOR))(flat_state)
+        x = jax.nn.relu(x)
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+        action_features = hk.Linear(int(32 * MODEL_SCALE_FACTOR))(action_one_hot)
+
+        
+        combined = jnp.concatenate([x, action_features], axis=-1)
+        
+        # Single LSTM layer
+        lstm = hk.LSTM(int(256 * MODEL_SCALE_FACTOR))
+        if lstm_state is None:
+            lstm_state = lstm.initial_state(batch_size)
+            
+        lstm_out, new_lstm_state = lstm(combined, lstm_state)
+        
+        # Direct prediction
+        prediction = hk.Linear(state.shape[-1])(lstm_out)
+        prediction = prediction + 0.8 * state  # Strong residual for stable features
+        
+        return prediction, new_lstm_state
+    
+    return hk.transform(forward)
+
+
+

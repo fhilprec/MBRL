@@ -8,5 +8,4 @@ env
 results/
 .DS_Store
 docs/build/
-experience*.pkl
-checkpoint_iter_[0-3].pkl
+*.pkl

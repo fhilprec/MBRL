@@ -780,3 +780,8 @@ class PongRenderer(AtraJaxisRenderer):
                                            spacing=16)
 
         return raster
+    
+
+
+
+    
