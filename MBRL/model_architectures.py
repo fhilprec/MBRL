@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import haiku as hk
 from typing import NamedTuple, Optional, Tuple
 
-MODEL_SCALE_FACTOR = 2
+MODEL_SCALE_FACTOR = 8
 
 
 def V2_LSTM():
@@ -334,9 +334,7 @@ def PongLSTM():
 
 
 
-MODEL_SCALE_FACTOR = 0.5
 
-MODEL_SCALE_FACTOR = 0.5
 
 class SimpleDreamerState(NamedTuple):
     """Simplified state for easier integration"""
@@ -405,6 +403,8 @@ def PongDreamer():
         
         # For deterministic rollout, use mean (no noise)
         z_current = jnp.clip(z_mean, -0.5, 0.5)
+
+        
         
         # DECODER - much simpler and more constrained
         decoder_input = jnp.concatenate([h_current, z_current], axis=-1)
@@ -427,6 +427,8 @@ def PongDreamer():
         prediction = residual_strength * flat_state + (1 - residual_strength) * decoded_scaled
         
         new_dreamer_state = SimpleDreamerState(h=h_current, z=z_current)
+
+        
         
         return prediction, new_dreamer_state
     

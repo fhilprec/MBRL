@@ -360,8 +360,8 @@ def train_world_model(
     rewards,
     learning_rate=2e-4,
     batch_size=4,
-    num_epochs=10000,
-    sequence_length=32,
+    num_epochs=100000,
+    sequence_length=8,
     episode_boundaries=None,
     frame_stack_size=4,
 ):
@@ -642,9 +642,23 @@ def train_world_model(
             print(
                 f"Early stopping at epoch {epoch + 1}, no improvement for {patience} epochs"
             )
+            val_loss = compute_validation_loss(
+                params,
+                val_batch_states,
+                val_batch_actions,
+                val_batch_next_states,
+                lstm_state_template,
+                epoch,
+                num_epochs,
+            )
+
+            current_lr = lr_schedule(epoch)
+            print(
+                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}"
+            )
             break
 
-        if VERBOSE and (epoch + 1) % (num_epochs // 10) == 0:
+        if VERBOSE and (epoch + 1) % (num_epochs // 50) == 0:
             val_loss = compute_validation_loss(
                 params,
                 val_batch_states,
