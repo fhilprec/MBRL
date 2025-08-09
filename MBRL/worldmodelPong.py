@@ -918,7 +918,7 @@ def compare_real_vs_model(
 
 def main():
 
-    frame_stack_size = 4
+    frame_stack_size = 1
 
     game = JaxPong()
     env = AtariWrapper(

@@ -5,6 +5,18 @@ import optax
 from typing import Any, Callable, Tuple, Dict
 import numpy as np
 
+frame_stack_size = 1
+
+
+# Pong action mapping (typically fewer actions than Seaquest)
+action_map = {
+    0: "NOOP",
+    1: "FIRE", 
+    2: "RIGHT",
+    3: "LEFT",
+    4: "RIGHTFIRE",
+    5: "LEFTFIRE",
+}
 
 def flatten_obs(
     state, single_state: bool = False, is_list=False
@@ -94,7 +106,7 @@ class WorldModel(nn.Module):
     deter_dim: int = 200
     stoch_dim: int = 30
     action_dim: int = 6
-    obs_dim: int = 56
+    obs_dim: int = 14 * frame_stack_size
 
     def setup(self):
         self.encoder = Encoder()
@@ -190,10 +202,13 @@ train_step_jit = jax.jit(train_step, static_argnames=['model', 'optimizer'])
 if __name__ == "__main__":
     import jax.random as rnd
 
+    epochs = 10000
+    
+
     key = rnd.PRNGKey(0)
     batch_size = 32
     seq_len = 32
-    obs_dim = 14
+    obs_dim = 14 * frame_stack_size
     action_dim = 6
 
     model = WorldModel()
@@ -224,6 +239,8 @@ if __name__ == "__main__":
     
 
     T = 32  # or any sequence length you want
+    sequential_obs = all_obs.copy()
+    sequential_actions = all_actions.copy()
     N = all_obs.shape[0]
     B = N // T
 
@@ -238,7 +255,7 @@ if __name__ == "__main__":
     import os
     if not os.path.exists(save_path):
         # Training loop
-        for step in range(1000):
+        for step in range(epochs):
             key, subkey = rnd.split(key)
             for batch in make_batches(all_obs, all_actions, all_rewards, batch_size):
                 params, opt_state, loss, metrics = train_step_jit(params, model, optimizer, opt_state, batch, subkey)
@@ -261,13 +278,34 @@ if __name__ == "__main__":
         from jaxatari.games.jax_pong import JaxPong
         from jaxatari.wrappers import AtariWrapper
         
+        def debug_obs(
+        step,
+        real_obs,
+        pred_obs,
+        action,
+        ):
+            error = jnp.mean((real_obs - pred_obs) ** 2)
+            print(
+                f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)}"
+            )
+            # print(real_obs)
+
+            # if error > 20 and render_debugging:
+            #     print("-" * 100)
+            #     print("Indexes where difference > 1:")
+            #     for j in range(len(pred_obs[0])):
+            #         if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
+            #             print(
+            #                 f"Index {j}: Predicted {pred_obs[0][j]:.2f} vs Real {real_obs[j]:.2f}"
+            #             )
+            #     print("-" * 100)
 
         game = JaxPong()
         env = AtariWrapper(
             game,
             sticky_actions=False,
             episodic_life=False,
-            frame_stack_size=4,
+            frame_stack_size=frame_stack_size,
         )
         dummy_obs, _ = env.reset(jax.random.PRNGKey(0))
         _, unflattener = flatten_obs(dummy_obs, single_state=True)
@@ -293,19 +331,20 @@ if __name__ == "__main__":
         step_count = 0
         clock = pygame.time.Clock()
         # Use only the current observation for the first batch
-        model_obs = obs[0, 0]
+
+
+        model_obs = obs[0]
         # Initialize RSSM state
         h = jnp.zeros((1, model.deter_dim))
         z = jnp.zeros((1, model.stoch_dim))
-        while step_count < min(num_steps, obs.shape[1] - 1):
+        while step_count < num_steps:
 
-            action = actions[0, step_count]
-            next_real_obs = obs[0, step_count + 1]
+            action = actions[step_count]
+            next_real_obs = obs[step_count + 1]
             normalized_model_obs = model_obs
 
             # Encode observation using encoder submodule (direct call)
             embed = Encoder(hidden_dim=128).apply({'params': params['params']['encoder']}, normalized_model_obs[None, :])
-            # One-hot action, ensure shape is (1, action_dim)
             a = jax.nn.one_hot(jnp.array([action]), model.action_dim).reshape(1, model.action_dim)
             # Step RSSM using rssm submodule (direct call)
             key, subkey = jax.random.split(key)
@@ -315,13 +354,12 @@ if __name__ == "__main__":
             pred_obs = Decoder(output_dim=model.obs_dim, hidden_dim=128).apply({'params': params['params']['decoder']}, h, z)[0]
             pred_obs = jnp.round(pred_obs)
             model_obs = pred_obs
-            print(next_real_obs)
-            print(model_obs)
+            debug_obs(step_count, next_real_obs, model_obs, action)
             # Render
-            real_state = pong_flat_observation_to_state(next_real_obs, unflattener, frame_stack_size=4)
+            real_state = pong_flat_observation_to_state(next_real_obs, unflattener, frame_stack_size=frame_stack_size)
             real_img = np.array(renderer.render(real_state) * 255, dtype=np.uint8)
             pygame.surfarray.blit_array(real_surface, real_img)
-            model_state = pong_flat_observation_to_state(model_obs, unflattener, frame_stack_size=4)
+            model_state = pong_flat_observation_to_state(model_obs, unflattener, frame_stack_size=frame_stack_size)
             model_img = np.array(renderer.render(model_state) * 255, dtype=np.uint8)
             pygame.surfarray.blit_array(model_surface, model_img)
             screen.fill((0, 0, 0))
@@ -344,4 +382,4 @@ if __name__ == "__main__":
     with open(save_path, "rb") as f:
         saved = pickle.load(f)
         params = saved["params"]
-    compare_dreamer_vs_real(all_obs, all_actions, params, model)
+    compare_dreamer_vs_real(sequential_obs, sequential_actions, params, model)
