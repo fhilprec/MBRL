@@ -331,7 +331,6 @@ def collect_experience_sequential(
                     else:
                         boundaries.append(boundaries[-1] + step + 1)
                         print("Adding boundary at step", boundaries[-1])
-                print("breaking")
                 break
 
             # Update state for the next step
@@ -934,7 +933,7 @@ def main():
     model = MODEL_ARCHITECTURE()
     normalization_stats = None
 
-    experience_its = 1
+    experience_its = 4
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
@@ -943,7 +942,7 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = collect_experience_sequential(
-                env, num_episodes=20, max_steps_per_episode=10000, seed=i
+                env, num_episodes=50, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
             obs = obs[:-1]

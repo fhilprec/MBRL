@@ -202,7 +202,7 @@ train_step_jit = jax.jit(train_step, static_argnames=['model', 'optimizer'])
 if __name__ == "__main__":
     import jax.random as rnd
 
-    epochs = 10000
+    epochs = 2000
     
 
     key = rnd.PRNGKey(0)
@@ -339,6 +339,8 @@ if __name__ == "__main__":
         z = jnp.zeros((1, model.stoch_dim))
         while step_count < num_steps:
 
+           
+
             action = actions[step_count]
             next_real_obs = obs[step_count + 1]
             normalized_model_obs = model_obs
@@ -351,6 +353,15 @@ if __name__ == "__main__":
             h, prior, post = RSSM(deter_dim=200, stoch_dim=30, action_dim=6).apply({'params': params['params']['rssm']}, embed, a, (h, z))
             z = RSSM(deter_dim=200, stoch_dim=30, action_dim=6).sample(post[0], post[1], subkey)
             # Decode predicted observation using decoder submodule (direct call)
+
+
+            if step_count % 32 == 0:
+                #reset model here
+                print("Model Reset!")
+                model_obs = obs[step_count]
+                h = jnp.zeros((1, model.deter_dim))
+                z = jnp.zeros((1, model.stoch_dim))
+
             pred_obs = Decoder(output_dim=model.obs_dim, hidden_dim=128).apply({'params': params['params']['decoder']}, h, z)[0]
             pred_obs = jnp.round(pred_obs)
             model_obs = pred_obs
