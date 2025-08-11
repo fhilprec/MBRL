@@ -49,6 +49,8 @@ class TransformerWorldModel(hk.Module):
         """
         batch_size, seq_len, state_dim = states.shape
 
+        print(batch_size, states.shape, actions.shape)
+
         actions_expanded = jnp.expand_dims(actions, -1)
 
         combined = jnp.concatenate(
