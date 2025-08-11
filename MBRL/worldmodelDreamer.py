@@ -7,7 +7,6 @@ import numpy as np
 
 frame_stack_size = 1
 
-
 # Pong action mapping (typically fewer actions than Seaquest)
 action_map = {
     0: "NOOP",
@@ -17,6 +16,7 @@ action_map = {
     4: "RIGHTFIRE",
     5: "LEFTFIRE",
 }
+
 
 def flatten_obs(
     state, single_state: bool = False, is_list=False
@@ -45,6 +45,7 @@ def flatten_obs(
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     flat_state = flat_state.reshape(batch_shape, -1)
     return flat_state, unflattener
+
 
 class Encoder(nn.Module):
     hidden_dim: int = 128
@@ -114,8 +115,19 @@ class WorldModel(nn.Module):
         self.decoder = Decoder(self.obs_dim)
         self.reward_predictor = RewardPredictor()
 
-    def __call__(self, obs_seq, action_seq, key):
-        print(obs_seq.shape, action_seq.shape)
+    def __call__(self, obs_seq, action_seq, key, open_loop_start: int = 1):
+        """
+        obs_seq: (B, T, obs_dim)
+        action_seq: (B, T)
+        open_loop_start: first time-step index (t) where we stop conditioning on the
+                         posterior (i.e. use prior-only sampling). Typical: 1..(T-1).
+
+        Behavior:
+         - For t < open_loop_start: perform the usual posterior update using embed(t+1)
+         - For t >= open_loop_start: use prior-only (imagination / open-loop) updates
+
+        Returns reconstructions and diagnostics similar to before.
+        """
         B, T, _ = obs_seq.shape
         embed_seq = jax.vmap(jax.vmap(self.encoder))(obs_seq)
 
@@ -126,20 +138,44 @@ class WorldModel(nn.Module):
         post_means, post_stds = [], []
         h_seq, z_seq = [], []
 
+        # We'll iterate t from 0..T-2 predicting/targeting obs at t+1
         for t in range(T - 1):
             a = jax.nn.one_hot(action_seq[:, t], self.action_dim)
-            embed = embed_seq[:, t + 1]  # t+1 due to next obs
-            key, subkey = jax.random.split(key)
-            h, prior, post = self.rssm(embed, a, (h, z))
-            z = self.rssm.sample(post[0], post[1], subkey)
 
+            # First compute prior from current h and action (this is what open-loop will use)
+            x = jnp.concatenate([z, a], axis=-1)
+            # reuse RSSM cell to compute prior (call with dummy embed then take prior)
+            h_candidate = nn.GRUCell(self.rssm.deter_dim).apply({'params': {}}, h, x)[0] if False else None
+            # Instead, call the rssm to get prior/posterior -- but rssm expects embed
+            # We'll call rssm with the "next embed" placeholder; posterior will be valid when used.
+
+            # call rssm to compute prior/post; we will choose between them below
+            h_next, prior, posterior = self.rssm(embed_seq[:, t + 1], a, (h, z))
+
+            key, subkey = jax.random.split(key)
+
+            # Decide whether to use posterior (teacher) or prior (open-loop)
+            use_posterior = (t < open_loop_start)
+
+            if use_posterior:
+                z_next = self.rssm.sample(posterior[0], posterior[1], subkey)
+            else:
+                z_next = self.rssm.sample(prior[0], prior[1], subkey)
+
+            # Save diagnostics
             prior_means.append(prior[0])
             prior_stds.append(prior[1])
-            post_means.append(post[0])
-            post_stds.append(post[1])
-            h_seq.append(h)
-            z_seq.append(z)
+            post_means.append(posterior[0])
+            post_stds.append(posterior[1])
 
+            h_seq.append(h_next)
+            z_seq.append(z_next)
+
+            # advance state
+            h = h_next
+            z = z_next
+
+        # Stack sequences: (B, T-1, ...)
         h_seq = jnp.stack(h_seq, axis=1)
         z_seq = jnp.stack(z_seq, axis=1)
 
@@ -164,7 +200,6 @@ def kl_divergence(mean1, std1, mean2, std2):
 
 
 def compute_loss(model_outputs, obs_target, reward_target):
-    print(f"reward_target.shape: {reward_target.shape}")
     if reward_target.ndim == 2:
         reward_loss = jnp.mean((model_outputs['pred_rewards'] - reward_target[:, 1:]) ** 2)
     elif reward_target.ndim == 1:
@@ -183,9 +218,9 @@ def compute_loss(model_outputs, obs_target, reward_target):
     }
 
 
-def train_step(params, model, optimizer, opt_state, batch, key):
+def train_step(params, model, optimizer, opt_state, batch, key, open_loop_start: int = 1):
     def loss_fn(p):
-        outputs = model.apply(p, batch['obs'], batch['actions'], key)
+        outputs = model.apply(p, batch['obs'], batch['actions'], key, open_loop_start)
         loss, metrics = compute_loss(outputs, batch['obs'], batch['rewards'])
         return loss, metrics
 
@@ -195,7 +230,136 @@ def train_step(params, model, optimizer, opt_state, batch, key):
     return new_params, opt_state, loss, metrics
 
 # JIT after definition
-train_step_jit = jax.jit(train_step, static_argnames=['model', 'optimizer'])
+train_step_jit = jax.jit(train_step, static_argnames=['model', 'optimizer', 'open_loop_start'])
+
+# The rest of your training / usage code remains the same. 
+# Key usage notes:
+#  - Set open_loop_start to the time-step index where you want the model to "imagine".
+#    Example: open_loop_start=1 will use the posterior for t=0 and then run open-loop for t>=1.
+#  - You can schedule open_loop_start during training (start small, increase) or randomize it per-batch
+#    to improve robustness.
+#  - If training unstable, consider adding a small KL weight schedule or 'free nats'.
+
+
+
+
+# Compare function
+def compare_dreamer_vs_real(obs, actions, params, model, num_steps=1000, render_scale=3):
+
+    # code to get the unflattener
+    from jaxatari.games.jax_pong import JaxPong
+    from jaxatari.wrappers import AtariWrapper
+    
+    def debug_obs(
+    step,
+    real_obs,
+    pred_obs,
+    action,
+    ):
+        error = jnp.mean((real_obs - pred_obs) ** 2)
+        print(
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)}"
+        )
+        # print(real_obs)
+
+        # if error > 20 and render_debugging:
+        #     print("-" * 100)
+        #     print("Indexes where difference > 1:")
+        #     for j in range(len(pred_obs[0])):
+        #         if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
+        #             print(
+        #                 f"Index {j}: Predicted {pred_obs[0][j]:.2f} vs Real {real_obs[j]:.2f}"
+        #             )
+        #     print("-" * 100)
+
+    game = JaxPong()
+    env = AtariWrapper(
+        game,
+        sticky_actions=False,
+        episodic_life=False,
+        frame_stack_size=frame_stack_size,
+    )
+    dummy_obs, _ = env.reset(jax.random.PRNGKey(0))
+    _, unflattener = flatten_obs(dummy_obs, single_state=True)
+
+
+
+
+    import jax.random as rnd
+    from obs_state_converter import pong_flat_observation_to_state
+    key = rnd.PRNGKey(0)
+    print('params["params"] keys:', list(params['params'].keys()))
+    import pygame
+    from jaxatari.games.jax_pong import PongRenderer
+    pygame.init()
+    renderer = PongRenderer()
+    WIDTH, HEIGHT = 160, 210
+    WINDOW_WIDTH = WIDTH * render_scale * 2 + 20
+    WINDOW_HEIGHT = HEIGHT * render_scale
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("Real vs Dreamer Model (Pong)")
+    real_surface = pygame.Surface((WIDTH, HEIGHT))
+    model_surface = pygame.Surface((WIDTH, HEIGHT))
+    step_count = 0
+    clock = pygame.time.Clock()
+    # Use only the current observation for the first batch
+
+
+    model_obs = obs[0]
+    # Initialize RSSM state
+    h = jnp.zeros((1, model.deter_dim))
+    z = jnp.zeros((1, model.stoch_dim))
+    while step_count < num_steps:
+
+        
+
+        action = actions[step_count]
+        next_real_obs = obs[step_count + 1]
+        normalized_model_obs = model_obs
+
+        # Encode observation using encoder submodule (direct call)
+        embed = Encoder(hidden_dim=128).apply({'params': params['params']['encoder']}, normalized_model_obs[None, :])
+        a = jax.nn.one_hot(jnp.array([action]), model.action_dim).reshape(1, model.action_dim)
+        # Step RSSM using rssm submodule (direct call)
+        key, subkey = jax.random.split(key)
+        h, prior, post = RSSM(deter_dim=200, stoch_dim=30, action_dim=6).apply({'params': params['params']['rssm']}, embed, a, (h, z))
+        z = RSSM(deter_dim=200, stoch_dim=30, action_dim=6).sample(post[0], post[1], subkey)
+        # Decode predicted observation using decoder submodule (direct call)
+
+
+        if step_count % 32 == 0:
+            #reset model here
+            print("Model Reset!")
+            model_obs = obs[step_count]
+            h = jnp.zeros((1, model.deter_dim))
+            z = jnp.zeros((1, model.stoch_dim))
+
+        pred_obs = Decoder(output_dim=model.obs_dim, hidden_dim=128).apply({'params': params['params']['decoder']}, h, z)[0]
+        pred_obs = jnp.round(pred_obs)
+        model_obs = pred_obs
+        debug_obs(step_count, next_real_obs, model_obs, action)
+        # Render
+        real_state = pong_flat_observation_to_state(next_real_obs, unflattener, frame_stack_size=frame_stack_size)
+        real_img = np.array(renderer.render(real_state) * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(real_surface, real_img)
+        model_state = pong_flat_observation_to_state(model_obs, unflattener, frame_stack_size=frame_stack_size)
+        model_img = np.array(renderer.render(model_state) * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(model_surface, model_img)
+        screen.fill((0, 0, 0))
+        scaled_real = pygame.transform.scale(real_surface, (WIDTH * render_scale, HEIGHT * render_scale))
+        screen.blit(scaled_real, (0, 0))
+        scaled_model = pygame.transform.scale(model_surface, (WIDTH * render_scale, HEIGHT * render_scale))
+        screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
+        font = pygame.font.SysFont(None, 24)
+        real_text = font.render("Real Env", True, (255, 255, 255))
+        model_text = font.render("Dreamer Model", True, (255, 255, 255))
+        screen.blit(real_text, (20, 10))
+        screen.blit(model_text, (WIDTH * render_scale + 40, 10))
+        pygame.display.flip()
+        step_count += 1
+        clock.tick(10)
+    pygame.quit()
+    print("Comparison completed")
 
 
 # Example usage:
@@ -258,7 +422,8 @@ if __name__ == "__main__":
         for step in range(epochs):
             key, subkey = rnd.split(key)
             for batch in make_batches(all_obs, all_actions, all_rewards, batch_size):
-                params, opt_state, loss, metrics = train_step_jit(params, model, optimizer, opt_state, batch, subkey)
+                open_loop_start = int((step/epochs) * 15)
+                params, opt_state, loss, metrics = train_step_jit(params, model, optimizer, opt_state, batch, subkey, open_loop_start)
             if step % 100 == 0:
                 print(f"Step {step}, Loss: {loss}, Metrics: {metrics}")
 
@@ -271,123 +436,7 @@ if __name__ == "__main__":
             }, f)
         print(f"Model saved to {save_path}")
 
-    # Compare function
-    def compare_dreamer_vs_real(obs, actions, params, model, num_steps=1000, render_scale=3):
-
-        # code to get the unflattener
-        from jaxatari.games.jax_pong import JaxPong
-        from jaxatari.wrappers import AtariWrapper
-        
-        def debug_obs(
-        step,
-        real_obs,
-        pred_obs,
-        action,
-        ):
-            error = jnp.mean((real_obs - pred_obs) ** 2)
-            print(
-                f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)}"
-            )
-            # print(real_obs)
-
-            # if error > 20 and render_debugging:
-            #     print("-" * 100)
-            #     print("Indexes where difference > 1:")
-            #     for j in range(len(pred_obs[0])):
-            #         if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
-            #             print(
-            #                 f"Index {j}: Predicted {pred_obs[0][j]:.2f} vs Real {real_obs[j]:.2f}"
-            #             )
-            #     print("-" * 100)
-
-        game = JaxPong()
-        env = AtariWrapper(
-            game,
-            sticky_actions=False,
-            episodic_life=False,
-            frame_stack_size=frame_stack_size,
-        )
-        dummy_obs, _ = env.reset(jax.random.PRNGKey(0))
-        _, unflattener = flatten_obs(dummy_obs, single_state=True)
-
-
-
-
-        import jax.random as rnd
-        from obs_state_converter import pong_flat_observation_to_state
-        key = rnd.PRNGKey(0)
-        print('params["params"] keys:', list(params['params'].keys()))
-        import pygame
-        from jaxatari.games.jax_pong import PongRenderer
-        pygame.init()
-        renderer = PongRenderer()
-        WIDTH, HEIGHT = 160, 210
-        WINDOW_WIDTH = WIDTH * render_scale * 2 + 20
-        WINDOW_HEIGHT = HEIGHT * render_scale
-        screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-        pygame.display.set_caption("Real vs Dreamer Model (Pong)")
-        real_surface = pygame.Surface((WIDTH, HEIGHT))
-        model_surface = pygame.Surface((WIDTH, HEIGHT))
-        step_count = 0
-        clock = pygame.time.Clock()
-        # Use only the current observation for the first batch
-
-
-        model_obs = obs[0]
-        # Initialize RSSM state
-        h = jnp.zeros((1, model.deter_dim))
-        z = jnp.zeros((1, model.stoch_dim))
-        while step_count < num_steps:
-
-           
-
-            action = actions[step_count]
-            next_real_obs = obs[step_count + 1]
-            normalized_model_obs = model_obs
-
-            # Encode observation using encoder submodule (direct call)
-            embed = Encoder(hidden_dim=128).apply({'params': params['params']['encoder']}, normalized_model_obs[None, :])
-            a = jax.nn.one_hot(jnp.array([action]), model.action_dim).reshape(1, model.action_dim)
-            # Step RSSM using rssm submodule (direct call)
-            key, subkey = jax.random.split(key)
-            h, prior, post = RSSM(deter_dim=200, stoch_dim=30, action_dim=6).apply({'params': params['params']['rssm']}, embed, a, (h, z))
-            z = RSSM(deter_dim=200, stoch_dim=30, action_dim=6).sample(post[0], post[1], subkey)
-            # Decode predicted observation using decoder submodule (direct call)
-
-
-            if step_count % 32 == 0:
-                #reset model here
-                print("Model Reset!")
-                model_obs = obs[step_count]
-                h = jnp.zeros((1, model.deter_dim))
-                z = jnp.zeros((1, model.stoch_dim))
-
-            pred_obs = Decoder(output_dim=model.obs_dim, hidden_dim=128).apply({'params': params['params']['decoder']}, h, z)[0]
-            pred_obs = jnp.round(pred_obs)
-            model_obs = pred_obs
-            debug_obs(step_count, next_real_obs, model_obs, action)
-            # Render
-            real_state = pong_flat_observation_to_state(next_real_obs, unflattener, frame_stack_size=frame_stack_size)
-            real_img = np.array(renderer.render(real_state) * 255, dtype=np.uint8)
-            pygame.surfarray.blit_array(real_surface, real_img)
-            model_state = pong_flat_observation_to_state(model_obs, unflattener, frame_stack_size=frame_stack_size)
-            model_img = np.array(renderer.render(model_state) * 255, dtype=np.uint8)
-            pygame.surfarray.blit_array(model_surface, model_img)
-            screen.fill((0, 0, 0))
-            scaled_real = pygame.transform.scale(real_surface, (WIDTH * render_scale, HEIGHT * render_scale))
-            screen.blit(scaled_real, (0, 0))
-            scaled_model = pygame.transform.scale(model_surface, (WIDTH * render_scale, HEIGHT * render_scale))
-            screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
-            font = pygame.font.SysFont(None, 24)
-            real_text = font.render("Real Env", True, (255, 255, 255))
-            model_text = font.render("Dreamer Model", True, (255, 255, 255))
-            screen.blit(real_text, (20, 10))
-            screen.blit(model_text, (WIDTH * render_scale + 40, 10))
-            pygame.display.flip()
-            step_count += 1
-            clock.tick(10)
-        pygame.quit()
-        print("Comparison completed")
+    
 
     # Load and compare
     with open(save_path, "rb") as f:

@@ -609,9 +609,13 @@ def train_world_model(
         rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
         indices = jax.random.permutation(shuffle_key, len(train_batches))
 
-        shuffled_train_states = train_batch_states[train_indices]
-        shuffled_train_actions = train_batch_actions[train_indices]
-        shuffled_train_next_states = train_batch_next_states[train_indices]
+        # Shuffle training data for this epoch
+        epoch_shuffle_key = jax.random.fold_in(rng_shuffle, epoch)
+        epoch_indices = jax.random.permutation(epoch_shuffle_key, len(train_batches))
+        
+        shuffled_train_states = train_batch_states[epoch_indices]
+        shuffled_train_actions = train_batch_actions[epoch_indices]
+        shuffled_train_next_states = train_batch_next_states[epoch_indices]
 
         # only use gpu_batch_size elements for training
         if shuffled_train_states.shape[0] > gpu_batch_size:
@@ -933,7 +937,7 @@ def main():
     model = MODEL_ARCHITECTURE()
     normalization_stats = None
 
-    experience_its = 4
+    experience_its = 1
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
@@ -1046,7 +1050,7 @@ def main():
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=10,
+            steps_into_future=30,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
         )
