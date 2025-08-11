@@ -6,6 +6,7 @@ from attrdict import AttrDict
 import numpy as np
 import torch
 
+
 class ReplayBuffer(object):
     def __init__(self, observation_shape, action_size, device, config):
         self.config = config.parameters.dreamer.buffer

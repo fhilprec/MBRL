@@ -1,4 +1,5 @@
 import os
+
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
 import pygame
 import time
@@ -1187,8 +1188,7 @@ def add_training_noise(obs, actions, next_obs, rewards, noise_config=None):
     return noisy_obs, noisy_actions, noisy_next_obs, rewards
 
 
-
-def  main():
+def main():
 
     frame_stack_size = 1
 
@@ -1331,7 +1331,6 @@ def  main():
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
         )
-
 
 
 if __name__ == "__main__":

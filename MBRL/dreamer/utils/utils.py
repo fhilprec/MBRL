@@ -1,9 +1,11 @@
-
 def attrdict_monkeypatch_fix():
     import collections
     import collections.abc
+
     for type_name in collections.abc.__all__:
-            setattr(collections, type_name, getattr(collections.abc, type_name))
+        setattr(collections, type_name, getattr(collections.abc, type_name))
+
+
 attrdict_monkeypatch_fix()
 
 import os
@@ -14,6 +16,7 @@ import torch.nn.functional as F
 
 import yaml
 from attrdict import AttrDict
+
 
 def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)):
     batch_with_horizon_shape = x.shape[: -len(input_shape)]

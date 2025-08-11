@@ -1,7 +1,7 @@
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-# Additional environment variables to help with memory issues
+
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.8"
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
@@ -26,17 +26,15 @@ from rtpt import RTPT
 from obs_state_converter import pong_flat_observation_to_state
 
 
-
-# Drastically simplified Transformer for memory efficiency
 class TransformerWorldModel(hk.Module):
     def __init__(
         self,
-        d_model: int = 64,        # Reduced from 256
-        num_heads: int = 4,       # Reduced from 8
-        num_layers: int = 2,      # Reduced from 6
+        d_model: int = 64,
+        num_heads: int = 4,
+        num_layers: int = 2,
         dropout_rate: float = 0.1,
-        max_seq_len: int = 32,    # Reduced from 512
-        name: str = "transformer_world_model"
+        max_seq_len: int = 32,
+        name: str = "transformer_world_model",
     ):
         super().__init__(name=name)
         self.d_model = d_model
@@ -44,107 +42,97 @@ class TransformerWorldModel(hk.Module):
         self.num_layers = num_layers
         self.dropout_rate = dropout_rate
         self.max_seq_len = max_seq_len
-        
+
     def __call__(self, states, actions, training=True):
         """
         Simplified approach - treat state-action pairs as single tokens
         """
         batch_size, seq_len, state_dim = states.shape
-        
-        # Concatenate states and actions directly (no tokenization)
-        # Expand actions to match state dimensions
-        actions_expanded = jnp.expand_dims(actions, -1)  # (batch, seq, 1)
-        
-        # Concatenate state and action
-        combined = jnp.concatenate([states, actions_expanded.astype(jnp.float32)], axis=-1)
-        
-        # Simple linear projection to d_model
+
+        actions_expanded = jnp.expand_dims(actions, -1)
+
+        combined = jnp.concatenate(
+            [states, actions_expanded.astype(jnp.float32)], axis=-1
+        )
+
         x = hk.Linear(self.d_model)(combined)
-        
-        # Add positional encoding
+
         positions = jnp.arange(seq_len)[None, :, None]
         pos_encoding = self._positional_encoding(positions, self.d_model)
         x += pos_encoding
-        
-        # Apply dropout
+
         if training:
             x = hk.dropout(hk.next_rng_key(), self.dropout_rate, x)
-        
-        # Apply transformer layers
+
         for _ in range(self.num_layers):
             x = self._transformer_block(x, training=training)
-        
-        # Project back to state space
+
         predicted_next_states = hk.Linear(state_dim)(x)
-        
+
         return predicted_next_states
-    
+
     def _positional_encoding(self, positions, d_model):
         """Generate sinusoidal positional encodings."""
+
         def get_angles(pos, i, d_model):
-            angle_rates = 1 / jnp.power(10000, (2 * (i//2)) / jnp.float32(d_model))
+            angle_rates = 1 / jnp.power(10000, (2 * (i // 2)) / jnp.float32(d_model))
             return pos * angle_rates
-        
+
         angle_rads = get_angles(positions, jnp.arange(d_model)[None, None, :], d_model)
-        
-        # Apply sin to even indices
+
         angle_rads = angle_rads.at[:, :, 0::2].set(jnp.sin(angle_rads[:, :, 0::2]))
-        # Apply cos to odd indices  
+
         angle_rads = angle_rads.at[:, :, 1::2].set(jnp.cos(angle_rads[:, :, 1::2]))
-        
+
         return angle_rads
-    
+
     def _transformer_block(self, x, training=True):
         """Single transformer block with multi-head attention and feed-forward."""
-        # Multi-head self-attention
+
         attn_output = hk.MultiHeadAttention(
             num_heads=self.num_heads,
             key_size=self.d_model // self.num_heads,
-            w_init_scale=1.0
+            w_init_scale=1.0,
         )(x, x, x)
-        
+
         if training:
             attn_output = hk.dropout(hk.next_rng_key(), self.dropout_rate, attn_output)
-        
-        # Add & Norm
-        x1 = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x + attn_output)
-        
-        # Feed-forward network (smaller expansion)
-        ff_output = hk.Sequential([
-            hk.Linear(self.d_model * 2),  # Reduced from 4x
-            jax.nn.relu,
-            hk.Linear(self.d_model)
-        ])(x1)
-        
+
+        x1 = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(
+            x + attn_output
+        )
+
+        ff_output = hk.Sequential(
+            [hk.Linear(self.d_model * 2), jax.nn.relu, hk.Linear(self.d_model)]
+        )(x1)
+
         if training:
             ff_output = hk.dropout(hk.next_rng_key(), self.dropout_rate, ff_output)
-        
-        # Add & Norm
-        x2 = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x1 + ff_output)
-        
+
+        x2 = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(
+            x1 + ff_output
+        )
+
         return x2
 
 
-# Simple MLP baseline for comparison
 class MLPWorldModel(hk.Module):
     def __init__(self, hidden_size: int = 512, num_layers: int = 3):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-    
+
     def __call__(self, state, action, hidden_state=None):
-        # Concatenate state and action
+
         x = jnp.concatenate([state, jnp.array([action])], axis=-1)
-        
-        # Apply MLP layers
+
         for _ in range(self.num_layers):
             x = hk.Linear(self.hidden_size)(x)
             x = jax.nn.relu(x)
-        
-        # Output layer
+
         next_state = hk.Linear(state.shape[-1])(x)
-        
-        return next_state, None  # No hidden state for MLP
+
+        return next_state, None
 
 
 def get_model_architecture():
@@ -165,10 +153,10 @@ def get_model_architecture():
 MODEL_ARCHITECTURE = get_model_architecture()
 VERBOSE = True
 
-# Pong action mapping
+
 action_map = {
     0: "NOOP",
-    1: "FIRE", 
+    1: "FIRE",
     2: "RIGHT",
     3: "LEFT",
     4: "RIGHTFIRE",
@@ -193,23 +181,23 @@ def render_trajectory(
     pygame.display.set_caption("State Trajectory Visualization")
     surface = pygame.Surface((WIDTH, HEIGHT))
     font = pygame.font.SysFont(None, 24)
-    
+
     if isinstance(states, dict) or hasattr(states, "env_state"):
         total_frames = 1
     else:
         first_field = jax.tree_util.tree_leaves(states)[0]
         total_frames = first_field.shape[0] if hasattr(first_field, "shape") else 1
-    
+
     frames_to_show = min(total_frames, num_frames)
     print(f"Rendering trajectory with {frames_to_show} frames...")
-    
+
     running = True
     frame_idx = 0
     while running and frame_idx < frames_to_show:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-        
+
         if total_frames > 1:
             current_state = jax.tree.map(
                 lambda x: (
@@ -221,7 +209,7 @@ def render_trajectory(
             )
         else:
             current_state = states
-        
+
         try:
             raster = renderer.render(current_state)
             img = np.array(raster * 255, dtype=np.uint8)
@@ -240,17 +228,19 @@ def render_trajectory(
             print(f"Error rendering frame {frame_idx}: {e}")
             frame_idx += 1
             continue
-        
+
         pygame.time.wait(delay)
         frame_idx += 1
-    
+
     if running:
         pygame.time.wait(1000)
     pygame.quit()
     print(f"Rendered {frame_idx} frames from trajectory")
 
 
-def flatten_obs(state, single_state: bool = False, is_list=False) -> Tuple[jnp.ndarray, Any]:
+def flatten_obs(
+    state, single_state: bool = False, is_list=False
+) -> Tuple[jnp.ndarray, Any]:
     """Flatten the state PyTree into a single array."""
     if type(state) == list:
         flat_states = []
@@ -264,21 +254,22 @@ def flatten_obs(state, single_state: bool = False, is_list=False) -> Tuple[jnp.n
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
         return flat_state, unflattener
-    
-    # For Pong, the state structure is simpler
-    if hasattr(state, 'player') and hasattr(state.player, 'y'):
+
+    if hasattr(state, "player") and hasattr(state.player, "y"):
         batch_shape = state.player.y.shape[0]
-    elif hasattr(state, 'ball') and hasattr(state.ball, 'x'):
+    elif hasattr(state, "ball") and hasattr(state.ball, "x"):
         batch_shape = state.ball.x.shape[0]
     else:
         first_leaf = jax.tree_util.tree_leaves(state)[0]
-        batch_shape = first_leaf.shape[0] if hasattr(first_leaf, 'shape') and len(first_leaf.shape) > 0 else 1
+        batch_shape = (
+            first_leaf.shape[0]
+            if hasattr(first_leaf, "shape") and len(first_leaf.shape) > 0
+            else 1
+        )
 
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     flat_state = flat_state.reshape(batch_shape, -1)
     return flat_state, unflattener
-
-
 
 
 def train_world_model(
@@ -294,20 +285,18 @@ def train_world_model(
     frame_stack_size=4,
 ):
     """Train the Transformer world model."""
-    
-    # Calculate normalization statistics
+
     state_mean = jnp.mean(obs, axis=0)
     state_std = jnp.std(obs, axis=0) + 1e-8
     normalization_stats = {"mean": state_mean, "std": state_std}
 
-    # Normalize observations
     normalized_obs = (obs - state_mean) / state_std
     normalized_next_obs = (next_obs - state_mean) / state_std
 
     def create_sequential_batches():
         """Create batches of sequential data for transformer training."""
         sequences = []
-        
+
         for i in range(len(episode_boundaries) - 1):
             if i == 0:
                 start_idx = 0
@@ -316,61 +305,59 @@ def train_world_model(
                 start_idx = episode_boundaries[i - 1]
                 end_idx = episode_boundaries[i]
 
-            # Create overlapping sequences
-            for j in range(0, end_idx - start_idx - sequence_length + 1, sequence_length // 4):
+            for j in range(
+                0, end_idx - start_idx - sequence_length + 1, sequence_length // 4
+            ):
                 if start_idx + j + sequence_length <= end_idx:
-                    sequences.append((
-                        normalized_obs[start_idx + j : start_idx + j + sequence_length],
-                        actions[start_idx + j : start_idx + j + sequence_length],
-                        normalized_next_obs[start_idx + j : start_idx + j + sequence_length],
-                    ))
+                    sequences.append(
+                        (
+                            normalized_obs[
+                                start_idx + j : start_idx + j + sequence_length
+                            ],
+                            actions[start_idx + j : start_idx + j + sequence_length],
+                            normalized_next_obs[
+                                start_idx + j : start_idx + j + sequence_length
+                            ],
+                        )
+                    )
 
         return sequences
 
-    # Create batches
     batches = create_sequential_batches()
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
 
-    # Split into train/validation
     total_batches = len(batches)
     train_size = int(0.8 * total_batches)
-    
+
     rng_split = jax.random.PRNGKey(42)
     indices = jax.random.permutation(rng_split, total_batches)
-    
+
     train_indices = indices[:train_size]
     val_indices = indices[train_size:]
-    
+
     train_batches = [batches[i] for i in train_indices]
     val_batches = [batches[i] for i in val_indices]
 
-    # Initialize model
     def model_fn(states, actions):
         model = MODEL_ARCHITECTURE()
-        return model(states, actions, training=True)
+        return model(states, actions)
 
     model = hk.transform(model_fn)
-    
-    # Initialize optimizer
+
     lr_schedule = optax.cosine_decay_schedule(
-        init_value=learning_rate,
-        decay_steps=num_epochs,
-        alpha=0.1
+        init_value=learning_rate, decay_steps=num_epochs, alpha=0.1
     )
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adam(learning_rate=lr_schedule)
+        optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr_schedule)
     )
 
-    # Initialize parameters
     rng = jax.random.PRNGKey(42)
     dummy_states = jnp.ones((1, sequence_length, normalized_obs.shape[-1]))
     dummy_actions = jnp.ones((1, sequence_length), dtype=jnp.int32)
-    
+
     params = model.init(rng, dummy_states, dummy_actions)
     opt_state = optimizer.init(params)
 
-    # Training functions
     @jax.jit
     def loss_fn(params, rng, states_batch, actions_batch, targets_batch):
         predictions = model.apply(params, rng, states_batch, actions_batch)
@@ -379,7 +366,9 @@ def train_world_model(
 
     @jax.jit
     def update_step(params, opt_state, rng, states_batch, actions_batch, targets_batch):
-        loss, grads = jax.value_and_grad(loss_fn, argnums=0)(params, rng, states_batch, actions_batch, targets_batch)
+        loss, grads = jax.value_and_grad(loss_fn, argnums=0)(
+            params, rng, states_batch, actions_batch, targets_batch
+        )
         updates, new_opt_state = optimizer.update(grads, opt_state, params)
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state, loss
@@ -388,7 +377,6 @@ def train_world_model(
 
     gpu_batch_size = gpu_batch_size // frame_stack_size
 
-    # Convert batches to arrays
     train_states = jnp.stack([batch[0] for batch in train_batches])
     train_actions = jnp.stack([batch[1] for batch in train_batches])
     train_targets = jnp.stack([batch[2] for batch in train_batches])
@@ -397,23 +385,20 @@ def train_world_model(
     val_actions = jnp.stack([batch[1] for batch in val_batches])
     val_targets = jnp.stack([batch[2] for batch in val_batches])
 
-    # Training loop
     best_loss = float("inf")
-    
+
     for epoch in range(num_epochs):
-        # Shuffle training data
+
         rng, shuffle_key = jax.random.split(rng)
         indices = jax.random.permutation(shuffle_key, len(train_batches))
-        
-        # Limit batch size for memory
+
         max_batches_per_epoch = min(gpu_batch_size, len(train_batches))
         selected_indices = indices[:max_batches_per_epoch]
-        
+
         epoch_states = train_states[selected_indices]
         epoch_actions = train_actions[selected_indices]
         epoch_targets = train_targets[selected_indices]
 
-        # Split RNG for this epoch
         rng, epoch_rng = jax.random.split(rng)
 
         params, opt_state, train_loss = update_step(
@@ -424,18 +409,20 @@ def train_world_model(
             best_loss = train_loss
 
         if VERBOSE and (epoch + 1) % 10 == 0:
-            # Split RNG for validation
+
             rng, val_rng = jax.random.split(rng)
             val_loss = loss_fn(params, val_rng, val_states, val_actions, val_targets)
             current_lr = lr_schedule(epoch)
-            print(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}")
+            print(
+                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}"
+            )
 
     print("Training completed")
     return params, {
         "final_loss": train_loss,
         "normalization_stats": normalization_stats,
         "best_loss": best_loss,
-        "model_fn": model
+        "model_fn": model,
     }
 
 
@@ -456,30 +443,34 @@ def compare_real_vs_model(
     model_fn=None,
 ):
     """Compare real environment vs model predictions with rendering."""
-    
+
     if len(obs) == 1:
         obs = obs.squeeze(0)
 
     def debug_obs(step, real_obs, pred_obs, action):
+        print(real_obs)
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
-        print(f"Step {step}, Error: {error:.2f} | Action: {action_map.get(int(action), 'UNKNOWN')}")
-
+        print(
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), 'UNKNOWN')}"
+        )
         
+        if error > 20 and render_debugging:
+            print("-" * 100)
+            print("Indexes where difference > 1:")
+            for j in range(len(pred_obs[0])):
+                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
+                    print(
+                        f"Index {j}: Predicted {pred_obs[0][j]:.2f} vs Real {real_obs[j]:.2f}"
+                    )
+            print("-" * 100)
 
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
 
     renderer = PongRenderer()
-    
-    # Load model
-    model_path = f"transformer_world_model_pong.pkl"
-    if os.path.exists(model_path):
-        with open(model_path, "rb") as f:
-            model_data = pickle.load(f)
-            dynamics_params = model_data["dynamics_params"] 
-            model_fn = model_data["model_fn"]
-    else:
-        dynamics_params = model_params
+
+    # Use the parameters passed to the function
+    dynamics_params = model_params
 
     pygame.init()
     WIDTH = 160
@@ -495,87 +486,125 @@ def compare_real_vs_model(
     step_count = starting_step
     clock = pygame.time.Clock()
 
-    # Get unflattener
     game = JaxPong()
-    env_wrapper = AtariWrapper(game, sticky_actions=False, episodic_life=False, frame_stack_size=frame_stack_size)
+    env_wrapper = AtariWrapper(
+        game,
+        sticky_actions=False,
+        episodic_life=False,
+        frame_stack_size=frame_stack_size,
+    )
     dummy_obs, _ = env_wrapper.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
-    # Initialize model state for multi-step prediction
+    # Initialize model and real observations
+    real_obs = obs[0]
     model_obs = obs[0]
     sequence_buffer = []
+    real_sequence_buffer = []
     
+    # Initialize RNG for model inference
+    rng = jax.random.PRNGKey(42)
+    
+    print(f"Observation shape: {obs.shape}")
+    print(f"Total observations: {len(obs)}")
+
     while step_count < min(num_steps, len(obs) - 1):
-        action = actions[step_count]
+        action = actions[step_count]#
+        real_obs = obs[step_count]
         next_real_obs = obs[step_count + 1]
 
-        # Reset model state periodically
-        if steps_into_future > 0 and step_count % steps_into_future == 0:
+        # Model reset logic - reset at specified intervals or boundaries
+        if steps_into_future > 0 and (
+            step_count % steps_into_future == 0 or step_count in boundaries
+        ):
+            print("Model Reset!")
             model_obs = obs[step_count]
             sequence_buffer = []
 
-        # Prepare model input
+        # Normalize observations
         normalized_model_obs = (model_obs - state_mean) / state_std
-        
-        if len(sequence_buffer) < 10:  # Build up sequence
+
+        if steps_into_future > 0:
+            # Build sequence buffer for transformer
             sequence_buffer.append((normalized_model_obs, action))
-            model_obs = next_real_obs  # Use ground truth
+            
+            # Keep only the last 10 steps for sequence modeling
+            if len(sequence_buffer) > 10:
+                sequence_buffer = sequence_buffer[-10:]
+
+            # Only predict if we have enough context
+            if len(sequence_buffer) >= 2:
+                # Pad sequence to required length if needed
+                seq_len = 10
+                if len(sequence_buffer) < seq_len:
+                    # Pad with the first observation
+                    padding_needed = seq_len - len(sequence_buffer)
+                    padded_buffer = [(sequence_buffer[0][0], sequence_buffer[0][1])] * padding_needed + sequence_buffer
+                else:
+                    padded_buffer = sequence_buffer
+
+                seq_states = jnp.stack([s[0] for s in padded_buffer])
+                seq_actions = jnp.stack([s[1] for s in padded_buffer])
+
+                seq_states = seq_states[None, ...]  # Add batch dimension
+                seq_actions = seq_actions[None, ...]  # Add batch dimension
+
+                # Split RNG key for model inference
+                rng, inference_rng = jax.random.split(rng)
+                
+                predicted_states = model_fn.apply(
+                    dynamics_params, inference_rng, seq_states, seq_actions, training=False
+                )
+                predicted_next_state = predicted_states[0, -1]
+
+                model_obs = predicted_next_state * state_std + state_mean
+            else:
+                # Use real observation if not enough context
+                model_obs = next_real_obs
         else:
-            # Use model prediction
-            seq_states = jnp.stack([s[0] for s in sequence_buffer[-10:]])
-            seq_actions = jnp.stack([s[1] for s in sequence_buffer[-10:]])
-            
-            # Add batch dimension
-            seq_states = seq_states[None, ...]
-            seq_actions = seq_actions[None, ...]
-            
-            # Get model prediction
-            predicted_states = model_fn.apply(dynamics_params, None, seq_states, seq_actions)
-            predicted_next_state = predicted_states[0, -1]  # Last prediction
-            
-            # Denormalize
-            model_obs = predicted_next_state * state_std + state_mean
-            sequence_buffer.append((normalized_model_obs, action))
+            model_obs = normalized_model_obs * state_std + state_mean
 
         if steps_into_future > 0:
             debug_obs(step_count, next_real_obs, [model_obs], action)
 
-        # Rendering
-        try:
-            real_base_state = pong_flat_observation_to_state(
-                obs[step_count], unflattener, frame_stack_size=frame_stack_size
-            )
-            model_base_state = pong_flat_observation_to_state(
-                model_obs, unflattener, frame_stack_size=frame_stack_size
-            )
 
-            real_raster = renderer.render(real_base_state)
-            real_img = np.array(real_raster * 255, dtype=np.uint8)
-            pygame.surfarray.blit_array(real_surface, real_img)
-            
-            model_raster = renderer.render(model_base_state)
-            model_img = np.array(model_raster * 255, dtype=np.uint8)
-            pygame.surfarray.blit_array(model_surface, model_img)
-            
-            screen.fill((0, 0, 0))
-            
-            scaled_real = pygame.transform.scale(real_surface, (WIDTH * render_scale, HEIGHT * render_scale))
-            screen.blit(scaled_real, (0, 0))
-            
-            scaled_model = pygame.transform.scale(model_surface, (WIDTH * render_scale, HEIGHT * render_scale))
-            screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
-            
-            font = pygame.font.SysFont(None, 24)
-            real_text = font.render("Real Environment", True, (255, 255, 255))
-            model_text = font.render("Transformer Model", True, (255, 255, 255))
-            screen.blit(real_text, (20, 10))
-            screen.blit(model_text, (WIDTH * render_scale + 40, 10))
-            pygame.display.flip()
-            
-        except Exception as e:
-            print(f"Error occurred: {e}")
+        # Render real environment
+        real_base_state = pong_flat_observation_to_state(
+            real_obs, unflattener, frame_stack_size=frame_stack_size
+        )
+        model_base_state = pong_flat_observation_to_state(
+            model_obs.squeeze(), unflattener, frame_stack_size=frame_stack_size
+        )
+
+        real_raster = renderer.render(real_base_state)
+        real_img = np.array(real_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(real_surface, real_img)
+
+        model_raster = renderer.render(model_base_state)
+        model_img = np.array(model_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(model_surface, model_img)
+
+        screen.fill((0, 0, 0))
+
+        scaled_real = pygame.transform.scale(
+            real_surface, (WIDTH * render_scale, HEIGHT * render_scale)
+        )
+        screen.blit(scaled_real, (0, 0))
+
+        scaled_model = pygame.transform.scale(
+            model_surface, (WIDTH * render_scale, HEIGHT * render_scale)
+        )
+        screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
+
+        font = pygame.font.SysFont(None, 24)
+        real_text = font.render("Real Environment", True, (255, 255, 255))
+        model_text = font.render("Transformer Model", True, (255, 255, 255))
+        screen.blit(real_text, (20, 10))
+        screen.blit(model_text, (WIDTH * render_scale + 40, 10))
+        pygame.display.flip()
+
+
         step_count += 1
-
 
 
 def main():
@@ -591,12 +620,9 @@ def main():
     env = FlattenObservationWrapper(env)
 
     save_path = f"transformer_pong.pkl"
-    
-    # Remove this line - don't instantiate Haiku modules outside transforms
-    # model = MODEL_ARCHITECTURE()
-    
-    normalization_stats = None
 
+    normalization_stats = None
+    model_fn = None
 
     obs = []
     actions = []
@@ -611,12 +637,11 @@ def main():
         actions.extend(saved_data["actions"])
         next_obs.extend(saved_data["next_obs"])
         rewards.extend(saved_data["rewards"])
-        # Calculate the offset from previous data
+
         offset = boundaries[-1] if boundaries else 0
-        # Add offset to each boundary before extending
+
         adjusted_boundaries = [b + offset for b in saved_data["boundaries"]]
         boundaries.extend(adjusted_boundaries)
-    
 
     if os.path.exists(save_path):
         print(f"Loading existing model from {save_path}...")
@@ -624,19 +649,20 @@ def main():
             saved_data = pickle.load(f)
             dynamics_params = saved_data["dynamics_params"]
             normalization_stats = saved_data.get("normalization_stats", None)
+            
+        # Create model_fn for loaded model
+        def model_fn_inner(states, actions, training=False):
+            model = MODEL_ARCHITECTURE()
+            return model(states, actions, training=training)
+        model_fn = hk.transform(model_fn_inner)
     else:
         print("No existing model found. Training a new model...")
-
-        # Load experience data for training
-
-       
 
         obs_array = jnp.array(obs)
         actions_array = jnp.array(actions)
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
 
-        # Train world model with improved hyperparameters
         dynamics_params, training_info = train_world_model(
             obs_array,
             actions_array,
@@ -646,8 +672,8 @@ def main():
             frame_stack_size=frame_stack_size,
         )
         normalization_stats = training_info.get("normalization_stats", None)
+        model_fn = training_info["model_fn"]
 
-        # Save the model and scaling factor
         with open(save_path, "wb") as f:
             pickle.dump(
                 {
@@ -680,17 +706,14 @@ def main():
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=10,
+            steps_into_future=100,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
+            model_params=dynamics_params,
+            model_fn=model_fn,
         )
 
 
 if __name__ == "__main__":
-    # rtpt = RTPT(
-    #     name_initials="FH", experiment_name="TestingIterateAgent_Pong", max_iterations=3
-    # )
 
-    # # Start the RTPT tracking
-    # rtpt.start()
     main()

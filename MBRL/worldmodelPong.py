@@ -1,5 +1,5 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Must be set before importing JAX
+
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
 import pygame
 import time
@@ -25,13 +25,12 @@ from model_architectures import *
 
 def get_reward_from_observation(obs):
     """Extract reward from Pong observation - adjust index as needed for Pong"""
-    if len(obs) < 100:  # Pong observations might be shorter
+    if len(obs) < 100:
         raise ValueError(f"Observation must have sufficient elements, got {len(obs)}")
-    # You may need to adjust this index based on Pong's observation structure
-    return obs[-3] if len(obs) > 3 else 0  # Placeholder - adjust based on actual Pong obs structure
+
+    return obs[-3] if len(obs) > 3 else 0
 
 
-# get the model architecture from the command line argument
 if len(sys.argv) > 1:
     model_architecture_name = sys.argv[1]
     if model_architecture_name == "V2_NO_SEP":
@@ -51,17 +50,17 @@ if len(sys.argv) > 1:
     else:
         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
 else:
-    # Default model if no argument provided
+
     MODEL_ARCHITECTURE = V2_LSTM
 
 
 VERBOSE = True
 model = None
 
-# Pong action mapping (typically fewer actions than Seaquest)
+
 action_map = {
     0: "NOOP",
-    1: "FIRE", 
+    1: "FIRE",
     2: "RIGHT",
     3: "LEFT",
     4: "RIGHTFIRE",
@@ -150,13 +149,12 @@ def flatten_obs(
     Flatten the state PyTree into a single array.
     This is useful for debugging and visualization.
     """
-    # check whether it is a single state or a batch of states
 
     if type(state) == list:
         flat_states = []
 
         for s in state:
-            flat_state, _ = jax.flatten_util.ravel_pytree(s)  # Extract only the flattened array
+            flat_state, _ = jax.flatten_util.ravel_pytree(s)
             flat_states.append(flat_state)
         flat_states = jnp.stack(flat_states, axis=0)
         print(flat_states.shape)
@@ -165,7 +163,11 @@ def flatten_obs(
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
         return flat_state, unflattener
-    batch_shape = state.player_x.shape[0] if hasattr(state, 'player_x') else state.paddle_y.shape[0]
+    batch_shape = (
+        state.player_x.shape[0]
+        if hasattr(state, "player_x")
+        else state.paddle_y.shape[0]
+    )
 
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     flat_state = flat_state.reshape(batch_shape, -1)
@@ -193,40 +195,33 @@ def collect_experience_sequential(
     total_steps = 0
     rng = jax.random.PRNGKey(seed)
 
-    # Pong-specific policies
     def pong_left_right_policy(rng):
         """Simple left-right movement policy for Pong"""
         rng, action_key = jax.random.split(rng)
-        
+
         action_prob = jax.random.uniform(action_key)
-        
-        # if action_prob < 0.4:  # 40% chance to move right
-        #     action = 2  # RIGHT
-        # elif action_prob < 0.8:  # 40% chance to move left  
-        #     action = 3  # LEFT
-        # else:  # 20% chance for other actions
+
         action = jax.random.randint(action_key, (), 0, 6)
-            
+
         return action
 
     def pong_tracking_policy(rng, step_count):
         """Policy that alternates between tracking movements"""
         rng, action_key = jax.random.split(rng)
-        
-        # Simple oscillation pattern
+
         cycle = step_count % 60
-        
-        if cycle < 30:  # Move right for 30 steps
+
+        if cycle < 30:
             if jax.random.uniform(action_key) < 0.7:
-                action = 2  # RIGHT
+                action = 2
             else:
                 action = jax.random.randint(action_key, (), 0, 6)
-        else:  # Move left for 30 steps
+        else:
             if jax.random.uniform(action_key) < 0.7:
-                action = 3  # LEFT
+                action = 3
             else:
                 action = jax.random.randint(action_key, (), 0, 6)
-                
+
         return action
 
     def random_pong_policy(rng):
@@ -234,50 +229,21 @@ def collect_experience_sequential(
         rng, action_key = jax.random.split(rng)
         action = jax.random.randint(action_key, (), 0, 6)
         return action
+
     def perfect_policy(obs, rng):
-        '''
-            class EntityPosition(NamedTuple):
-            x: jnp.ndarray
-            y: jnp.ndarray
-            width: jnp.ndarray
-            height: jnp.ndarray
-
-
-        class PongObservation(NamedTuple):
-            player: EntityPosition
-            enemy: EntityPosition
-            ball: EntityPosition
-            score_player: jnp.ndarray
-            score_enemy: jnp.ndarray
-
-        Actions are:
-        0: NOOP
-        1: FIRE
-        2: RIGHT
-        3: LEFT
-        4: RIGHTFIRE
-        5: LEFTFIRE
-        '''
+        
 
         rng, action_key = jax.random.split(rng)
         if jax.random.uniform(action_key) < 0.2:
             action = jax.random.randint(action_key, (), 0, 6)
             return action
 
-
         if obs.player.y[3] > obs.ball.y[3]:
-            return 4 #meaning  down
+            return 4
         if obs.player.y[3] < obs.ball.y[3]:
-            return 3 #meaning up
+            return 3
         if obs.player.y[3] == obs.ball.y[3]:
             return 0
-
-        
-
-
-
-
-
 
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
@@ -287,34 +253,30 @@ def collect_experience_sequential(
             current_state = state
             current_obs = obs
 
-            # rng action key
             rng, action_key = jax.random.split(rng)
 
-            # Choose a random action
             if network and policy_params:
-                # Use policy to select action
+
                 flat_obs, _ = flatten_obs(obs, single_state=True)
                 pi, _ = network.apply(policy_params, flat_obs)
                 action = pi.sample(seed=action_key)
             else:
                 action = perfect_policy(obs, rng)
 
-            # Take a step in the environment
             rng, step_key = jax.random.split(rng)
             next_obs, next_state, reward, done, _ = env.step(state, action)
 
-            # Store the transition
             observations.append(current_obs)
             actions.append(action)
             next_observations.append(next_obs)
             rewards.append(reward)
             dones.append(done)
 
-            # Pong-specific episode boundary detection
             if not episodic_life:
-                # For Pong, you might want to detect score changes or game resets
-                # This will depend on the specific Pong implementation
-                if hasattr(current_state, 'env_state') and hasattr(current_state.env_state, 'death_counter'):
+
+                if hasattr(current_state, "env_state") and hasattr(
+                    current_state.env_state, "death_counter"
+                ):
                     if current_state.env_state.death_counter > 0 and not dead:
                         dead = True
                     if not current_state.env_state.death_counter > 0 and dead:
@@ -333,12 +295,10 @@ def collect_experience_sequential(
                         print("Adding boundary at step", boundaries[-1])
                 break
 
-            # Update state for the next step
             state = next_state
             obs = next_obs
             total_steps += 1
 
-    # Convert to JAX arrays
     actions_array = jnp.array(actions)
     rewards_array = jnp.array(rewards)
     dones_array = jnp.array(dones)
@@ -360,44 +320,32 @@ def train_world_model(
     learning_rate=2e-4,
     batch_size=4,
     num_epochs=100000,
-    sequence_length=8,
+    sequence_length=32,
     episode_boundaries=None,
     frame_stack_size=4,
+    model_scale_factor = 1
 ):
 
-    print(episode_boundaries)
 
     gpu_batch_size = 250
 
     gpu_batch_size = gpu_batch_size // frame_stack_size
 
-    # Calculate normalization statistics from the flattened obs
     state_mean = jnp.mean(obs, axis=0)
     state_std = jnp.std(obs, axis=0) + 1e-8
 
     state_mean = 0
     state_std = 1
 
-    # Store normalization stats for later use
     normalization_stats = {"mean": state_mean, "std": state_std}
 
-    # Normalize obs and next_obs
     normalized_obs = (obs - state_mean) / state_std
     normalized_next_obs = (next_obs - state_mean) / state_std
 
-    # Create sequential batches that respect episode boundaries
     def create_sequential_batches(batch_size=32):
-        """
-        Create batches of sequential data for training
-        Args:
-            batch_size: Number of sequences per batch
-        Returns:
-            List of batches, each containing (state_batch, action_batch, next_state_batch)
-            where each has shape (batch_size, seq_len, feature_dim)
-        """
+
         sequences = []
 
-        # First, collect all sequences
         for i in range(len(episode_boundaries) - 1):
             if i == 0:
                 start_idx = 0
@@ -406,12 +354,11 @@ def train_world_model(
                 start_idx = episode_boundaries[i - 1]
                 end_idx = episode_boundaries[i]
 
-            # Create sequences within this episode with stride for better coverage
             for j in range(
                 0, end_idx - start_idx - sequence_length + 1, sequence_length // 4
             ):
                 if start_idx + j + sequence_length > end_idx:
-                    # Padding strategy for sequences that exceed episode boundary
+
                     padding_length = start_idx + j + sequence_length - end_idx
                     padded_obs = jnp.concatenate(
                         [
@@ -452,17 +399,12 @@ def train_world_model(
 
         return sequences
 
-    
-
-    # Create sequential batches
     batches = create_sequential_batches()
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
 
-    # Split data into training (80%) and validation (20%)
     total_batches = len(batches)
     train_size = int(0.8 * total_batches)
 
-    # Shuffle batches before splitting to ensure random distribution
     rng_split = jax.random.PRNGKey(42)
     indices = jax.random.permutation(rng_split, total_batches)
 
@@ -476,16 +418,15 @@ def train_world_model(
         f"Training batches: {len(train_batches)}, Validation batches: {len(val_batches)}"
     )
 
-    model = MODEL_ARCHITECTURE()
+    model = MODEL_ARCHITECTURE(model_scale_factor)
 
-    # Improved optimizer with learning rate scheduling
     lr_schedule = optax.cosine_decay_schedule(
         init_value=learning_rate,
         decay_steps=num_epochs,
-        alpha=0.1,  # Final learning rate will be 0.1 * initial
+        alpha=0.1,
     )
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),  # Gradient clipping
+        optax.clip_by_global_norm(1.0),
         optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
     )
 
@@ -495,10 +436,8 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    # Pre-initialize LSTM state template
     _, lstm_state_template = model.apply(params, None, dummy_state, dummy_action, None)
 
-    # Loss function
     @jax.jit
     def single_sequence_loss(
         params,
@@ -521,7 +460,6 @@ def train_world_model(
 
             pred_next_state = pred_next_state.squeeze()
 
-            # Standard MSE loss for Pong
             mse_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
 
             return new_lstm_state, mse_loss
@@ -531,7 +469,6 @@ def train_world_model(
 
         return jnp.mean(step_losses)
 
-    # Vectorize loss over batch dimension
     batched_loss_fn = jax.vmap(
         single_sequence_loss, in_axes=(None, 0, 0, 0, None, None, None)
     )
@@ -547,7 +484,7 @@ def train_world_model(
         epoch=0,
         num_epochs=20000,
     ):
-        # Compute loss for all sequences in parallel
+
         def loss_fn(p):
             losses = batched_loss_fn(
                 p,
@@ -587,7 +524,6 @@ def train_world_model(
         )
         return jnp.mean(losses)
 
-    # Convert training and validation batches to arrays
     train_batch_states = jnp.stack([batch[0] for batch in train_batches])
     train_batch_actions = jnp.stack([batch[1] for batch in train_batches])
     train_batch_next_states = jnp.stack([batch[2] for batch in train_batches])
@@ -596,28 +532,24 @@ def train_world_model(
     val_batch_actions = jnp.stack([batch[1] for batch in val_batches])
     val_batch_next_states = jnp.stack([batch[2] for batch in val_batches])
 
-    # Shuffle indices for each epoch
     rng_shuffle = jax.random.PRNGKey(123)
 
-    # Training loop with validation tracking
     best_loss = float("inf")
     patience = 50
     no_improve_count = 0
 
     for epoch in range(num_epochs):
-        # Shuffle data each epoch
+
         rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
         indices = jax.random.permutation(shuffle_key, len(train_batches))
 
-        # Shuffle training data for this epoch
         epoch_shuffle_key = jax.random.fold_in(rng_shuffle, epoch)
         epoch_indices = jax.random.permutation(epoch_shuffle_key, len(train_batches))
-        
+
         shuffled_train_states = train_batch_states[epoch_indices]
         shuffled_train_actions = train_batch_actions[epoch_indices]
         shuffled_train_next_states = train_batch_next_states[epoch_indices]
 
-        # only use gpu_batch_size elements for training
         if shuffled_train_states.shape[0] > gpu_batch_size:
             shuffled_train_states = shuffled_train_states[:gpu_batch_size]
             shuffled_train_actions = shuffled_train_actions[:gpu_batch_size]
@@ -634,7 +566,6 @@ def train_world_model(
             num_epochs,
         )
 
-        # Early stopping
         if train_loss < best_loss:
             best_loss = train_loss
             no_improve_count = 0
@@ -698,6 +629,7 @@ def compare_real_vs_model(
     starting_step: int = 0,
     render_debugging: bool = False,
     frame_stack_size: int = 4,
+    model_scale_factor =4
 ):
 
     if len(obs) == 1:
@@ -713,7 +645,6 @@ def compare_real_vs_model(
         print(
             f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)}"
         )
-        # print(real_obs)
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -727,18 +658,15 @@ def compare_real_vs_model(
 
     def check_lstm_state_health(lstm_state, step):
         if lstm_state is not None:
-            # V2_LSTM returns (lstm1_state, lstm2_state) tuple
+
             lstm1_state, lstm2_state = lstm_state
 
-            # Check first LSTM layer
             hidden1_norm = jnp.linalg.norm(lstm1_state.hidden)
             cell1_norm = jnp.linalg.norm(lstm1_state.cell)
 
-            # Check second LSTM layer
             hidden2_norm = jnp.linalg.norm(lstm2_state.hidden)
             cell2_norm = jnp.linalg.norm(lstm2_state.cell)
 
-            # Check for problems in either layer
             max_norm = max(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
             min_norm = min(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
 
@@ -751,8 +679,8 @@ def compare_real_vs_model(
                     f"Step {step}: LSTM state vanishing - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
                 )
             else:
-                # Only print occasionally when healthy to avoid spam
-                if step % 50 == 0:  # Print every 50 steps when healthy
+
+                if step % 50 == 0:
                     print(
                         f"Step {step}: LSTM states healthy - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
                     )
@@ -773,7 +701,7 @@ def compare_real_vs_model(
         model_data = pickle.load(f)
         dynamics_params = model_data["dynamics_params"]
         normalization_stats = model_data.get("normalization_stats", None)
-    world_model = MODEL_ARCHITECTURE()
+    world_model = MODEL_ARCHITECTURE(model_scale_factor)
 
     pygame.init()
     WIDTH = 160
@@ -781,9 +709,7 @@ def compare_real_vs_model(
     WINDOW_WIDTH = WIDTH * render_scale * 2 + 20
     WINDOW_HEIGHT = HEIGHT * render_scale
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption(
-        "Real Environment vs World Model (Pong)"
-    )
+    pygame.display.set_caption("Real Environment vs World Model (Pong)")
 
     real_surface = pygame.Surface((WIDTH, HEIGHT))
     model_surface = pygame.Surface((WIDTH, HEIGHT))
@@ -791,7 +717,6 @@ def compare_real_vs_model(
     step_count = 0 + starting_step
     clock = pygame.time.Clock()
 
-    # code to get the unflattener
     game = JaxPong()
     env = AtariWrapper(
         game,
@@ -802,35 +727,30 @@ def compare_real_vs_model(
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
 
-    # init the first observation and model observation
     real_obs = obs[0]
-    model_obs = obs[0]  # Start identical
+    model_obs = obs[0]
 
-    # Initialize LSTM state for model predictions
     lstm_state = None
     lstm_real_state = None
     print(obs.shape)
     print(len(obs))
 
     while step_count < min(num_steps, len(obs) - 1):
-        # Use the saved action
+
         action = actions[step_count]
 
-        # Use the saved next state directly instead of environment stepping
         next_real_obs = obs[step_count + 1]
 
-        # Check if we need to reset the model state before making prediction
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
             print("State reset")
-            model_obs = obs[step_count]  # Reset to current real observation
+            model_obs = obs[step_count]
 
-        # Apply model prediction with normalization and LSTM state
         normalized_flattened_model_obs = (model_obs - state_mean) / state_std
 
         if steps_into_future > 0:
-            # Use the stateful model (returns both prediction and new LSTM state)
+
             normalized_model_prediction, lstm_state = world_model.apply(
                 dynamics_params,
                 None,
@@ -841,7 +761,6 @@ def compare_real_vs_model(
         else:
             normalized_model_prediction = normalized_flattened_model_obs
 
-        # Convert model predictions to integers
         unnormalized_model_prediction = jnp.round(
             normalized_model_prediction * state_std + state_mean
         )
@@ -851,7 +770,6 @@ def compare_real_vs_model(
         if steps_into_future > 0:
             debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
 
-        # Rendering stuff start -------------------------------------------------------
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size
         )
@@ -862,23 +780,23 @@ def compare_real_vs_model(
         real_raster = renderer.render(real_base_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
-        
+
         model_raster = renderer.render(model_base_state)
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
-        
+
         screen.fill((0, 0, 0))
-        
+
         scaled_real = pygame.transform.scale(
             real_surface, (WIDTH * render_scale, HEIGHT * render_scale)
         )
         screen.blit(scaled_real, (0, 0))
-        
+
         scaled_model = pygame.transform.scale(
             model_surface, (WIDTH * render_scale, HEIGHT * render_scale)
         )
         screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
-        
+
         font = pygame.font.SysFont(None, 24)
         real_text = font.render("Real Environment", True, (255, 255, 255))
         model_text = font.render("World Model (Pong)", True, (255, 255, 255))
@@ -886,11 +804,7 @@ def compare_real_vs_model(
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
 
-        # Rendering stuff end -------------------------------------------------------
-
-        # Separate prediction just to have the lstm state for the current real trajectory at all times
-        # This tracks the "ground truth" LSTM state
-        real_obs = obs[step_count]  # Current real observation
+        real_obs = obs[step_count]
         if steps_into_future > 0:
             normalized_real_obs = (real_obs - state_mean) / state_std
             _, lstm_real_state = world_model.apply(
@@ -901,7 +815,6 @@ def compare_real_vs_model(
                 lstm_real_state,
             )
 
-        # Reset LSTM state if we're at a reset point
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
@@ -914,14 +827,10 @@ def compare_real_vs_model(
     print("Comparison completed")
 
 
-
-
-
-
-
 def main():
 
     frame_stack_size = 1
+    model_scale_factor = 4
 
     game = JaxPong()
     env = AtariWrapper(
@@ -934,14 +843,13 @@ def main():
 
     save_path = f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"
     experience_data_path = "experience_data_LSTM_pong.pkl"
-    model = MODEL_ARCHITECTURE()
+    model = MODEL_ARCHITECTURE(model_scale_factor)
     normalization_stats = None
 
     experience_its = 1
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
-        # Collect experience data (AtariWrapper handles frame stacking automatically)
 
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
@@ -966,11 +874,9 @@ def main():
                 )
             print(f"Experience data saved to {experience_path}")
 
-            # Explicitly delete large variables to free memory
             del obs, actions, rewards, boundaries, next_obs
-            gc.collect()  # Force garbage collection
+            gc.collect()
 
-    # load all experience data into memory
     obs = []
     actions = []
     next_obs = []
@@ -986,8 +892,7 @@ def main():
     else:
         print("No existing model found. Training a new model...")
 
-        # Load experience data for training
-        for i in range(0, experience_its):  # reserve last for testing
+        for i in range(0, experience_its):
             experience_path = "experience_data_LSTM_pong" + "_" + str(i) + ".pkl"
             with open(experience_path, "rb") as f:
                 saved_data = pickle.load(f)
@@ -995,9 +900,9 @@ def main():
                 actions.extend(saved_data["actions"])
                 next_obs.extend(saved_data["next_obs"])
                 rewards.extend(saved_data["rewards"])
-                # Calculate the offset from previous data
+
                 offset = boundaries[-1] if boundaries else 0
-                # Add offset to each boundary before extending
+
                 adjusted_boundaries = [b + offset for b in saved_data["boundaries"]]
                 boundaries.extend(adjusted_boundaries)
 
@@ -1006,7 +911,6 @@ def main():
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
 
-        # Train world model with improved hyperparameters
         dynamics_params, training_info = train_world_model(
             obs_array,
             actions_array,
@@ -1014,10 +918,10 @@ def main():
             rewards_array,
             episode_boundaries=boundaries,
             frame_stack_size=frame_stack_size,
+            model_scale_factor=model_scale_factor
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
-        # Save the model and scaling factor
         with open(save_path, "wb") as f:
             pickle.dump(
                 {
@@ -1050,17 +954,13 @@ def main():
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=30,
+            steps_into_future=100,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
+            model_scale_factor=model_scale_factor
         )
 
 
 if __name__ == "__main__":
-    # rtpt = RTPT(
-    #     name_initials="FH", experiment_name="TestingIterateAgent_Pong", max_iterations=3
-    # )
 
-    # # Start the RTPT tracking
-    # rtpt.start()
     main()

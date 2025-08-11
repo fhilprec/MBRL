@@ -526,7 +526,6 @@ OBSERVATION_INDEX_MAP = {
 }
 
 
-
 from jaxatari.games.jax_pong import PongState, PongObservation, EntityPosition
 
 
@@ -538,25 +537,25 @@ def pong_flat_observation_to_state(
 ) -> PongState:
     """
     Convert a flattened observation back to a PongState for rendering.
-    
+
     Args:
         obs: Flattened observation array (14 elements for Pong)
         unflattener: Function to unflatten the observation
         rng_key: Random key (not used for Pong but kept for compatibility)
         frame_stack_size: Number of stacked frames
-        
+
     Returns:
         PongState object that can be used for rendering
     """
-    
+
     if frame_stack_size > 1:
         # For frame stacking, unflatten first then take the last frame
         obs_structured = unflattener(obs)
         obs_structured = jax.tree_util.tree_map(lambda x: x[-1], obs_structured)
-        
+
         if rng_key is None:
             rng_key = jax.random.PRNGKey(0)
-            
+
         # Extract values from structured observation
         player_y = obs_structured.player.y
         ball_x = obs_structured.ball.x
@@ -564,55 +563,61 @@ def pong_flat_observation_to_state(
         enemy_y = obs_structured.enemy.y
         player_score = obs_structured.score_player
         enemy_score = obs_structured.score_enemy
-        
+
     else:
         # For single frame, unflatten the observation
         obs_structured = unflattener(obs)
-        
+
         if rng_key is None:
             rng_key = jax.random.PRNGKey(0)
-            
+
         # Extract player position - handle both scalar and array cases
         player_y = (
             obs_structured.player.y[0]
-            if hasattr(obs_structured.player.y, "__len__") and len(obs_structured.player.y) > 0
+            if hasattr(obs_structured.player.y, "__len__")
+            and len(obs_structured.player.y) > 0
             else obs_structured.player.y
         )
-        
+
         # Extract ball position
         ball_x = (
             obs_structured.ball.x[0]
-            if hasattr(obs_structured.ball.x, "__len__") and len(obs_structured.ball.x) > 0
+            if hasattr(obs_structured.ball.x, "__len__")
+            and len(obs_structured.ball.x) > 0
             else obs_structured.ball.x
         )
         ball_y = (
             obs_structured.ball.y[0]
-            if hasattr(obs_structured.ball.y, "__len__") and len(obs_structured.ball.y) > 0
+            if hasattr(obs_structured.ball.y, "__len__")
+            and len(obs_structured.ball.y) > 0
             else obs_structured.ball.y
         )
-        
+
         # Extract enemy position
         enemy_y = (
             obs_structured.enemy.y[0]
-            if hasattr(obs_structured.enemy.y, "__len__") and len(obs_structured.enemy.y) > 0
+            if hasattr(obs_structured.enemy.y, "__len__")
+            and len(obs_structured.enemy.y) > 0
             else obs_structured.enemy.y
         )
-        
+
         # Extract scores
         player_score = (
             obs_structured.score_player[0]
-            if hasattr(obs_structured.score_player, "__len__") and len(obs_structured.score_player) > 0
+            if hasattr(obs_structured.score_player, "__len__")
+            and len(obs_structured.score_player) > 0
             else obs_structured.score_player
         )
         enemy_score = (
             obs_structured.score_enemy[0]
-            if hasattr(obs_structured.score_enemy, "__len__") and len(obs_structured.score_enemy) > 0
+            if hasattr(obs_structured.score_enemy, "__len__")
+            and len(obs_structured.score_enemy) > 0
             else obs_structured.score_enemy
         )
-    
+
     # Create a PongState with reasonable defaults for unobservable state variables
     # Since we only have observation data, we need to make educated guesses for internal state
-    
+
     return PongState(
         player_y=jnp.array(player_y, dtype=jnp.int32),
         player_speed=jnp.array(0, dtype=jnp.int32),  # Default to 0, not observable
@@ -620,24 +625,25 @@ def pong_flat_observation_to_state(
         ball_y=jnp.array(ball_y, dtype=jnp.int32),
         enemy_y=jnp.array(enemy_y, dtype=jnp.int32),
         enemy_speed=jnp.array(0, dtype=jnp.int32),  # Default to 0, not observable
-        ball_vel_x=jnp.array(1, dtype=jnp.int32),   # Default velocity, not observable
-        ball_vel_y=jnp.array(1, dtype=jnp.int32),   # Default velocity, not observable
+        ball_vel_x=jnp.array(1, dtype=jnp.int32),  # Default velocity, not observable
+        ball_vel_y=jnp.array(1, dtype=jnp.int32),  # Default velocity, not observable
         player_score=jnp.array(player_score, dtype=jnp.int32),
         enemy_score=jnp.array(enemy_score, dtype=jnp.int32),
-        step_counter=jnp.array(0, dtype=jnp.int32), # Default to 0, not observable
-        acceleration_counter=jnp.array(0, dtype=jnp.int32), # Default to 0, not observable
-        buffer=jnp.array(player_y, dtype=jnp.int32), # Use player_y as buffer default
+        step_counter=jnp.array(0, dtype=jnp.int32),  # Default to 0, not observable
+        acceleration_counter=jnp.array(
+            0, dtype=jnp.int32
+        ),  # Default to 0, not observable
+        buffer=jnp.array(player_y, dtype=jnp.int32),  # Use player_y as buffer default
     )
 
 
 def flat_observation_to_state_direct(
-    obs_flat: jnp.ndarray,
-    frame_stack_size: int = 1
+    obs_flat: jnp.ndarray, frame_stack_size: int = 1
 ) -> PongState:
     """
     Directly convert flattened observation array to PongState without unflattener.
     This is useful when you have the raw flattened array.
-    
+
     Pong observation structure (14 elements):
     0: player.x (140)
     1: player.y (variable)
@@ -654,16 +660,16 @@ def flat_observation_to_state_direct(
     12: score_player (0-21)
     13: score_enemy (0-21)
     """
-    
+
     if frame_stack_size > 1:
         # For frame stacking, take the last frame
         # obs_flat shape should be (frame_stack_size * 14,)
         elements_per_frame = 14
         last_frame_start = (frame_stack_size - 1) * elements_per_frame
-        obs_current = obs_flat[last_frame_start:last_frame_start + elements_per_frame]
+        obs_current = obs_flat[last_frame_start : last_frame_start + elements_per_frame]
     else:
         obs_current = obs_flat
-    
+
     # Extract values directly from the flattened array
     player_y = obs_current[1].astype(jnp.int32)
     ball_x = obs_current[8].astype(jnp.int32)
@@ -671,7 +677,7 @@ def flat_observation_to_state_direct(
     enemy_y = obs_current[5].astype(jnp.int32)
     player_score = obs_current[12].astype(jnp.int32)
     enemy_score = obs_current[13].astype(jnp.int32)
-    
+
     return PongState(
         player_y=player_y,
         player_speed=jnp.array(0, dtype=jnp.int32),
@@ -691,20 +697,20 @@ def flat_observation_to_state_direct(
 
 # Pong observation index mapping for debugging
 PONG_OBSERVATION_INDEX_MAP = {
-    0: "player_x",           # Always 140 (PLAYER_X constant)
-    1: "player_y",           # Variable player paddle position
-    2: "player_width",       # Always 4 (PLAYER_SIZE[0])
-    3: "player_height",      # Always 16 (PLAYER_SIZE[1])
-    4: "enemy_x",            # Always 16 (ENEMY_X constant)
-    5: "enemy_y",            # Variable enemy paddle position
-    6: "enemy_width",        # Always 4 (ENEMY_SIZE[0])
-    7: "enemy_height",       # Always 16 (ENEMY_SIZE[1])
-    8: "ball_x",             # Variable ball x position
-    9: "ball_y",             # Variable ball y position
-    10: "ball_width",        # Always 2 (BALL_SIZE[0])
-    11: "ball_height",       # Always 4 (BALL_SIZE[1])
-    12: "score_player",      # Player score (0-21)
-    13: "score_enemy",       # Enemy score (0-21)
+    0: "player_x",  # Always 140 (PLAYER_X constant)
+    1: "player_y",  # Variable player paddle position
+    2: "player_width",  # Always 4 (PLAYER_SIZE[0])
+    3: "player_height",  # Always 16 (PLAYER_SIZE[1])
+    4: "enemy_x",  # Always 16 (ENEMY_X constant)
+    5: "enemy_y",  # Variable enemy paddle position
+    6: "enemy_width",  # Always 4 (ENEMY_SIZE[0])
+    7: "enemy_height",  # Always 16 (ENEMY_SIZE[1])
+    8: "ball_x",  # Variable ball x position
+    9: "ball_y",  # Variable ball y position
+    10: "ball_width",  # Always 2 (BALL_SIZE[0])
+    11: "ball_height",  # Always 4 (BALL_SIZE[1])
+    12: "score_player",  # Player score (0-21)
+    13: "score_enemy",  # Enemy score (0-21)
 }
 
 
@@ -712,19 +718,21 @@ def get_reward_from_pong_observation(obs_flat: jnp.ndarray) -> float:
     """
     Extract reward from Pong observation.
     For Pong, reward is typically the score difference.
-    
+
     Args:
         obs_flat: Flattened observation array
-        
+
     Returns:
         Current reward (score difference)
     """
     if len(obs_flat) < 14:
-        raise ValueError(f"Pong observation must have at least 14 elements, got {len(obs_flat)}")
-    
+        raise ValueError(
+            f"Pong observation must have at least 14 elements, got {len(obs_flat)}"
+        )
+
     player_score = obs_flat[12]
     enemy_score = obs_flat[13]
-    
+
     # Return score difference (positive when player is winning)
     return player_score - enemy_score
 
@@ -732,22 +740,22 @@ def get_reward_from_pong_observation(obs_flat: jnp.ndarray) -> float:
 def debug_pong_observation(obs_flat: jnp.ndarray, step: int = 0):
     """
     Debug function to print readable Pong observation values.
-    
+
     Args:
         obs_flat: Flattened observation array
         step: Current step number for logging
     """
     print(f"\n=== Pong Observation Debug (Step {step}) ===")
-    
+
     for i, value in enumerate(obs_flat[:14]):  # Only print first 14 elements
         element_name = PONG_OBSERVATION_INDEX_MAP.get(i, f"unknown_{i}")
         print(f"Index {i:2d} ({element_name:15s}): {float(value):8.2f}")
-    
+
     # Calculate and print derived values
     player_score = obs_flat[12]
     enemy_score = obs_flat[13]
     score_diff = player_score - enemy_score
-    
+
     print(f"\nDerived values:")
     print(f"Score difference (reward): {score_diff:6.2f}")
     print(f"Player winning: {'Yes' if score_diff > 0 else 'No'}")
@@ -757,13 +765,13 @@ def debug_pong_observation(obs_flat: jnp.ndarray, step: int = 0):
 def validate_pong_state_conversion(obs_flat: jnp.ndarray, converted_state: PongState):
     """
     Validate that the converted state matches the original observation.
-    
+
     Args:
         obs_flat: Original flattened observation
         converted_state: Converted PongState
     """
     print("=== Pong State Conversion Validation ===")
-    
+
     # Check key observable values
     checks = [
         ("player_y", obs_flat[1], converted_state.player_y),
@@ -773,7 +781,7 @@ def validate_pong_state_conversion(obs_flat: jnp.ndarray, converted_state: PongS
         ("player_score", obs_flat[12], converted_state.player_score),
         ("enemy_score", obs_flat[13], converted_state.enemy_score),
     ]
-    
+
     all_valid = True
     for name, original, converted in checks:
         match = jnp.allclose(original, converted)
@@ -781,8 +789,8 @@ def validate_pong_state_conversion(obs_flat: jnp.ndarray, converted_state: PongS
         print(f"{status} {name:12s}: {float(original):8.2f} -> {float(converted):8.2f}")
         if not match:
             all_valid = False
-    
+
     print(f"\nOverall validation: {'PASSED' if all_valid else 'FAILED'}")
     print("=" * 45)
-    
+
     return all_valid
