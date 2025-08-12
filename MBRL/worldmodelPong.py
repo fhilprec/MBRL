@@ -954,7 +954,7 @@ def main():
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=100,
+            steps_into_future=10,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
             model_scale_factor=model_scale_factor
