@@ -10,7 +10,8 @@ from typing import Tuple, Any, Dict
 from jax import random
 from jax import lax
 
-from worldmodel import MODEL_ARCHITECTURE, get_reward_from_observation
+from model_architectures import PongLSTM
+from worldmodelPong import get_reward_from_ball_position
 
 
 def create_actor_critic_network(obs_shape: Tuple[int, ...], action_dim: int):
@@ -81,10 +82,12 @@ def generate_imagined_rollouts(
     # Extract normalization stats
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
-    world_model = MODEL_ARCHITECTURE()
+    world_model = PongLSTM(4)
 
     def single_trajectory_rollout(cur_obs, subkey):
         """Generate a single trajectory starting from cur_obs."""
+
+        print(cur_obs.shape)
 
         def rollout_step(carry, x):
             key, obs, lstm_state = carry
@@ -107,12 +110,14 @@ def generate_imagined_rollouts(
                 lstm_state,
             )
 
-            # Denormalize
+            # Denormalize and ensure consistent dtype
             next_obs = jnp.round(normalized_next_obs * state_std + state_mean)
             next_obs = next_obs.squeeze()
+            # Ensure next_obs has the same dtype as input obs
+            next_obs = next_obs.astype(obs.dtype)
 
             # Get reward
-            reward = get_reward_from_observation(next_obs)
+            reward = get_reward_from_ball_position(next_obs)
 
             step_data = (next_obs, reward, action, value, log_prob)
             new_carry = (key, next_obs, new_lstm_state)
@@ -120,11 +125,11 @@ def generate_imagined_rollouts(
             return new_carry, step_data
 
         # Initialize LSTM state properly to maintain consistent pytree structure
-        initial_reward = get_reward_from_observation(cur_obs)
+        initial_reward = 0.0  # Make sure this is float
 
         # Get initial LSTM state structure by doing a dummy forward pass
         dummy_normalized_obs = (cur_obs - state_mean) / state_std
-        dummy_action = jnp.zeros(1)  # Adjust size based on your action space
+        dummy_action = jnp.zeros(1, dtype=jnp.int32)  # Ensure correct dtype
         _, initial_lstm_state = world_model.apply(
             dynamics_params,
             None,
@@ -132,6 +137,9 @@ def generate_imagined_rollouts(
             dummy_action,
             None,
         )
+
+        # Ensure cur_obs has the right dtype (float32)
+        cur_obs = cur_obs.astype(jnp.float32)
 
         # Use the properly structured LSTM state
         init_carry = (subkey, cur_obs, initial_lstm_state)
@@ -150,7 +158,7 @@ def generate_imagined_rollouts(
         observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
         rewards = jnp.concatenate([jnp.array([initial_reward]), rewards_seq])
 
-        # Initial action/value/log_prob are placeholders
+        # Initial action/value/log_prob are placeholders with correct dtypes
         init_action = jnp.zeros_like(actions_seq[0])
         actions = jnp.concatenate([init_action[None, ...], actions_seq])
         values = jnp.concatenate([jnp.array([0.0]), values_seq])
@@ -176,7 +184,7 @@ def train_actor_critic(
     values: jnp.ndarray,
     log_probs: jnp.ndarray,
     num_epochs: int = 10,
-    learning_rate: float = 3e-4,
+    learning_rate: float = 1e-4,  # Reduced learning rate
     key: jax.random.PRNGKey = None,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
@@ -186,24 +194,7 @@ def train_actor_critic(
     max_grad_norm: float = 0.5,
     num_minibatches: int = 4,
 ) -> Tuple[Any, Dict]:
-    """
-    Train the actor-critic network on imagined rollouts.
-
-    Args:
-        params: Current network parameters
-        network: The ActorCritic network
-        observations: Rollout observations [rollout_length, num_rollouts, obs_dim]
-        actions: Actions taken [rollout_length, num_rollouts]
-        rewards: Rewards received [rollout_length, num_rollouts]
-        values: Value estimates [rollout_length, num_rollouts]
-        log_probs: Log probabilities of actions [rollout_length, num_rollouts]
-        num_epochs: Number of training epochs
-        learning_rate: Learning rate
-        key: Random key
-
-    Returns:
-        Updated parameters and training metrics
-    """
+    """Train the actor-critic network on imagined rollouts."""
     if key is None:
         key = jax.random.PRNGKey(42)
 
@@ -222,43 +213,61 @@ def train_actor_critic(
 
     # Calculate advantages using GAE
     def calculate_gae(rewards, values, gamma, gae_lambda):
-        """Calculate Generalized Advantage Estimation."""
+        """Calculate Generalized Advantage Estimation correctly."""
+        # rewards and values shape: [rollout_length, num_rollouts]
         rollout_length, num_rollouts = rewards.shape
+        
+        # Initialize advantages
         advantages = jnp.zeros_like(rewards)
-
-        # Bootstrap value for the last step (assume 0 for terminal states)
-        next_value = jnp.zeros(num_rollouts)
-        gae = jnp.zeros(num_rollouts)
-
-        def gae_step(carry, step_data):
-            gae, next_value = carry
-            reward, value, done = step_data
-
-            # Assume done=False for simplicity in imagined rollouts
-            done = jnp.zeros_like(reward)
-
-            delta = reward + gamma * next_value * (1 - done) - value
-            gae = delta + gamma * gae_lambda * (1 - done) * gae
-
-            return (gae, value), gae
-
-        # Reverse scan through the trajectory
-        step_data = (rewards, values, jnp.zeros_like(rewards))
-        _, advantages = jax.lax.scan(
-            gae_step, (gae, next_value), step_data, reverse=True
+        
+        # Start from the last timestep and work backwards
+        last_gae = jnp.zeros(num_rollouts)
+        
+        def gae_step(i, carry):
+            advantages, last_gae = carry
+            
+            # Current timestep values
+            reward = rewards[i]
+            value = values[i]
+            
+            # Next value (0 for last timestep, assuming episode ends)
+            next_value = jnp.where(i == rollout_length - 1, 
+                                 jnp.zeros(num_rollouts), 
+                                 values[i + 1])
+            
+            # TD error
+            delta = reward + gamma * next_value - value
+            
+            # GAE
+            last_gae = delta + gamma * gae_lambda * last_gae
+            advantages = advantages.at[i].set(last_gae)
+            
+            return (advantages, last_gae)
+        
+        # Iterate backwards through time
+        advantages, _ = jax.lax.fori_loop(
+            0, rollout_length, 
+            lambda i, carry: gae_step(rollout_length - 1 - i, carry),
+            (advantages, last_gae)
         )
-
+        
         return advantages
 
     advantages = calculate_gae(rewards, values, gamma, gae_lambda)
     targets = advantages + values
 
-    # Flatten batch dimensions
+    # Add debugging information
+    print(f"Rewards stats - Mean: {rewards.mean():.4f}, Std: {rewards.std():.4f}, Min: {rewards.min():.4f}, Max: {rewards.max():.4f}")
+    print(f"Values stats - Mean: {values.mean():.4f}, Std: {values.std():.4f}, Min: {values.min():.4f}, Max: {values.max():.4f}")
+    print(f"Targets stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}, Min: {targets.min():.4f}, Max: {targets.max():.4f}")
+    print(f"Advantages stats - Mean: {advantages.mean():.4f}, Std: {advantages.std():.4f}")
+
+    # Flatten batch dimensions FIRST, then normalize
     batch_size = observations.shape[0] * observations.shape[1]
     observations_flat = observations.reshape(batch_size, -1)
     actions_flat = actions.reshape(batch_size)
     advantages_flat = advantages.reshape(batch_size)
-    targets_flat = targets.reshape(batch_size)
+    targets_flat = targets.reshape(batch_size)  # Flatten before normalization
     old_log_probs_flat = log_probs.reshape(batch_size)
     old_values_flat = values.reshape(batch_size)
 
@@ -267,13 +276,18 @@ def train_actor_critic(
         advantages_flat.std() + 1e-8
     )
 
+    # Clip targets to prevent extreme values
+    targets_clipped = jnp.clip(targets_flat, -10.0, 10.0)
+
     def loss_fn(params, obs, actions, advantages, targets, old_log_probs, old_values):
         """Compute PPO loss."""
         # Forward pass
         pi, value = network.apply(params, obs)
         log_prob = pi.log_prob(actions)
 
-        # Value loss
+        # Ensure shapes match for value loss calculation
+
+        # Value loss with clipped predictions
         value_pred_clipped = old_values + jnp.clip(
             value - old_values, -clip_eps, clip_eps
         )
@@ -311,7 +325,7 @@ def train_actor_critic(
         obs_shuffled = observations_flat[perm]
         actions_shuffled = actions_flat[perm]
         advantages_shuffled = advantages_flat[perm]
-        targets_shuffled = targets_flat[perm]
+        targets_shuffled = targets_clipped[perm]  # Use clipped targets
         old_log_probs_shuffled = old_log_probs_flat[perm]
         old_values_shuffled = old_values_flat[perm]
 
@@ -349,6 +363,7 @@ def train_actor_critic(
             lambda *x: jnp.mean(jnp.array(x)), *epoch_metrics
         )
         metrics_history.append(epoch_avg_metrics)
+        print(epoch_avg_metrics)
 
     # Average final metrics
     final_metrics = jax.tree.map(lambda *x: jnp.mean(jnp.array(x)), *metrics_history)

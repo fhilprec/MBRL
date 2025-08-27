@@ -23,7 +23,31 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 
-def get_reward_from_observation(obs):
+
+
+
+
+def get_reward_from_ball_position(obs):
+    # Use much smaller reward values and check for actual scoring
+    # These indices might need adjustment based on your observation space
+    ball_x = obs[8]
+    left_paddle_x = obs[4] 
+    right_paddle_x = obs[0]
+    
+    # Only give rewards when ball actually goes past paddles (scoring)
+    # Most of the time, return 0
+    return jnp.where(
+        ball_x < left_paddle_x - 5,  # Ball clearly past left paddle
+        1.0,  # Player scores
+        jnp.where(
+            ball_x > right_paddle_x + 5,  # Ball clearly past right paddle
+            -1.0,  # Opponent scores
+            0.0   # Game continues
+        )
+    )
+
+
+def get_reward_from_observation_score(obs):
     """Extract reward from Pong observation - adjust index as needed for Pong"""
     if len(obs) < 100:
         raise ValueError(f"Observation must have sufficient elements, got {len(obs)}")
@@ -317,7 +341,7 @@ def train_world_model(
     actions,
     next_obs,
     rewards,
-    learning_rate=2e-4,
+    learning_rate=1e-4,
     batch_size=4,
     num_epochs=100000,
     sequence_length=32,
@@ -769,6 +793,9 @@ def compare_real_vs_model(
 
         if steps_into_future > 0:
             debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
+
+
+        print(reward_from_ball_position(real_obs))
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size
