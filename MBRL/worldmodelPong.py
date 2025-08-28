@@ -653,7 +653,8 @@ def compare_real_vs_model(
     starting_step: int = 0,
     render_debugging: bool = False,
     frame_stack_size: int = 4,
-    model_scale_factor =4
+    model_scale_factor =4,
+    model_path = None
 ):
 
     if len(obs) == 1:
@@ -713,13 +714,14 @@ def compare_real_vs_model(
     state_std = normalization_stats["std"]
 
     renderer = PongRenderer()
-    if len(sys.argv) > 4 and sys.argv[4].startswith("check"):
-        model_path = sys.argv[4]
-    else:
-        if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"):
-            model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"
+    if not model_path:
+        if len(sys.argv) > 4 and sys.argv[4].startswith("check"):
+            model_path = sys.argv[4]
         else:
-            model_path = "model_pong.pkl"
+            if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"):
+                model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"
+            else:
+                model_path = "model_pong.pkl"
 
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
@@ -795,7 +797,7 @@ def compare_real_vs_model(
             debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
 
 
-        print(reward_from_ball_position(real_obs))
+       
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size
