@@ -28,21 +28,26 @@ from model_architectures import *
 
 
 def get_reward_from_ball_position(obs):
-    # Use much smaller reward values and check for actual scoring
-    # These indices might need adjustment based on your observation space
+    """
+    Give rewards based on ball position relative to paddles.
+    obs[8] = ball_x, obs[4] = left_paddle_x, obs[0] = right_paddle_x
+    """
     ball_x = obs[8]
     left_paddle_x = obs[4] 
     right_paddle_x = obs[0]
     
-    # Only give rewards when ball actually goes past paddles (scoring)
-    # Most of the time, return 0
+    # Give small rewards for ball position relative to center
+    # Reward when ball is moving toward opponent's side
+    center_x = (left_paddle_x + right_paddle_x) / 2
+    
+    # Simple reward: positive when ball is on opponent's side
     return jnp.where(
-        ball_x < left_paddle_x - 5,  # Ball clearly past left paddle
-        1.0,  # Player scores
+        ball_x > center_x + 10,  # Ball clearly on right side
+        0.1,
         jnp.where(
-            ball_x > right_paddle_x + 5,  # Ball clearly past right paddle
-            -1.0,  # Opponent scores
-            0.0   # Game continues
+            ball_x < center_x - 10,  # Ball clearly on left side  
+            -0.1,
+            0.0  # Ball in middle
         )
     )
 
@@ -74,7 +79,6 @@ if len(sys.argv) > 1:
     else:
         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
 else:
-
     MODEL_ARCHITECTURE = V2_LSTM
 
 
