@@ -114,6 +114,59 @@ def V2_LSTM(model_scale_factor=1):
     return hk.transform(forward)
 
 
+def PongActionAwareLSTM(model_scale_factor=1):
+    """LSTM that explicitly learns action effects"""
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+        
+        # Process action more explicitly
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+        
+        # Separate state and action processing
+        state_features = hk.Linear(int(256 * model_scale_factor))(flat_state)
+        state_features = jax.nn.relu(state_features)
+        
+        action_features = hk.Linear(int(64 * model_scale_factor))(action_one_hot)
+        action_features = jax.nn.relu(action_features)
+        action_features = hk.Linear(int(64 * model_scale_factor))(action_features)
+        action_features = jax.nn.relu(action_features)
+        
+        # Combine with attention to action
+        combined = jnp.concatenate([state_features, action_features], axis=-1)
+        
+        x = hk.Linear(int(512 * model_scale_factor))(combined)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(256 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+
+        lstm = hk.LSTM(int(256 * model_scale_factor))
+        if lstm_state is None:
+            lstm_state = lstm.initial_state(batch_size)
+
+        lstm_out, new_lstm_state = lstm(x, lstm_state)
+        
+        # Predict state change (delta) instead of full state
+        delta = hk.Linear(state.shape[-1])(lstm_out)
+        
+        # Apply action-dependent scaling
+        action_scale = hk.Linear(state.shape[-1])(action_features)
+        action_scale = jax.nn.sigmoid(action_scale) * 0.2  # Scale factor 0-0.2
+        
+        scaled_delta = delta * (0.1 + action_scale)
+        prediction = flat_state + scaled_delta
+
+        return prediction, new_lstm_state
+
+    return hk.transform(forward)
+
 def V2_NO_SEP(model_scale_factor=1):
     def forward(state, action, lstm_state=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
@@ -282,6 +335,73 @@ def PongLSTM(model_scale_factor=1):
 
     return hk.transform(forward)
 
+
+
+def PongMLP(model_scale_factor=1):
+    def forward(state, action, lstm_state=None):
+
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+
+        x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
+
+        x = hk.Linear(int(256 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(512 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(256 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+
+        prediction = hk.Linear(state.shape[-1])(x)
+        return prediction, None
+
+    return hk.transform(forward)
+
+
+def PongMLP2(model_scale_factor=1):
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+
+        x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
+
+        # Deeper network for better feature extraction
+        x = hk.Linear(int(512 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(1024 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(512 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(256 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+
+        # Predict change rather than full state
+        delta = hk.Linear(state.shape[-1])(x)
+        
+        # Add residual connection for stability
+        prediction = flat_state + 0.1 * delta
+        
+        return prediction, None
+
+    return hk.transform(forward)
 
 class SimpleDreamerState(NamedTuple):
     """Simplified state for easier integration"""
@@ -481,4 +601,123 @@ def PongLSTMFixed(model_scale_factor=1):
 
         return prediction, new_lstm_state
 
+    return hk.transform(forward)
+
+
+
+
+
+
+def PongDreamerRSSM(model_scale_factor=1):
+    """Simplified Dreamer RSSM implementation for Pong"""
+    
+    def forward(state, action, rssm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+        
+        # Flatten state handling
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state = state
+            
+        # One-hot encode action
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+        
+        # RSSM parameters
+        deter_size = int(128 * model_scale_factor)  # Deterministic state size
+        stoch_size = int(32 * model_scale_factor)   # Stochastic state size
+        hidden_size = int(128 * model_scale_factor)
+        
+        # Initialize RSSM state if None
+        if rssm_state is None:
+            deter = jnp.zeros((batch_size, deter_size))
+            stoch = jnp.zeros((batch_size, stoch_size))
+            rssm_state = {'deter': deter, 'stoch': stoch}
+        else:
+            deter = rssm_state['deter']
+            stoch = rssm_state['stoch']
+            
+        # === PRIOR STEP (Imagination) ===
+        # Combine previous stochastic state with action
+        prior_input = jnp.concatenate([stoch, action_one_hot], axis=-1)
+        
+        # Process through MLP before GRU
+        x = hk.Linear(hidden_size)(prior_input)
+        x = jax.nn.elu(x)
+        
+        # GRU cell for deterministic state
+        gru = hk.GRU(deter_size)
+        new_deter, _ = gru(x, deter)
+        
+        # Generate prior distribution parameters
+        prior_hidden = hk.Linear(hidden_size)(new_deter)
+        prior_hidden = jax.nn.elu(prior_hidden)
+        
+        # Split into mean and std for stochastic state
+        prior_params = hk.Linear(2 * stoch_size)(prior_hidden)
+        prior_mean, prior_std_logit = jnp.split(prior_params, 2, axis=-1)
+        prior_std = jax.nn.softplus(prior_std_logit) + 0.1
+        
+        # Sample from prior - use hk.next_rng_key() instead of manual key
+        rng = hk.next_rng_key()
+        prior_stoch = prior_mean + prior_std * jax.random.normal(rng, prior_mean.shape)
+        
+        # === POSTERIOR STEP (Observation update) ===
+        # Encode current observation
+        obs_features = hk.Linear(int(256 * model_scale_factor))(flat_state)
+        obs_features = jax.nn.elu(obs_features)
+        obs_features = hk.Linear(int(128 * model_scale_factor))(obs_features)
+        obs_features = jax.nn.elu(obs_features)
+        
+        # Combine deterministic state with observation features
+        post_input = jnp.concatenate([new_deter, obs_features], axis=-1)
+        post_hidden = hk.Linear(hidden_size)(post_input)
+        post_hidden = jax.nn.elu(post_hidden)
+        
+        # Generate posterior distribution parameters
+        post_params = hk.Linear(2 * stoch_size)(post_hidden)
+        post_mean, post_std_logit = jnp.split(post_params, 2, axis=-1)
+        post_std = jax.nn.softplus(post_std_logit) + 0.1
+        
+        # Sample from posterior
+        rng2 = hk.next_rng_key()
+        post_stoch = post_mean + post_std * jax.random.normal(rng2, post_mean.shape)
+        
+        # === DECODER ===
+        # Combine deterministic and stochastic states for feature
+        feature = jnp.concatenate([new_deter, post_stoch], axis=-1)
+        
+        # Decode to next state prediction
+        decoded = hk.Linear(int(512 * model_scale_factor))(feature)
+        decoded = jax.nn.elu(decoded)
+        decoded = hk.Linear(int(256 * model_scale_factor))(decoded)
+        decoded = jax.nn.elu(decoded)
+        
+        # Output layer
+        prediction = hk.Linear(flat_state.shape[-1])(decoded)
+        
+        # Add residual connection
+        prediction = flat_state + 0.1 * prediction
+        
+        # KL divergence loss between posterior and prior (for training)
+        kl_loss = 0.5 * jnp.sum(
+            (post_mean - prior_mean) ** 2 / (prior_std ** 2) +
+            (post_std ** 2) / (prior_std ** 2) - 1 - 
+            2 * jnp.log(post_std / prior_std), axis=-1
+        )
+        
+        # New RSSM state
+        new_rssm_state = {
+            'deter': new_deter,
+            'stoch': post_stoch,
+            'kl_loss': kl_loss,
+            'prior_mean': prior_mean,
+            'prior_std': prior_std,
+            'post_mean': post_mean,
+            'post_std': post_std
+        }
+        
+        return prediction, new_rssm_state
+    
     return hk.transform(forward)

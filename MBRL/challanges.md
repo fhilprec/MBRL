@@ -8,3 +8,9 @@ python MBRL/worldmodelTransformer.py Transformer render
 reward hardcoden
 smaller rollout length 10
 actor critic from dreamer paper https://arxiv.org/pdf/2010.02193
+
+
+
+
+
+Pong mit perfect Policy trainiert -> worldmodel lernt den Ball mit der Kelle zu tracken anstatt den Actions zu folgen

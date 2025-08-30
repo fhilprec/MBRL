@@ -19,6 +19,8 @@ from worldmodelPong import compare_real_vs_model
 from model_architectures import PongLSTM
 from worldmodelPong import get_reward_from_ball_position
 
+SEED = 42
+
 
 def create_dreamerv2_actor(action_dim: int):
     """Create DreamerV2 Actor network with ~1M parameters and ELU activations."""
@@ -139,6 +141,7 @@ def generate_imagined_rollouts(
             key, action_key = jax.random.split(key)
             pi = actor_network.apply(actor_params, obs)
             action = pi.sample(seed=action_key)
+            action = 4
             log_prob = pi.log_prob(action)
             
             # Get value from critic
@@ -211,6 +214,7 @@ def generate_imagined_rollouts(
     # Vectorize over all initial observations
     rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0))
     return rollout_fn(initial_observations, keys)
+
 
 
 def train_dreamerv2_actor_critic(
@@ -372,6 +376,9 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params, final_metrics
 
 
+
+
+
 def main():
     iterations = 1
     frame_stack_size = 1
@@ -408,29 +415,31 @@ def main():
         with open("experience_data_LSTM_pong_0.pkl", "rb") as f:
             saved_data = pickle.load(f)
             obs = saved_data["obs"]
-            actions = saved_data["actions"]
-            next_obs = saved_data["next_obs"]
-            rewards = saved_data["rewards"]
     else:
         print("Train Model first")
         exit()
 
-    # Initialize networks if first iteration
-    if actor_params is None or critic_params is None:
-        obs_shape = obs.shape[1:]
-        key = jax.random.PRNGKey(42)
-        
-        dummy_obs = jnp.zeros((1,) + obs_shape)
-        actor_params = actor_network.init(key, dummy_obs)
-        
-        key, subkey = jax.random.split(key)
-        critic_params = critic_network.init(subkey, dummy_obs)
-        
-        # Count parameters
-        actor_param_count = sum(x.size for x in jax.tree.leaves(actor_params))
-        critic_param_count = sum(x.size for x in jax.tree.leaves(critic_params))
-        print(f"Actor parameters: {actor_param_count:,}")
-        print(f"Critic parameters: {critic_param_count:,}")
+
+
+    obs_shape = obs.shape[1:]
+    key = jax.random.PRNGKey(42)
+    
+    dummy_obs = jnp.zeros((1,) + obs_shape)
+    actor_params = actor_network.init(key, dummy_obs)
+    
+    key, subkey = jax.random.split(key)
+    critic_params = critic_network.init(subkey, dummy_obs)
+    
+    # Count parameters
+    actor_param_count = sum(x.size for x in jax.tree.leaves(actor_params))
+    critic_param_count = sum(x.size for x in jax.tree.leaves(critic_params))
+    print(f"Actor parameters: {actor_param_count:,}")
+    print(f"Critic parameters: {critic_param_count:,}")
+
+
+    #shuffle obs for diverse starting points
+    shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
+
 
     # Generate imagined rollouts
     print("Generating imagined rollouts...")
@@ -446,11 +455,16 @@ def main():
         critic_params=critic_params,
         actor_network=actor_network,
         critic_network=critic_network,
-        initial_observations=obs[:num_rollouts],
+        initial_observations=shuffled_obs[:num_rollouts],
         rollout_length=rollout_length,
         normalization_stats=normalization_stats,
-        key=jax.random.PRNGKey(1000),
+        key=jax.random.PRNGKey(SEED),
     )
+    for i in range(num_rollouts):
+        compare_real_vs_model(steps_into_future=0, obs=imagined_obs[i], actions = imagined_actions, frame_stack_size=1)
+    exit()
+
+
 
 
     print(f"Reward stats: min={jnp.min(imagined_rewards):.4f}, max={jnp.max(imagined_rewards):.4f}")

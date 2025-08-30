@@ -16,60 +16,7 @@ from jaxatari.games.jax_pong import JaxPong
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 from jaxatari.games.jax_pong import PongRenderer, JaxPong
 
-def create_dreamerv2_actor(action_dim: int):
-    """Create DreamerV2 Actor network with ~1M parameters and ELU activations."""
-    
-    class DreamerV2Actor(nn.Module):
-        action_dim: int
-        
-        @nn.compact
-        def __call__(self, x):
-            # Calculate hidden size to get ~1M parameters
-            # For typical latent state size, we use 512 hidden units
-            hidden_size = 512
-            
-            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = nn.elu(x)  # ELU activation as specified in DreamerV2
-            
-            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = nn.elu(x)
-            
-            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = nn.elu(x)
-            
-            # Output layer for categorical distribution
-            logits = nn.Dense(self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
-            
-            return distrax.Categorical(logits=logits)
-    
-    return DreamerV2Actor(action_dim=action_dim)
-
-
-def create_dreamerv2_critic():
-    """Create DreamerV2 Critic network with ~1M parameters and ELU activations."""
-    
-    class DreamerV2Critic(nn.Module):
-        
-        @nn.compact
-        def __call__(self, x):
-            # Calculate hidden size to get ~1M parameters
-            hidden_size = 512
-            
-            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = nn.elu(x)  # ELU activation as specified in DreamerV2
-            
-            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = nn.elu(x)
-            
-            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = nn.elu(x)
-            
-            # Output single value (deterministic)
-            value = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(x)
-            
-            return jnp.squeeze(value, axis=-1)
-    
-    return DreamerV2Critic()
+from pong_agent import create_dreamerv2_actor, create_dreamerv2_critic
 
 
 def flatten_obs(
@@ -180,7 +127,7 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
         # Test actor
         pi = actor_network.apply(loaded_actor_params, test_obs)
         print(f"Actor test successful - logits shape: {pi.logits.shape}")
-        action = pi.mode()
+        action = pi.sample(seed=jax.random.PRNGKey(0))
         print(f"Sample action: {action}")
         
         # Test critic only if we have loaded parameters
@@ -209,7 +156,7 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
         if len(flattened_obs.shape) > 1:
             flattened_obs = flattened_obs.squeeze()
         pi = actor_network.apply(params, flattened_obs)
-        return pi.mode()
+        return pi.sample(seed=0)
 
     def get_value(params, obs):
         if params is None:

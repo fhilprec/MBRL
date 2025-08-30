@@ -60,26 +60,27 @@ def get_reward_from_observation_score(obs):
     return obs[-3] if len(obs) > 3 else 0
 
 
-if len(sys.argv) > 1:
-    model_architecture_name = sys.argv[1]
-    if model_architecture_name == "V2_NO_SEP":
-        MODEL_ARCHITECTURE = V2_NO_SEP
-    elif model_architecture_name == "V2":
-        MODEL_ARCHITECTURE = V2_LSTM
-    elif model_architecture_name == "MLP":
-        MODEL_ARCHITECTURE = MLP
-    elif model_architecture_name == "PongLSTM":
-        MODEL_ARCHITECTURE = PongLSTM
-    elif model_architecture_name == "PongDreamer":
-        MODEL_ARCHITECTURE = PongDreamer
-    elif model_architecture_name == "PongLSTMStable":
-        MODEL_ARCHITECTURE = PongLSTMStable
-    elif model_architecture_name == "PongLSTMFixed":
-        MODEL_ARCHITECTURE = PongLSTMFixed
-    else:
-        raise ValueError(f"Unknown model architecture: {model_architecture_name}")
-else:
-    MODEL_ARCHITECTURE = V2_LSTM
+# if len(sys.argv) > 1:
+#     model_architecture_name = sys.argv[1]
+#     if model_architecture_name == "V2_NO_SEP":
+#         MODEL_ARCHITECTURE = V2_NO_SEP
+#     elif model_architecture_name == "V2":
+#         MODEL_ARCHITECTURE = V2_LSTM
+#     elif model_architecture_name == "MLP":
+#         MODEL_ARCHITECTURE = MLP
+#     elif model_architecture_name == "PongLSTM":
+#         MODEL_ARCHITECTURE = PongLSTM
+#     elif model_architecture_name == "PongDreamer":
+#         MODEL_ARCHITECTURE = PongDreamer
+#     elif model_architecture_name == "PongLSTMStable":
+#         MODEL_ARCHITECTURE = PongLSTMStable
+#     elif model_architecture_name == "PongLSTMFixed":
+#         MODEL_ARCHITECTURE = PongLSTMFixed
+#     else:
+#         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
+# else:
+MODEL_ARCHITECTURE = PongDreamerRSSM
+model_scale_factor = 2
 
 
 VERBOSE = True
@@ -262,7 +263,7 @@ def collect_experience_sequential(
         
 
         rng, action_key = jax.random.split(rng)
-        if jax.random.uniform(action_key) < 0.2:
+        if jax.random.uniform(action_key) < 0.5:
             action = jax.random.randint(action_key, (), 0, 6)
             return action
 
@@ -464,33 +465,42 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    _, lstm_state_template = model.apply(params, None, dummy_state, dummy_action, None)
+    # Fix the model initialization line:
+    _, lstm_state_template = model.apply(params, rng, dummy_state, dummy_action, None)
+
 
     @jax.jit
-    def single_sequence_loss(
-        params,
-        state_batch,
-        action_batch,
-        next_state_batch,
-        lstm_template,
-        epoch,
-        max_epochs,
-    ):
-        """Loss function for Pong world model"""
+    def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, epoch, max_epochs):
+        """Enhanced loss with KL divergence for RSSM"""
         seq_len, state_dim = state_batch.shape
 
-        def scan_fn(lstm_state, inputs):
+        def scan_fn(rssm_state, inputs):
             current_state, current_action, target_next_state = inputs
 
-            pred_next_state, new_lstm_state = model.apply(
-                params, None, current_state[None, :], current_action[None], lstm_state
+            # In the scan_fn within single_sequence_loss:
+            pred_next_state, new_rssm_state = model.apply(
+                params, rng, current_state[None, :], current_action[None], rssm_state
             )
-
             pred_next_state = pred_next_state.squeeze()
 
-            mse_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            # Reconstruction loss
+            recon_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            
+            # KL divergence loss (regularization)
+            if 'kl_loss' in new_rssm_state:
+                kl_loss = jnp.mean(new_rssm_state['kl_loss'])
+                kl_weight = 0.1  # Adjust this weight
+            else:
+                kl_loss = 0.0
+                kl_weight = 0.0
+            
+            # Action-specific weighting
+            action_weight = jnp.where(current_action == 0, 1.0, 2.0)
+            weighted_recon = action_weight * recon_loss
+            
+            total_loss = weighted_recon + kl_weight * kl_loss
 
-            return new_lstm_state, mse_loss
+            return new_rssm_state, total_loss
 
         scan_inputs = (state_batch, action_batch, next_state_batch)
         _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
@@ -660,6 +670,9 @@ def compare_real_vs_model(
     model_scale_factor =4,
     model_path = None
 ):
+    
+
+    rng = jax.random.PRNGKey(0)
 
     if len(obs) == 1:
         obs = obs.squeeze(0)
@@ -714,8 +727,12 @@ def compare_real_vs_model(
                         f"Step {step}: LSTM states healthy - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
                     )
 
-    state_mean = normalization_stats["mean"]
-    state_std = normalization_stats["std"]
+    if normalization_stats:
+        state_mean = normalization_stats["mean"]
+        state_std = normalization_stats["std"]
+    else:
+        state_mean = 0
+        state_std = 1
 
     renderer = PongRenderer()
     if not model_path:
@@ -768,6 +785,7 @@ def compare_real_vs_model(
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
+        action = 4
 
         next_real_obs = obs[step_count + 1]
 
@@ -783,7 +801,7 @@ def compare_real_vs_model(
 
             normalized_model_prediction, lstm_state = world_model.apply(
                 dynamics_params,
-                None,
+                rng,
                 normalized_flattened_model_obs,
                 jnp.array([action]),
                 lstm_state,
@@ -842,7 +860,7 @@ def compare_real_vs_model(
             normalized_real_obs = (real_obs - state_mean) / state_std
             _, lstm_real_state = world_model.apply(
                 dynamics_params,
-                None,
+                rng,
                 normalized_real_obs,
                 jnp.array([action]),
                 lstm_real_state,
@@ -862,8 +880,8 @@ def compare_real_vs_model(
 
 def main():
 
-    frame_stack_size = 1
-    model_scale_factor = 4
+    frame_stack_size = 4
+    
 
     game = JaxPong()
     env = AtariWrapper(
@@ -887,7 +905,7 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = collect_experience_sequential(
-                env, num_episodes=50, max_steps_per_episode=10000, seed=i
+                env, num_episodes=2, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
             obs = obs[:-1]
@@ -977,7 +995,7 @@ def main():
         rewards = saved_data["rewards"]
         boundaries = saved_data["boundaries"]
 
-    if len(args := sys.argv) > 2 and args[2] == "render":
+    if len(args := sys.argv) > 1 and args[1] == "render":
         compare_real_vs_model(
             num_steps=1000,
             render_scale=6,
@@ -987,7 +1005,7 @@ def main():
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=10,
+            steps_into_future=100,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
             model_scale_factor=model_scale_factor
