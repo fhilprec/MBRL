@@ -79,7 +79,7 @@ def get_reward_from_observation_score(obs):
 #     else:
 #         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
 # else:
-MODEL_ARCHITECTURE = PongDreamerRSSM
+MODEL_ARCHITECTURE = PongLSTM
 model_scale_factor = 2
 
 
@@ -348,7 +348,7 @@ def train_world_model(
     rewards,
     learning_rate=1e-4,
     batch_size=4,
-    num_epochs=100000,
+    num_epochs=1000,
     sequence_length=32,
     episode_boundaries=None,
     frame_stack_size=4,
@@ -495,10 +495,10 @@ def train_world_model(
                 kl_weight = 0.0
             
             # Action-specific weighting
-            action_weight = jnp.where(current_action == 0, 1.0, 2.0)
-            weighted_recon = action_weight * recon_loss
+            # action_weight = jnp.where(current_action == 0, 1.0, 2.0)
+            # weighted_recon = action_weight * recon_loss
             
-            total_loss = weighted_recon + kl_weight * kl_loss
+            total_loss = recon_loss + kl_weight * kl_loss
 
             return new_rssm_state, total_loss
 
@@ -610,7 +610,7 @@ def train_world_model(
         else:
             no_improve_count += 1
 
-        if no_improve_count >= patience:
+        if False and no_improve_count >= patience:
             print(
                 f"Early stopping at epoch {epoch + 1}, no improvement for {patience} epochs"
             )
@@ -630,7 +630,7 @@ def train_world_model(
             )
             break
 
-        if VERBOSE and (epoch + 1) % (num_epochs // 50) == 0:
+        if VERBOSE and (epoch + 1) % 10 == 0:
             val_loss = compute_validation_loss(
                 params,
                 val_batch_states,
@@ -785,7 +785,7 @@ def compare_real_vs_model(
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
-        action = 4
+        
 
         next_real_obs = obs[step_count + 1]
 
@@ -905,7 +905,7 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, boundaries = collect_experience_sequential(
-                env, num_episodes=2, max_steps_per_episode=10000, seed=i
+                env, num_episodes=20, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
             obs = obs[:-1]
@@ -1005,7 +1005,7 @@ def main():
             boundaries=boundaries,
             env=env,
             starting_step=0,
-            steps_into_future=100,
+            steps_into_future=10,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
             model_scale_factor=model_scale_factor
