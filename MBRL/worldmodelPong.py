@@ -80,7 +80,7 @@ def get_reward_from_observation_score(obs):
 #         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
 # else:
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 2
+model_scale_factor = 10
 
 
 VERBOSE = True
@@ -471,8 +471,7 @@ def train_world_model(
 
     @jax.jit
     def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, epoch, max_epochs):
-        """Enhanced loss with KL divergence for RSSM"""
-        seq_len, state_dim = state_batch.shape
+
 
         def scan_fn(rssm_state, inputs):
             current_state, current_action, target_next_state = inputs
@@ -482,25 +481,9 @@ def train_world_model(
                 params, rng, current_state[None, :], current_action[None], rssm_state
             )
             pred_next_state = pred_next_state.squeeze()
+            loss = jnp.mean((target_next_state - pred_next_state) ** 2)
 
-            # Reconstruction loss
-            recon_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
-            
-            # KL divergence loss (regularization)
-            if 'kl_loss' in new_rssm_state:
-                kl_loss = jnp.mean(new_rssm_state['kl_loss'])
-                kl_weight = 0.1  # Adjust this weight
-            else:
-                kl_loss = 0.0
-                kl_weight = 0.0
-            
-            # Action-specific weighting
-            # action_weight = jnp.where(current_action == 0, 1.0, 2.0)
-            # weighted_recon = action_weight * recon_loss
-            
-            total_loss = recon_loss + kl_weight * kl_loss
-
-            return new_rssm_state, total_loss
+            return new_rssm_state, loss
 
         scan_inputs = (state_batch, action_batch, next_state_batch)
         _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
@@ -819,7 +802,7 @@ def compare_real_vs_model(
             debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
 
 
-       
+        print(model_obs.shape)
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size

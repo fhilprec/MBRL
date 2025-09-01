@@ -313,7 +313,8 @@ def PongLSTM(model_scale_factor=1):
 
         action_one_hot = jax.nn.one_hot(action, num_classes=6)
 
-        x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
+        action_embed = hk.Linear(32)(action_one_hot)
+        x = jnp.concatenate([flat_state, action_embed], axis=-1)    
 
         x = hk.Linear(int(256 * model_scale_factor))(x)
         x = jax.nn.relu(x)
@@ -328,8 +329,8 @@ def PongLSTM(model_scale_factor=1):
 
         lstm_out, new_lstm_state = lstm(x, lstm_state)
 
-        prediction = hk.Linear(state.shape[-1])(lstm_out)
-        prediction = prediction + 0.8 * state
+        delta = hk.Linear(state.shape[-1])(lstm_out)
+        prediction = state + delta
 
         return prediction, new_lstm_state
 

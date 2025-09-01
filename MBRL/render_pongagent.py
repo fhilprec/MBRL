@@ -38,7 +38,7 @@ def flatten_obs(
         return flat_states
 
     if single_state:
-        flat_state, unflattener = jax.tree_util.tree_flatten(state)
+        flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
         return flat_state, unflattener
     batch_shape = (
         state.player_x.shape[0]
@@ -203,9 +203,10 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     clock = pygame.time.Clock()
 
     env = JaxPong()
-
-
-
+    env = AtariWrapper(
+        env,
+        frame_stack_size=4
+    )
 
     rng = jax.random.PRNGKey(0)
     rng, reset_key = jax.random.split(rng)
@@ -214,16 +215,18 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     while True:
        
 
-        real_raster = renderer.render(state)
+        real_raster = renderer.render(state.env_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(real_surface, real_img)
 
-        model_raster = renderer.render(state)
+        model_raster = renderer.render(state.env_state)
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
 
+
+
         action = get_action(loaded_actor_params, obs)
-        print(action)
+        print("action :",action)
         obs, state, reward, done, _ = env.step(state, action)
 
         screen.fill((0, 0, 0))

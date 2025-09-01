@@ -129,7 +129,7 @@ def generate_imagined_rollouts(
     # Extract normalization stats
     state_mean = normalization_stats["mean"]
     state_std = normalization_stats["std"]
-    world_model = PongLSTM(4)
+    world_model = PongLSTM(10)
 
     def single_trajectory_rollout(cur_obs, subkey):
         """Generate a single trajectory starting from cur_obs."""
@@ -141,7 +141,7 @@ def generate_imagined_rollouts(
             key, action_key = jax.random.split(key)
             pi = actor_network.apply(actor_params, obs)
             action = pi.sample(seed=action_key)
-            action = 4
+            # action = 4
             log_prob = pi.log_prob(action)
             
             # Get value from critic
@@ -381,7 +381,7 @@ def train_dreamerv2_actor_critic(
 
 def main():
     iterations = 1
-    frame_stack_size = 1
+    frame_stack_size = 4
 
     # Initialize networks and parameters
     action_dim = 18
@@ -421,14 +421,34 @@ def main():
 
 
 
+
+
+
+
+    #if one of the models does not exist
     obs_shape = obs.shape[1:]
     key = jax.random.PRNGKey(42)
-    
-    dummy_obs = jnp.zeros((1,) + obs_shape)
-    actor_params = actor_network.init(key, dummy_obs)
-    
-    key, subkey = jax.random.split(key)
-    critic_params = critic_network.init(subkey, dummy_obs)
+
+    if os.path.exists("actor_params.pkl"):
+        with open("actor_params.pkl", "rb") as f:
+            saved_data = pickle.load(f)
+            actor_params = saved_data["params"]
+            print("Loaded existing actor parameters")
+    else:
+        dummy_obs = jnp.zeros((1,) + obs_shape)
+        actor_params = actor_network.init(key, dummy_obs)
+
+    if os.path.exists("critic_params.pkl"):
+        with open("critic_params.pkl", "rb") as f:
+            saved_data = pickle.load(f)
+            critic_params = saved_data["params"]
+            print("Loaded existing critic parameters")
+    else:
+        key, subkey = jax.random.split(key)
+        dummy_obs = jnp.zeros((1,) + obs_shape)
+        critic_params = critic_network.init(subkey, dummy_obs)
+
+ 
     
     # Count parameters
     actor_param_count = sum(x.size for x in jax.tree.leaves(actor_params))
@@ -460,9 +480,14 @@ def main():
         normalization_stats=normalization_stats,
         key=jax.random.PRNGKey(SEED),
     )
-    for i in range(num_rollouts):
-        compare_real_vs_model(steps_into_future=0, obs=imagined_obs[i], actions = imagined_actions, frame_stack_size=1)
-    exit()
+
+
+
+    #for visualization of rollouts (only left half means something)
+    visualization_offset = 50
+    for i in range(10):
+        compare_real_vs_model(steps_into_future=0, obs=imagined_obs[i+visualization_offset], actions = imagined_actions, frame_stack_size=4)
+    # exit()
 
 
 
