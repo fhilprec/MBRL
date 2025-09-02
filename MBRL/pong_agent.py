@@ -1,3 +1,4 @@
+import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
@@ -383,8 +384,10 @@ def main():
     iterations = 1
     frame_stack_size = 4
 
+    parser = argparse.ArgumentParser(description="Render a trained DreamerV2 Pong agent")
+
     # Initialize networks and parameters
-    action_dim = 18
+    action_dim = 6
     
     # Create DreamerV2 networks
     actor_network = create_dreamerv2_actor(action_dim)
@@ -420,33 +423,60 @@ def main():
         exit()
 
 
-
-
-
-
-
-    #if one of the models does not exist
+     #if one of the models does not exist
     obs_shape = obs.shape[1:]
     key = jax.random.PRNGKey(42)
 
-    if os.path.exists("actor_params.pkl"):
-        with open("actor_params.pkl", "rb") as f:
-            saved_data = pickle.load(f)
-            actor_params = saved_data["params"]
-            print("Loaded existing actor parameters")
-    else:
-        dummy_obs = jnp.zeros((1,) + obs_shape)
-        actor_params = actor_network.init(key, dummy_obs)
 
-    if os.path.exists("critic_params.pkl"):
-        with open("critic_params.pkl", "rb") as f:
-            saved_data = pickle.load(f)
-            critic_params = saved_data["params"]
-            print("Loaded existing critic parameters")
+    # Create dummy observation with correct dtype
+    dummy_obs = jnp.zeros((1,) + obs_shape, dtype=jnp.float32)
+
+   
+
+    if os.path.exists("actor_params.pkl"):
+        try:
+            with open("actor_params.pkl", "rb") as f:
+                saved_data = pickle.load(f)
+                # Check if it's the old format (direct params) or new format (with "params" key)
+                if isinstance(saved_data, dict) and "params" in saved_data:
+                    actor_params = saved_data["params"]
+                else:
+                    actor_params = saved_data  # Old format
+                print("Loaded existing actor parameters")
+        except Exception as e:
+            print(f"Error loading actor params: {e}. Reinitializing...")
+            key, subkey = jax.random.split(key)
+            actor_params = actor_network.init(subkey, dummy_obs)
     else:
         key, subkey = jax.random.split(key)
-        dummy_obs = jnp.zeros((1,) + obs_shape)
+        actor_params = actor_network.init(subkey, dummy_obs)
+        print("Initialized new actor parameters")
+
+    # Initialize or load critic parameters
+    if os.path.exists("critic_params.pkl"):
+        try:
+            with open("critic_params.pkl", "rb") as f:
+                saved_data = pickle.load(f)
+                # Check if it's the old format (direct params) or new format (with "params" key)
+                if isinstance(saved_data, dict) and "params" in saved_data:
+                    critic_params = saved_data["params"]
+                else:
+                    critic_params = saved_data  # Old format
+                print("Loaded existing critic parameters")
+        except Exception as e:
+            print(f"Error loading critic params: {e}. Reinitializing...")
+            key, subkey = jax.random.split(key)
+            critic_params = critic_network.init(subkey, dummy_obs)
+    else:
+        key, subkey = jax.random.split(key)
         critic_params = critic_network.init(subkey, dummy_obs)
+        print("Initialized new critic parameters")
+
+    # Verify parameters are properly initialized
+    if actor_params is None:
+        raise ValueError("Actor params failed to initialize")
+    if critic_params is None:
+        raise ValueError("Critic params failed to initialize")
 
  
     
@@ -481,13 +511,18 @@ def main():
         key=jax.random.PRNGKey(SEED),
     )
 
+    parser.add_argument(
+        "--render",
+        type=int,
+        help="Output path for the recorded video",
+    )
+    args = parser.parse_args()
+    if args.render:
 
-
-    #for visualization of rollouts (only left half means something)
-    visualization_offset = 50
-    for i in range(10):
-        compare_real_vs_model(steps_into_future=0, obs=imagined_obs[i+visualization_offset], actions = imagined_actions, frame_stack_size=4)
-    # exit()
+        visualization_offset = 50
+        for i in range(int(args.render)):
+            compare_real_vs_model(steps_into_future=0, obs=imagined_obs[i+visualization_offset], actions = imagined_actions, frame_stack_size=4)
+        
 
 
 
@@ -524,15 +559,20 @@ def main():
             print(f"  {key}: {value:.4f}")
         print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
 
-    # Save model checkpoints
 
+
+    # At the end of main(), replace the save section with:
     def save_model_checkpoints(actor_params, critic_params):
+        """Save parameters with consistent structure"""
         with open("actor_params.pkl", "wb") as f:
-            pickle.dump(actor_params, f)
+            pickle.dump({"params": actor_params}, f)
         with open("critic_params.pkl", "wb") as f:
-            pickle.dump(critic_params, f)
+            pickle.dump({"params": critic_params}, f)
+        print("Saved actor and critic parameters")
 
+    # Call the save function
     save_model_checkpoints(actor_params, critic_params)
+
 
 if __name__ == "__main__":
     # Create RTPT object
