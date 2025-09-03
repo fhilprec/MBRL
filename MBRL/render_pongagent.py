@@ -13,7 +13,7 @@ import distrax
 from typing import Any, Tuple
 
 from jaxatari.games.jax_pong import JaxPong
-from jaxatari.wrappers import LogWrapper, AtariWrapper
+from jaxatari.wrappers import FlattenObservationWrapper, LogWrapper, AtariWrapper
 from jaxatari.games.jax_pong import PongRenderer, JaxPong
 
 from pong_agent import create_dreamerv2_actor, create_dreamerv2_critic
@@ -96,10 +96,16 @@ def load_model(path):
 
 def reset_environment():
     """Set up and reset the Pong environment."""
+    # With this (add the missing wrappers):
     env = JaxPong()
     env = AtariWrapper(
-        env, sticky_actions=False, episodic_life=False, frame_stack_size=4
+        env,
+        sticky_actions=False, 
+        episodic_life=False,
+        frame_stack_size=4
     )
+    env = FlattenObservationWrapper(env)  # This is missing!
+    env = LogWrapper(env)  # This too!
 
     rng = jax.random.PRNGKey(int(time.time()))
     obs, state = env.reset(rng)
@@ -197,7 +203,9 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
         if len(flattened_obs.shape) > 1:
             flattened_obs = flattened_obs.squeeze()
         pi = actor_network.apply(params, flattened_obs)
+        
         return pi.sample(seed=jax.random.PRNGKey(0))
+
 
     def get_value(params, obs):
         if params is None:

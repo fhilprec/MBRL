@@ -237,7 +237,7 @@ def train_dreamerv2_actor_critic(
     eta: float = 1e-3,  # Entropy regularization
     max_grad_norm: float = 0.5,
     use_target_network: bool = True,
-    target_update_freq: int = 100,
+    target_update_freq: int = 100
 ) -> Tuple[Any, Any, Dict]:
     """Train DreamerV2 actor and critic networks."""
     
@@ -297,30 +297,21 @@ def train_dreamerv2_actor_critic(
         return loss, {"critic_loss": loss}
 
     def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
-        """
-        DreamerV2 Actor loss combining Reinforce and dynamics backpropagation.
-        
-        L(ψ) = Σ[-ρ ln pψ(at|zt) sg(V^λ_t - v(zt))  (Reinforce)
-                -(1-ρ)V^λ_t                          (dynamics backprop)  
-                -η H[at|zt]]                         (entropy regularization)
-        """
         pi = actor_network.apply(actor_params, obs)
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
         
-        # Baseline-subtracted returns for Reinforce
-        advantages = targets - values  # V^λ_t - v(z_t)
+        # Calculate action diversity bonus
+        action_probs = pi.probs
+        action_diversity = -jnp.sum(action_probs * jnp.log(action_probs + 1e-8), axis=-1)
         
-        # Reinforce loss (stop gradients on advantages)
+        advantages = targets - values
         reinforce_loss = -rho * log_prob * jax.lax.stop_gradient(advantages)
+        dynamics_loss = -(1 - rho) * targets
         
-        # Dynamics backpropagation loss (straight-through gradients)
-        dynamics_loss = -(1 - rho) * targets  # No stop_gradient here for backprop through dynamics
+        # Enhanced entropy with exploration bonus
+        entropy_loss = -eta * entropy - action_diversity
         
-        # Entropy regularization
-        entropy_loss = -eta * entropy
-        
-        # Combined loss
         total_loss = jnp.mean(reinforce_loss + dynamics_loss + entropy_loss)
         
         return total_loss, {
@@ -329,6 +320,7 @@ def train_dreamerv2_actor_critic(
             "dynamics_loss": jnp.mean(dynamics_loss),
             "entropy_loss": jnp.mean(entropy_loss),
             "entropy": jnp.mean(entropy),
+            "action_diversity": jnp.mean(action_diversity),
         }
 
     # Training loop
@@ -398,7 +390,7 @@ def main():
 
     # Hyperparameters for policy training
     rollout_length = 15  
-    num_rollouts = 20
+    num_rollouts = 2000
     policy_epochs = 100
     learning_rate = 1e-4
     
@@ -523,9 +515,6 @@ def main():
         for i in range(int(args.render)):
             compare_real_vs_model(steps_into_future=0, obs=imagined_obs[i+visualization_offset], actions = imagined_actions, frame_stack_size=4)
         
-
-
-
 
     print(f"Reward stats: min={jnp.min(imagined_rewards):.4f}, max={jnp.max(imagined_rewards):.4f}")
     print(f"Non-zero rewards: {jnp.sum(imagined_rewards != 0.0)} / {imagined_rewards.size}")

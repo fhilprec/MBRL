@@ -36,20 +36,23 @@ def get_reward_from_ball_position(obs):
     left_paddle_x = obs[4] 
     right_paddle_x = obs[0]
     
-    # Give small rewards for ball position relative to center
-    # Reward when ball is moving toward opponent's side
     center_x = (left_paddle_x + right_paddle_x) / 2
     
-    # Simple reward: positive when ball is on opponent's side
-    return jnp.where(
-        ball_x > center_x + 10,  # Ball clearly on right side
-        0.1,
+    # More balanced reward structure
+    reward = jnp.where(
+        ball_x > center_x + 20,  # Ball clearly on opponent's side
+        0.2,  # Increased positive reward
         jnp.where(
-            ball_x < center_x - 10,  # Ball clearly on left side  
-            -0.1,
-            0.0  # Ball in middle
+            ball_x < center_x - 20,  # Ball clearly on our side  
+            -0.05,  # Reduced negative reward
+            0.01  # Small positive reward for keeping ball in play
         )
     )
+    
+    # Add bonus for ball being near center (more engaging gameplay)
+    center_bonus = 0.05 * jnp.exp(-((ball_x - center_x) / 50) ** 2)
+    
+    return reward + center_bonus
 
 
 def get_reward_from_observation_score(obs):
