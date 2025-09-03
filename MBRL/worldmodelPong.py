@@ -765,8 +765,7 @@ def compare_real_vs_model(
 
     lstm_state = None
     lstm_real_state = None
-    print(obs.shape)
-    print(len(obs))
+
 
     while step_count < min(num_steps, len(obs) - 1):
 
@@ -803,9 +802,6 @@ def compare_real_vs_model(
 
         if steps_into_future > 0:
             debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
-
-
-        print(model_obs.shape)
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size

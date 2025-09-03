@@ -251,12 +251,7 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     step_count = 0
     clock = pygame.time.Clock()
 
-   # Around line 243, replace this:
-    env = JaxPong()
-    env = AtariWrapper(
-        env,
-        frame_stack_size=4
-    )
+
 
     # With this:
     env = JaxPong()
