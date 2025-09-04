@@ -24,6 +24,7 @@ from jax.tree_util import register_pytree_node
 import jax.numpy as jnp
 import numpy as np
 
+
 class Space:
     """Minimal jittable class for abstract spaces."""
 
@@ -32,11 +33,12 @@ class Space:
 
     def contains(self, x: jax.Array) -> Any:
         raise NotImplementedError
-    
-    '''
+
+    """
     Returns the range of the space with the first value being the minimum and the second value being the maximum.
     Only implemented for numerically bounded spaces.
-    '''
+    """
+
     def range(self):
         raise NotImplementedError
 
@@ -61,7 +63,7 @@ class Discrete(Space):
         x = x.astype(jnp.int32)
         range_cond = jnp.logical_and(x >= 0, x < self.n)
         return range_cond
-    
+
     def range(self) -> tuple[float, float]:
         return 0, self.n - 1
 
@@ -70,7 +72,7 @@ class Box(Space):
     """
     A jittable n-dimensional box space.
 
-    This space represents the Cartesian product of n closed intervals. 
+    This space represents the Cartesian product of n closed intervals.
     Each interval has its own lower and upper bound.
 
     It can be initialized in two ways:
@@ -112,7 +114,7 @@ class Box(Space):
                     f"low and high must have the same shape, got {self.low.shape} and {self.high.shape}"
                 )
             self.shape = self.low.shape
-        
+
         # Broadcasting checks to ensure compatibility
         try:
             np.broadcast_to(self.low, self.shape)
@@ -123,44 +125,50 @@ class Box(Space):
                 f"Got low.shape={self.low.shape}, high.shape={self.high.shape}"
             )
 
-
     def sample(self, key: jax.Array) -> jax.Array:
         """
         Generates a random sample from the space.
-        
+
         The sample is uniformly distributed over the box.
         """
         # Check if the dtype is floating-point or integer and use the appropriate JAX random function.
         if jnp.issubdtype(self.dtype, jnp.floating):
             # Use jax.random.uniform for float dtypes.
             return jax.random.uniform(
-                key, shape=self.shape, minval=self.low, maxval=self.high, dtype=self.dtype
+                key,
+                shape=self.shape,
+                minval=self.low,
+                maxval=self.high,
+                dtype=self.dtype,
             )
         elif jnp.issubdtype(self.dtype, jnp.integer):
             # Use jax.random.randint for integer dtypes.
             # The `Box` space is inclusive of `high`, but `jax.random.randint`'s
             # `maxval` is exclusive. Therefore, we add 1 to `self.high`.
             return jax.random.randint(
-                key, shape=self.shape, minval=self.low, maxval=self.high + 1, dtype=self.dtype
+                key,
+                shape=self.shape,
+                minval=self.low,
+                maxval=self.high + 1,
+                dtype=self.dtype,
             )
         else:
             # Raise an error for unsupported dtypes.
-            raise ValueError(f"Unsupported dtype for sampling in Box space: {self.dtype}")
+            raise ValueError(
+                f"Unsupported dtype for sampling in Box space: {self.dtype}"
+            )
 
     def contains(self, x: jax.Array) -> jax.Array:
         """Check if a point `x` is contained within the box."""
         # Ensure the input has the correct dtype for comparison
         x = x.astype(self.dtype)
-        
+
         # Check shape compatibility
         if x.shape != self.shape:
             return jnp.asarray(False)
-            
-        return jnp.logical_and(
-            jnp.all(x >= self.low),
-            jnp.all(x <= self.high)
-        )
-    
+
+        return jnp.logical_and(jnp.all(x >= self.low), jnp.all(x <= self.high))
+
     def range(self) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Returns the lower and upper bounds of the space."""
         return self.low, self.high
@@ -176,7 +184,10 @@ class Dict(Space):
     def sample(self, key: jax.Array) -> collections.OrderedDict:
         key_split = jax.random.split(key, self.num_spaces)
         return collections.OrderedDict(
-            [(k, self.spaces[k].sample(key_split[i])) for i, k in enumerate(self.spaces)]
+            [
+                (k, self.spaces[k].sample(key_split[i]))
+                for i, k in enumerate(self.spaces)
+            ]
         )
 
     def contains(self, x: dict) -> jax.Array:
@@ -185,11 +196,9 @@ class Dict(Space):
             return jnp.asarray(False)
 
         # Use explicit iteration
-        bools = [
-            self.spaces[k].contains(x[k]) for k in self.spaces.keys()
-        ]
+        bools = [self.spaces[k].contains(x[k]) for k in self.spaces.keys()]
         return jnp.all(jnp.asarray(bools))
-    
+
     def __repr__(self) -> str:
         return "Dict(" + ", ".join([f"{k}: {s}" for k, s in self.spaces.items()]) + ")"
 
@@ -198,7 +207,7 @@ class Dict(Space):
 register_pytree_node(
     Dict,
     lambda s: (list(s.spaces.values()), list(s.spaces.keys())),
-    lambda keys, values: Dict(collections.OrderedDict(zip(keys, values)))
+    lambda keys, values: Dict(collections.OrderedDict(zip(keys, values))),
 )
 
 
@@ -224,9 +233,7 @@ class Tuple(Space):
 
         # 2. Correctly iterate and check containment for each subspace.
         #    This zip-based approach is robust, explicit, and avoids the error.
-        bools = [
-            space.contains(val) for space, val in zip(self.spaces, x)
-        ]
+        bools = [space.contains(val) for space, val in zip(self.spaces, x)]
 
         # 3. Combine all boolean results into a single JAX boolean scalar.
         return jnp.all(jnp.asarray(bools))
@@ -234,17 +241,16 @@ class Tuple(Space):
     def __repr__(self) -> str:
         return "Tuple(" + ", ".join([str(s) for s in self.spaces]) + ")"
 
+
 # Register Tuple as a Pytree node for JAX utilities
 register_pytree_node(
-    Tuple,
-    lambda s: (s.spaces, None),
-    lambda _, children: Tuple(children)
+    Tuple, lambda s: (s.spaces, None), lambda _, children: Tuple(children)
 )
 
 
 def stack_space(space: Space, stack_size: int) -> Space:
     """Recursively wraps a space to add a stacking dimension."""
-    
+
     def stack_box(box: Box) -> Box:
         new_shape = (stack_size,) + box.shape
         return Box(low=box.low, high=box.high, shape=new_shape, dtype=box.dtype)

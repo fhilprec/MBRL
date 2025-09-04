@@ -19,7 +19,6 @@ from jaxatari.games.jax_pong import PongRenderer, JaxPong
 from pong_agent import create_dreamerv2_actor, create_dreamerv2_critic
 
 
-
 def flatten_obs(
     state, single_state: bool = False, is_list=False
 ) -> Tuple[jnp.ndarray, Any]:
@@ -56,17 +55,21 @@ def load_model(path):
     """Load a previously saved model with proper parameter structure handling."""
     with open(path, "rb") as f:
         data = pickle.load(f)
-    
+
     print(f"Raw loaded data type: {type(data)}")
-    print(f"Raw loaded data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
-    
+    print(
+        f"Raw loaded data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}"
+    )
+
     # Handle different save formats
     if isinstance(data, dict):
         if "params" in data:
             params = data["params"]
             print(f"Params type: {type(params)}")
-            print(f"Params keys: {list(params.keys()) if isinstance(params, dict) else 'Not a dict'}")
-            
+            print(
+                f"Params keys: {list(params.keys()) if isinstance(params, dict) else 'Not a dict'}"
+            )
+
             # Check if there's an extra "params" layer
             if isinstance(params, dict) and "params" in params:
                 print("Removing extra params layer...")
@@ -79,10 +82,12 @@ def load_model(path):
     else:
         # Data is already the params dict
         final_params = data
-    
+
     print(f"Final params type: {type(final_params)}")
-    print(f"Final params keys: {list(final_params.keys()) if isinstance(final_params, dict) else 'Not a dict'}")
-    
+    print(
+        f"Final params keys: {list(final_params.keys()) if isinstance(final_params, dict) else 'Not a dict'}"
+    )
+
     # Check if final_params has the expected structure for Flax
     if isinstance(final_params, dict):
         # Look for Dense layer parameters
@@ -90,7 +95,7 @@ def load_model(path):
             print(f"Key: {key}, Type: {type(value)}")
             if isinstance(value, dict):
                 print(f"  Subkeys: {list(value.keys())}")
-    
+
     return final_params
 
 
@@ -99,10 +104,7 @@ def reset_environment():
     # With this (add the missing wrappers):
     env = JaxPong()
     env = AtariWrapper(
-        env,
-        sticky_actions=False, 
-        episodic_life=False,
-        frame_stack_size=4
+        env, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
     env = FlattenObservationWrapper(env)  # This is missing!
     env = LogWrapper(env)  # This too!
@@ -112,7 +114,14 @@ def reset_environment():
     return env, obs, state
 
 
-def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=60, record=False, output_path=None):
+def render_agent(
+    actor_model_path,
+    critic_model_path=None,
+    num_episodes=5,
+    fps=60,
+    record=False,
+    output_path=None,
+):
     """
     Render the DreamerV2 agent playing Pong.
     """
@@ -122,12 +131,12 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     print(f"Observation type: {type(obs)}")
     print(f"State type: {type(state)}")
     print(f"State attributes: {dir(state)}")
-    
+
     # Debug the state structure
-    if hasattr(state, 'atari_state'):
+    if hasattr(state, "atari_state"):
         print(f"Atari state type: {type(state.atari_state)}")
         print(f"Atari state attributes: {dir(state.atari_state)}")
-        if hasattr(state.atari_state, 'env_state'):
+        if hasattr(state.atari_state, "env_state"):
             print(f"Env state type: {type(state.atari_state.env_state)}")
             print(f"Env state attributes: {dir(state.atari_state.env_state)}")
 
@@ -137,21 +146,19 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     print(f"Observation values: {flattened_obs}")
 
     # Create networks
-    action_dim = 6  
+    action_dim = 6
     actor_network = create_dreamerv2_actor(action_dim)
     critic_network = create_dreamerv2_critic()
 
-
-
     with open("actor_params.pkl", "rb") as f:
-                saved_data = pickle.load(f)
-                # Check if it's the old format (direct params) or new format (with "params" key)
-                if isinstance(saved_data, dict) and "params" in saved_data:
-                    loaded_actor_params = saved_data["params"]
-                else:
-                    loaded_actor_params = saved_data  # Old format
-                print("Loaded existing actor parameters")
-    
+        saved_data = pickle.load(f)
+        # Check if it's the old format (direct params) or new format (with "params" key)
+        if isinstance(saved_data, dict) and "params" in saved_data:
+            loaded_actor_params = saved_data["params"]
+        else:
+            loaded_actor_params = saved_data  # Old format
+        print("Loaded existing actor parameters")
+
     if critic_model_path:
         print(f"Loading critic model from: {critic_model_path}")
         loaded_critic_params = load_model(critic_model_path)
@@ -167,16 +174,16 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
         print(flattened_obs.shape)
         if len(flattened_obs.shape) > 1:
             flattened_obs = flattened_obs.squeeze()
-        
+
         # Convert to JAX array
         test_obs = jnp.array(flattened_obs)
-        
+
         # Test actor
         pi = actor_network.apply(loaded_actor_params, test_obs)
         print(f"Actor test successful - logits shape: {pi.logits.shape}")
         action = pi.sample(seed=jax.random.PRNGKey(0))
         print(f"Sample action: {action}")
-        
+
         # Test critic only if we have loaded parameters
         if critic_model_path and loaded_critic_params:
             value = critic_network.apply(loaded_critic_params, test_obs)
@@ -193,19 +200,17 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
             return
 
     # Initialize pygame for Pong rendering
-    
 
     # Jit the policy function with proper error handling
     @jax.jit
     def get_action(params, obs):
         # obs is already flattened due to FlattenObservationWrapper
-        flattened_obs,_ = flatten_obs(obs, single_state=True)
+        flattened_obs, _ = flatten_obs(obs, single_state=True)
         if len(flattened_obs.shape) > 1:
             flattened_obs = flattened_obs.squeeze()
         pi = actor_network.apply(params, flattened_obs)
-        
-        return pi.sample(seed=jax.random.PRNGKey(0))
 
+        return pi.sample(seed=jax.random.PRNGKey(0))
 
     def get_value(params, obs):
         if params is None:
@@ -225,17 +230,9 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     if loaded_critic_params is not None:
         get_value = jax.jit(get_value)
 
-
-
-
-
-
-
-    
     renderer = PongRenderer()
 
     render_scale = 4
-
 
     pygame.init()
     WIDTH = 160
@@ -251,15 +248,10 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     step_count = 0
     clock = pygame.time.Clock()
 
-
-
     # With this:
     env = JaxPong()
     env = AtariWrapper(
-        env,
-        sticky_actions=False, 
-        episodic_life=False,
-        frame_stack_size=4
+        env, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
 
     rng = jax.random.PRNGKey(0)
@@ -267,7 +259,6 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     obs, state = env.reset(reset_key)
 
     while True:
-       
 
         real_raster = renderer.render(state.env_state)
         real_img = np.array(real_raster * 255, dtype=np.uint8)
@@ -277,10 +268,9 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
 
-
         print(obs)
         action = get_action(loaded_actor_params, obs)
-        print("action :",action)
+        print("action :", action)
         obs, state, reward, done, _ = env.step(state, action)
 
         screen.fill((0, 0, 0))
@@ -311,13 +301,22 @@ def render_agent(actor_model_path, critic_model_path=None, num_episodes=5, fps=6
     pygame.quit()
     print("Comparison completed")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Render a trained DreamerV2 Pong agent")
-    parser.add_argument(
-        "--actor", type=str, required=True, help="Path to the actor model checkpoint (actor_params.pkl)"
+    parser = argparse.ArgumentParser(
+        description="Render a trained DreamerV2 Pong agent"
     )
     parser.add_argument(
-        "--critic", type=str, default=None, help="Path to the critic model checkpoint (critic_params.pkl)"
+        "--actor",
+        type=str,
+        required=True,
+        help="Path to the actor model checkpoint (actor_params.pkl)",
+    )
+    parser.add_argument(
+        "--critic",
+        type=str,
+        default=None,
+        help="Path to the critic model checkpoint (critic_params.pkl)",
     )
     parser.add_argument(
         "--episodes", type=int, default=5, help="Number of episodes to run"
@@ -341,5 +340,5 @@ if __name__ == "__main__":
         actor_model_path=args.actor,
         critic_model_path=args.critic,
         num_episodes=args.episodes,
-        fps=args.fps
+        fps=args.fps,
     )

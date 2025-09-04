@@ -244,7 +244,13 @@ train_step_jit = jax.jit(
 
 
 def compare_dreamer_vs_real(
-    obs, actions, params, model, num_steps=1000, render_scale=3, steps_into_future=100,
+    obs,
+    actions,
+    params,
+    model,
+    num_steps=1000,
+    render_scale=3,
+    steps_into_future=100,
 ):
 
     from jaxatari.games.jax_pong import JaxPong
@@ -436,4 +442,6 @@ if __name__ == "__main__":
     with open(save_path, "rb") as f:
         saved = pickle.load(f)
         params = saved["params"]
-    compare_dreamer_vs_real(sequential_obs, sequential_actions, params, model, steps_into_future=100)
+    compare_dreamer_vs_real(
+        sequential_obs, sequential_actions, params, model, steps_into_future=100
+    )

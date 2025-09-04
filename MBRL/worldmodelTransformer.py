@@ -455,7 +455,7 @@ def compare_real_vs_model(
         print(
             f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), 'UNKNOWN')}"
         )
-        
+
         if error > 20 and render_debugging:
             print("-" * 100)
             print("Indexes where difference > 1:")
@@ -503,15 +503,15 @@ def compare_real_vs_model(
     model_obs = obs[0]
     sequence_buffer = []
     real_sequence_buffer = []
-    
+
     # Initialize RNG for model inference
     rng = jax.random.PRNGKey(42)
-    
+
     print(f"Observation shape: {obs.shape}")
     print(f"Total observations: {len(obs)}")
 
     while step_count < min(num_steps, len(obs) - 1):
-        action = actions[step_count]#
+        action = actions[step_count]  #
         real_obs = obs[step_count]
         next_real_obs = obs[step_count + 1]
 
@@ -529,7 +529,7 @@ def compare_real_vs_model(
         if steps_into_future > 0:
             # Build sequence buffer for transformer
             sequence_buffer.append((normalized_model_obs, action))
-            
+
             # Keep only the last 10 steps for sequence modeling
             if len(sequence_buffer) > 10:
                 sequence_buffer = sequence_buffer[-10:]
@@ -541,7 +541,9 @@ def compare_real_vs_model(
                 if len(sequence_buffer) < seq_len:
                     # Pad with the first observation
                     padding_needed = seq_len - len(sequence_buffer)
-                    padded_buffer = [(sequence_buffer[0][0], sequence_buffer[0][1])] * padding_needed + sequence_buffer
+                    padded_buffer = [
+                        (sequence_buffer[0][0], sequence_buffer[0][1])
+                    ] * padding_needed + sequence_buffer
                 else:
                     padded_buffer = sequence_buffer
 
@@ -553,9 +555,13 @@ def compare_real_vs_model(
 
                 # Split RNG key for model inference
                 rng, inference_rng = jax.random.split(rng)
-                
+
                 predicted_states = model_fn.apply(
-                    dynamics_params, inference_rng, seq_states, seq_actions, training=False
+                    dynamics_params,
+                    inference_rng,
+                    seq_states,
+                    seq_actions,
+                    training=False,
                 )
                 predicted_next_state = predicted_states[0, -1]
 
@@ -568,7 +574,6 @@ def compare_real_vs_model(
 
         if steps_into_future > 0:
             debug_obs(step_count, next_real_obs, [model_obs], action)
-
 
         # Render real environment
         real_base_state = pong_flat_observation_to_state(
@@ -604,7 +609,6 @@ def compare_real_vs_model(
         screen.blit(real_text, (20, 10))
         screen.blit(model_text, (WIDTH * render_scale + 40, 10))
         pygame.display.flip()
-
 
         step_count += 1
 
@@ -651,11 +655,12 @@ def main():
             saved_data = pickle.load(f)
             dynamics_params = saved_data["dynamics_params"]
             normalization_stats = saved_data.get("normalization_stats", None)
-            
+
         # Create model_fn for loaded model
         def model_fn_inner(states, actions, training=False):
             model = MODEL_ARCHITECTURE()
             return model(states, actions, training=training)
+
         model_fn = hk.transform(model_fn_inner)
     else:
         print("No existing model found. Training a new model...")

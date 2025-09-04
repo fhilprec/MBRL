@@ -87,6 +87,7 @@ class PongInfo(NamedTuple):
     time: jnp.ndarray
     all_rewards: chex.Array
 
+
 @jax.jit
 def player_step(
     state_player_y, state_player_speed, acceleration_counter, action: chex.Array
@@ -323,6 +324,7 @@ def enemy_step(state, step_counter, ball_y, ball_speed_y):
         should_move, lambda _: new_y, lambda _: state.enemy_y, operand=None
     )
 
+
 @jax.jit
 def _reset_ball_after_goal(
     state_and_goal: Tuple[PongState, bool]
@@ -357,7 +359,7 @@ def _reset_ball_after_goal(
 
 
 class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
-    def __init__(self, reward_funcs: list[callable]=None):
+    def __init__(self, reward_funcs: list[callable] = None):
         super().__init__()
         self.renderer = PongRenderer()
         if reward_funcs is not None:
@@ -371,8 +373,7 @@ class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
             Action.RIGHTFIRE,
             Action.LEFTFIRE,
         ]
-        self.obs_size = 3*4+1+1
-
+        self.obs_size = 3 * 4 + 1 + 1
 
     def reset(self, key=None) -> Tuple[PongObservation, PongState]:
         """
@@ -399,7 +400,9 @@ class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
         return initial_obs, state
 
     @partial(jax.jit, static_argnums=(0,))
-    def step(self, state: PongState, action: chex.Array) -> Tuple[PongObservation, PongState, float, bool, PongInfo]:
+    def step(
+        self, state: PongState, action: chex.Array
+    ) -> Tuple[PongObservation, PongState, float, bool, PongInfo]:
         # Step 1: Update player position and speed
         # only execute player step on even steps (base implementation only moves the player every second tick)
         new_player_y, player_speed_b, new_acceleration_counter = player_step(
@@ -515,7 +518,6 @@ class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
 
         return observation, new_state, env_reward, done, info
 
-
     def render(self, state: PongState) -> jnp.ndarray:
         return self.renderer.render(state)
 
@@ -553,23 +555,24 @@ class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
 
     @partial(jax.jit, static_argnums=(0,))
     def obs_to_flat_array(self, obs: PongObservation) -> jnp.ndarray:
-           return jnp.concatenate([
-               obs.player.x.flatten(),
-               obs.player.y.flatten(),
-               obs.player.height.flatten(),
-               obs.player.width.flatten(),
-               obs.enemy.x.flatten(),
-               obs.enemy.y.flatten(),
-               obs.enemy.height.flatten(),
-               obs.enemy.width.flatten(),
-               obs.ball.x.flatten(),
-               obs.ball.y.flatten(),
-               obs.ball.height.flatten(),
-               obs.ball.width.flatten(),
-               obs.score_player.flatten(),
-               obs.score_enemy.flatten()
+        return jnp.concatenate(
+            [
+                obs.player.x.flatten(),
+                obs.player.y.flatten(),
+                obs.player.height.flatten(),
+                obs.player.width.flatten(),
+                obs.enemy.x.flatten(),
+                obs.enemy.y.flatten(),
+                obs.enemy.height.flatten(),
+                obs.enemy.width.flatten(),
+                obs.ball.x.flatten(),
+                obs.ball.y.flatten(),
+                obs.ball.height.flatten(),
+                obs.ball.width.flatten(),
+                obs.score_player.flatten(),
+                obs.score_enemy.flatten(),
             ]
-           )
+        )
 
     def action_space(self) -> spaces.Discrete:
         """Returns the action space for Pong.
@@ -592,39 +595,48 @@ class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
         - score_player: int (0-21)
         - score_enemy: int (0-21)
         """
-        return spaces.Dict({
-            "player": spaces.Dict({
-                "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
-                "y": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
-                "width": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
-                "height": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
-            }),
-            "enemy": spaces.Dict({
-                "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
-                "y": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
-                "width": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
-                "height": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
-            }),
-            "ball": spaces.Dict({
-                "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
-                "y": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
-                "width": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
-                "height": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
-            }),
-            "score_player": spaces.Box(low=0, high=21, shape=(), dtype=jnp.int32),
-            "score_enemy": spaces.Box(low=0, high=21, shape=(), dtype=jnp.int32),
-        })
+        return spaces.Dict(
+            {
+                "player": spaces.Dict(
+                    {
+                        "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+                        "y": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
+                        "width": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+                        "height": spaces.Box(
+                            low=0, high=210, shape=(), dtype=jnp.int32
+                        ),
+                    }
+                ),
+                "enemy": spaces.Dict(
+                    {
+                        "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+                        "y": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
+                        "width": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+                        "height": spaces.Box(
+                            low=0, high=210, shape=(), dtype=jnp.int32
+                        ),
+                    }
+                ),
+                "ball": spaces.Dict(
+                    {
+                        "x": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+                        "y": spaces.Box(low=0, high=210, shape=(), dtype=jnp.int32),
+                        "width": spaces.Box(low=0, high=160, shape=(), dtype=jnp.int32),
+                        "height": spaces.Box(
+                            low=0, high=210, shape=(), dtype=jnp.int32
+                        ),
+                    }
+                ),
+                "score_player": spaces.Box(low=0, high=21, shape=(), dtype=jnp.int32),
+                "score_enemy": spaces.Box(low=0, high=21, shape=(), dtype=jnp.int32),
+            }
+        )
 
     def image_space(self) -> spaces.Box:
         """Returns the image space for Pong.
         The image is a RGB image with shape (160, 210, 3).
         """
-        return spaces.Box(
-            low=0,
-            high=255,
-            shape=(160, 210, 3),
-            dtype=jnp.uint8
-        )
+        return spaces.Box(low=0, high=255, shape=(160, 210, 3), dtype=jnp.uint8)
 
     @partial(jax.jit, static_argnums=(0,))
     def _get_info(self, state: PongState, all_rewards: chex.Array) -> PongInfo:
@@ -658,11 +670,19 @@ def load_sprites():
     MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 
     # Load sprites
-    player = aj.loadFrame(os.path.join(MODULE_DIR, "sprites/pong/player.npy"), transpose=True)
-    enemy = aj.loadFrame(os.path.join(MODULE_DIR, "sprites/pong/enemy.npy"), transpose=True)
-    ball = aj.loadFrame(os.path.join(MODULE_DIR, "sprites/pong/ball.npy"), transpose=True)
+    player = aj.loadFrame(
+        os.path.join(MODULE_DIR, "sprites/pong/player.npy"), transpose=True
+    )
+    enemy = aj.loadFrame(
+        os.path.join(MODULE_DIR, "sprites/pong/enemy.npy"), transpose=True
+    )
+    ball = aj.loadFrame(
+        os.path.join(MODULE_DIR, "sprites/pong/ball.npy"), transpose=True
+    )
 
-    bg = aj.loadFrame(os.path.join(MODULE_DIR, "sprites/pong/background.npy"), transpose=True)
+    bg = aj.loadFrame(
+        os.path.join(MODULE_DIR, "sprites/pong/background.npy"), transpose=True
+    )
 
     # Convert all sprites to the expected format (add frame dimension)
     SPRITE_BG = jnp.expand_dims(bg, axis=0)
@@ -686,7 +706,7 @@ def load_sprites():
         SPRITE_ENEMY,
         SPRITE_BALL,
         PLAYER_DIGIT_SPRITES,
-        ENEMY_DIGIT_SPRITES
+        ENEMY_DIGIT_SPRITES,
     )
 
 
@@ -729,7 +749,7 @@ class PongRenderer(AtraJaxisRenderer):
 
         # Render enemy paddle - same swap needed
         frame_enemy = aj.get_sprite_frame(self.SPRITE_ENEMY, 0)
-        raster = aj.render_at(raster, ENEMY_X,state.enemy_y, frame_enemy)
+        raster = aj.render_at(raster, ENEMY_X, state.enemy_y, frame_enemy)
 
         # Render ball - ball position is (ball_x, ball_y) but needs to be swapped
         frame_ball = aj.get_sprite_frame(self.SPRITE_BALL, 0)
@@ -752,36 +772,43 @@ class PongRenderer(AtraJaxisRenderer):
 
         # 2. Determine parameters for player score rendering using jax.lax.select
         is_player_single_digit = state.player_score < 10
-        player_start_index = jax.lax.select(is_player_single_digit, 1, 0) # Start at index 1 if single, 0 if double
-        player_num_to_render = jax.lax.select(is_player_single_digit, 1, 2) # Render 1 digit if single, 2 if double
+        player_start_index = jax.lax.select(
+            is_player_single_digit, 1, 0
+        )  # Start at index 1 if single, 0 if double
+        player_num_to_render = jax.lax.select(
+            is_player_single_digit, 1, 2
+        )  # Render 1 digit if single, 2 if double
         # Adjust X position: If single digit, center it slightly by moving right by half the spacing
-        player_render_x = jax.lax.select(is_player_single_digit,
-                                         120 + 16 // 2,
-                                         120)
+        player_render_x = jax.lax.select(is_player_single_digit, 120 + 16 // 2, 120)
 
         # 3. Render player score using the selective renderer
-        raster = aj.render_label_selective(raster, player_render_x, 3,
-                                            player_score_digits, self.PLAYER_DIGIT_SPRITES,
-                                            player_start_index, player_num_to_render,
-                                            spacing=16)
+        raster = aj.render_label_selective(
+            raster,
+            player_render_x,
+            3,
+            player_score_digits,
+            self.PLAYER_DIGIT_SPRITES,
+            player_start_index,
+            player_num_to_render,
+            spacing=16,
+        )
 
         # 4. Determine parameters for enemy score rendering
         is_enemy_single_digit = state.enemy_score < 10
         enemy_start_index = jax.lax.select(is_enemy_single_digit, 1, 0)
         enemy_num_to_render = jax.lax.select(is_enemy_single_digit, 1, 2)
-        enemy_render_x = jax.lax.select(is_enemy_single_digit,
-                                        10 + 16 // 2,
-                                        10)
+        enemy_render_x = jax.lax.select(is_enemy_single_digit, 10 + 16 // 2, 10)
 
         # 5. Render enemy score
-        raster = aj.render_label_selective(raster, enemy_render_x, 3,
-                                           enemy_score_digits, self.ENEMY_DIGIT_SPRITES,
-                                           enemy_start_index, enemy_num_to_render,
-                                           spacing=16)
+        raster = aj.render_label_selective(
+            raster,
+            enemy_render_x,
+            3,
+            enemy_score_digits,
+            self.ENEMY_DIGIT_SPRITES,
+            enemy_start_index,
+            enemy_num_to_render,
+            spacing=16,
+        )
 
         return raster
-    
-
-
-
-    

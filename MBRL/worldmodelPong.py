@@ -23,35 +23,31 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 
-
-
-
-
 def get_reward_from_ball_position(obs):
     """
     Give rewards based on ball position relative to paddles.
     obs[8] = ball_x, obs[4] = left_paddle_x, obs[0] = right_paddle_x
     """
     ball_x = obs[8]
-    left_paddle_x = obs[4] 
+    left_paddle_x = obs[4]
     right_paddle_x = obs[0]
-    
+
     center_x = (left_paddle_x + right_paddle_x) / 2
+
     
-    # More balanced reward structure
     reward = jnp.where(
-        ball_x > center_x + 20,  # Ball clearly on opponent's side
-        0.2,  # Increased positive reward
+        ball_x > center_x + 20,  
+        0.2,  
         jnp.where(
-            ball_x < center_x - 20,  # Ball clearly on our side  
-            -0.05,  # Reduced negative reward
-            0.01  # Small positive reward for keeping ball in play
-        )
+            ball_x < center_x - 20,  
+            -0.05,  
+            0.01,  
+        ),
     )
+
     
-    # Add bonus for ball being near center (more engaging gameplay)
-    center_bonus = 0.05 * jnp.exp(-((ball_x - center_x) / 50) ** 2)
-    
+    center_bonus = 0.05 * jnp.exp(-(((ball_x - center_x) / 50) ** 2))
+
     return reward + center_bonus
 
 
@@ -63,25 +59,25 @@ def get_reward_from_observation_score(obs):
     return obs[-3] if len(obs) > 3 else 0
 
 
-# if len(sys.argv) > 1:
-#     model_architecture_name = sys.argv[1]
-#     if model_architecture_name == "V2_NO_SEP":
-#         MODEL_ARCHITECTURE = V2_NO_SEP
-#     elif model_architecture_name == "V2":
-#         MODEL_ARCHITECTURE = V2_LSTM
-#     elif model_architecture_name == "MLP":
-#         MODEL_ARCHITECTURE = MLP
-#     elif model_architecture_name == "PongLSTM":
-#         MODEL_ARCHITECTURE = PongLSTM
-#     elif model_architecture_name == "PongDreamer":
-#         MODEL_ARCHITECTURE = PongDreamer
-#     elif model_architecture_name == "PongLSTMStable":
-#         MODEL_ARCHITECTURE = PongLSTMStable
-#     elif model_architecture_name == "PongLSTMFixed":
-#         MODEL_ARCHITECTURE = PongLSTMFixed
-#     else:
-#         raise ValueError(f"Unknown model architecture: {model_architecture_name}")
-# else:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 MODEL_ARCHITECTURE = PongLSTM
 model_scale_factor = 10
 
@@ -263,7 +259,6 @@ def collect_experience_sequential(
         return action
 
     def perfect_policy(obs, rng):
-        
 
         rng, action_key = jax.random.split(rng)
         if jax.random.uniform(action_key) < 0.5:
@@ -355,9 +350,8 @@ def train_world_model(
     sequence_length=32,
     episode_boundaries=None,
     frame_stack_size=4,
-    model_scale_factor = 1
+    model_scale_factor=1,
 ):
-
 
     gpu_batch_size = 250
 
@@ -468,18 +462,24 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    # Fix the model initialization line:
+    
     _, lstm_state_template = model.apply(params, rng, dummy_state, dummy_action, None)
 
-
     @jax.jit
-    def single_sequence_loss(params, state_batch, action_batch, next_state_batch, lstm_template, epoch, max_epochs):
-
+    def single_sequence_loss(
+        params,
+        state_batch,
+        action_batch,
+        next_state_batch,
+        lstm_template,
+        epoch,
+        max_epochs,
+    ):
 
         def scan_fn(rssm_state, inputs):
             current_state, current_action, target_next_state = inputs
 
-            # In the scan_fn within single_sequence_loss:
+            
             pred_next_state, new_rssm_state = model.apply(
                 params, rng, current_state[None, :], current_action[None], rssm_state
             )
@@ -653,10 +653,9 @@ def compare_real_vs_model(
     starting_step: int = 0,
     render_debugging: bool = False,
     frame_stack_size: int = 4,
-    model_scale_factor =4,
-    model_path = None
+    model_scale_factor=4,
+    model_path=None,
 ):
-    
 
     rng = jax.random.PRNGKey(0)
 
@@ -766,10 +765,17 @@ def compare_real_vs_model(
     lstm_state = None
     lstm_real_state = None
 
+    model_base_state = None
 
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
+        
+        
+        
+        
+        
+        
         
 
         next_real_obs = obs[step_count + 1]
@@ -863,7 +869,6 @@ def compare_real_vs_model(
 def main():
 
     frame_stack_size = 4
-    
 
     game = JaxPong()
     env = AtariWrapper(
@@ -951,7 +956,7 @@ def main():
             rewards_array,
             episode_boundaries=boundaries,
             frame_stack_size=frame_stack_size,
-            model_scale_factor=model_scale_factor
+            model_scale_factor=model_scale_factor,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
@@ -990,7 +995,7 @@ def main():
             steps_into_future=10,
             render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
             frame_stack_size=frame_stack_size,
-            model_scale_factor=model_scale_factor
+            model_scale_factor=model_scale_factor,
         )
 
 
