@@ -741,6 +741,7 @@ def compare_real_vs_model(
         normalization_stats = model_data.get("normalization_stats", None)
     world_model = MODEL_ARCHITECTURE(model_scale_factor)
 
+
     pygame.init()
     WIDTH = 160
     HEIGHT = 210
@@ -781,7 +782,8 @@ def compare_real_vs_model(
         
         
         
-        
+        print(f"Reward : {get_reward_from_ball_position(obs[step_count + 1], frame_stack_size=frame_stack_size):.2f}")
+
         
 
         next_real_obs = obs[step_count + 1]
