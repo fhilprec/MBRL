@@ -23,11 +23,18 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 
-def get_reward_from_ball_position(obs):
+def get_reward_from_ball_position(obs, frame_stack_size=4):
     """
     Give rewards based on ball position relative to paddles.
     obs[8] = ball_x, obs[4] = left_paddle_x, obs[0] = right_paddle_x
     """
+
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+
+
+
+
     ball_x = obs[8]
     left_paddle_x = obs[4]
     right_paddle_x = obs[0]
@@ -36,16 +43,15 @@ def get_reward_from_ball_position(obs):
 
     
     reward = jnp.where(
-        ball_x > center_x + 20,  
-        0.2,  
+        ball_x < left_paddle_x + 20,  
+        2,  
         jnp.where(
-            ball_x < center_x - 20,  
-            -0.05,  
+            ball_x > right_paddle_x - 20,  
+            -4,  
             0.01,  
         ),
     )
 
-    
     center_bonus = 0.05 * jnp.exp(-(((ball_x - center_x) / 50) ** 2))
 
     return reward + center_bonus
@@ -670,7 +676,7 @@ def compare_real_vs_model(
     ):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)}"
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {get_reward_from_ball_position(real_obs, frame_stack_size=frame_stack_size):.2f}"
         )
 
         if error > 20 and render_debugging:

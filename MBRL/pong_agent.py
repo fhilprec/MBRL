@@ -203,7 +203,7 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            reward = get_reward_from_ball_position(next_obs)
+            reward = get_reward_from_ball_position(next_obs, frame_stack_size=4)
 
             reward = jnp.tanh(reward * 0.1)
 
@@ -272,8 +272,6 @@ def generate_real_rollouts(
 
     from obs_state_converter import pong_flat_observation_to_state
 
-    
-
     game = JaxPong()
     env = AtariWrapper(
         game,
@@ -281,14 +279,8 @@ def generate_real_rollouts(
         episodic_life=False,
         frame_stack_size=4,
     )
-    dummy_obs, _ = env.reset(jax.random.PRNGKey(0))
+    dummy_obs, dummy_state = env.reset(jax.random.PRNGKey(0))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
-
-    # real_base_state = pong_flat_observation_to_state(
-    #         real_obs, unflattener, frame_stack_size=4
-    #     )
-    
-    
 
     if key is None:
         key = jax.random.PRNGKey(42)
@@ -299,17 +291,17 @@ def generate_real_rollouts(
     def single_trajectory_rollout(cur_obs, subkey):
         """Generate a single trajectory starting from cur_obs."""
 
-
-        #set the state of the game environment to the current state
-        state = pong_flat_observation_to_state(
+        # Convert observation to pong state
+        pong_state = pong_flat_observation_to_state(
             cur_obs, unflattener, frame_stack_size=4
         )
-        print("executed")
-        env._env._state = state
-
+        
+        # Create proper wrapper state structure
+        # The AtariWrapper expects a state with env_state attribute
+        current_state = dummy_state.replace(env_state=pong_state)
 
         def rollout_step(carry, x):
-            key, obs, current_state = carry
+            key, obs, state = carry
 
             key, action_key = jax.random.split(key)
             pi = actor_network.apply(actor_params, obs)
@@ -317,23 +309,25 @@ def generate_real_rollouts(
             log_prob = pi.log_prob(action)
 
             value = critic_network.apply(critic_params, obs)
-            print(type(env))
-            next_obs, current_state, reward, done, _ = env._env.step(current_state, action)
+            
+            next_obs, next_state, reward, done, _ = env.step(state, action)
+            next_obs, _ = flatten_obs(next_obs, single_state=True)
+            
+            # Ensure dtype consistency - convert to float32 to match input
+            next_obs = next_obs.astype(jnp.float32)
 
-            reward = get_reward_from_ball_position(next_obs)
-
+            reward = get_reward_from_ball_position(next_obs, frame_stack_size=4)
             reward = jnp.tanh(reward * 0.1)
 
             discount_factor = jnp.array(discount)
 
             step_data = (next_obs, reward, discount_factor, action, value, log_prob)
-            new_carry = (key, next_obs, current_state)
+            new_carry = (key, next_obs, next_state)
 
             return new_carry, step_data
 
-        
         cur_obs = cur_obs.astype(jnp.float32)
-        init_carry = (subkey, cur_obs, state)
+        init_carry = (subkey, cur_obs, current_state)
 
         _, trajectory_data = lax.scan(
             rollout_step, init_carry, None, length=rollout_length
@@ -588,9 +582,9 @@ def main():
     training_runs = 1
 
     action_dim = 6
-    rollout_length = 15
+    rollout_length = 150
     num_rollouts = 1600
-    policy_epochs = 20
+    policy_epochs = 100
     actor_lr = 8e-5
     critic_lr = 8e-5
     lambda_ = 0.95
