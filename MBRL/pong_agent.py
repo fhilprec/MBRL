@@ -582,7 +582,7 @@ def main():
     training_runs = 1
 
     action_dim = 6
-    rollout_length = 150
+    rollout_length = 15
     num_rollouts = 1600
     policy_epochs = 100
     actor_lr = 8e-5
