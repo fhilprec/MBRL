@@ -452,31 +452,33 @@ def train_dreamerv2_actor_critic(
         return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
 
     def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
-        """DreamerV2 actor loss with Reinforce and entropy regularization."""
+        """DreamerV2 actor loss with inaction penalty."""
         pi = actor_network.apply(actor_params, obs)
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
 
         if use_reinforce:
-
             advantages = targets - values
-
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
             reinforce_loss = -jnp.mean(log_prob * jax.lax.stop_gradient(advantages))
             policy_loss = reinforce_loss
         else:
-
             policy_loss = -jnp.mean(targets)
 
+        # Add inaction penalty
+        # Penalize all actions except 3 (LEFT) and 4 (RIGHTFIRE)
+        mask = jnp.array([1, 1, 1, 0, 0, 1], dtype=pi.probs.dtype)
+        noop_penalty = 0.1 * jnp.sum(pi.probs * mask)
+        
         entropy_loss = -entropy_scale * jnp.mean(entropy)
-
-        total_loss = policy_loss + entropy_loss
+        
+        total_loss = policy_loss + entropy_loss + noop_penalty
 
         return total_loss, {
             "actor_loss": total_loss,
             "policy_loss": policy_loss,
             "entropy_loss": entropy_loss,
+            "noop_penalty": noop_penalty,
             "entropy": jnp.mean(entropy),
             "advantages_mean": jnp.mean(targets - values) if use_reinforce else 0.0,
         }
@@ -584,11 +586,11 @@ def main():
     action_dim = 6
     rollout_length = 45
     num_rollouts = 1600
-    policy_epochs = 100
-    actor_lr = 8e-5
-    critic_lr = 8e-5
+    policy_epochs = 1000
+    actor_lr = 3e-4
+    critic_lr = 1e-3
     lambda_ = 0.95
-    entropy_scale = 1e-3
+    entropy_scale = 1e-1
     discount = 0.99
 
     for i in range(training_runs):
