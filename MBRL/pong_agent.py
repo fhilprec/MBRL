@@ -584,13 +584,13 @@ def main():
     training_runs = 1
 
     action_dim = 6
-    rollout_length = 45
+    rollout_length = 45 #only 45 when using real rollouts since they wait for a couple of frames to start
     num_rollouts = 1600
-    policy_epochs = 1000
-    actor_lr = 3e-4
-    critic_lr = 1e-3
+    policy_epochs = 20
+    actor_lr = 1e-4
+    critic_lr = 3e-4
     lambda_ = 0.95
-    entropy_scale = 1e-1
+    entropy_scale = 1e-3
     discount = 0.99
 
     for i in range(training_runs):
@@ -657,6 +657,7 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
+
         shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
 
         # evaluate_real_performance(
@@ -672,7 +673,7 @@ def main():
             imagined_actions,
             imagined_values,
             imagined_log_probs,
-        ) = generate_real_rollouts(
+        ) = generate_imagined_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,
