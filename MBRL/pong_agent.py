@@ -457,7 +457,7 @@ def generate_real_rollouts(
 
             # reward = get_enhanced_reward(next_obs, action, frame_stack_size=4)
             reward = get_simple_dense_reward(next_obs, action, frame_stack_size=4)
-
+            
 
 
 

@@ -12,6 +12,7 @@ from flax.linen.initializers import constant, orthogonal
 import distrax
 from typing import Any, Tuple
 
+from model_architectures import get_simple_dense_reward
 from jaxatari.games.jax_pong import JaxPong
 from jaxatari.wrappers import FlattenObservationWrapper, LogWrapper, AtariWrapper
 from jaxatari.games.jax_pong import PongRenderer, JaxPong
@@ -257,6 +258,7 @@ def render_agent(
     rng = jax.random.PRNGKey(0)
     rng, reset_key = jax.random.split(rng)
     obs, state = env.reset(reset_key)
+    obs, _ = flatten_obs(obs, single_state=True)
 
     while True:
 
@@ -268,10 +270,12 @@ def render_agent(
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
 
-        print(obs)
+
         action = get_action(loaded_actor_params, obs)
-        print("action :", action)
+        reward = get_simple_dense_reward(obs, action, frame_stack_size=4)
+        # print("action :", action)
         obs, state, reward, done, _ = env.step(state, action)
+        obs, _ = flatten_obs(obs, single_state=True)
 
         screen.fill((0, 0, 0))
 

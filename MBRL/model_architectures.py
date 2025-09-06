@@ -796,30 +796,26 @@ def get_dense_pong_reward(obs, action, frame_stack_size=4):
     return total_reward
 
 def get_simple_dense_reward(obs, action, frame_stack_size=4):
-    """
-    Simpler version if the above is too complex
-    """
     if frame_stack_size > 1:
         obs = obs[(frame_stack_size - 1)::frame_stack_size]
 
+    # print("hi")
+    # print(obs)
     ball_y = obs[9]
-    left_paddle_y = obs[5]
+    player_y = obs[1]
     
-    # Main reward: track the ball vertically
-    y_distance = jnp.abs(ball_y - left_paddle_y)
-    tracking_reward = 1.0 - jnp.minimum(y_distance / 50.0, 1.0)  # 0-1 range
+    y_distance = jnp.abs(ball_y - player_y)
+    tracking_reward = 1 - jnp.minimum(y_distance / 50.0, 1.0)
     
-    # Movement bonus
-    movement_bonus = jnp.where(
-        (action == 3) | (action == 4),
-        0.1,
-        -0.1
-    )
+    movement_bonus = jnp.where((action == 3) | (action == 4), 0.1, -0.1)
+    base_reward = 0.2
     
-    # Base reward to keep things positive
-    base_reward = 0.1
-    final_reward = base_reward + tracking_reward + movement_bonus
-    return jnp.tanh(final_reward * 0.1)
+    total = base_reward + tracking_reward + movement_bonus
+    
+    
+    jax.debug.print("Ball Y: {:.1f}, Paddle Y: {:.1f}, Distance: {:.1f}, Tracking: {:.2f}", ball_y, player_y, y_distance, tracking_reward)
+
+    return total
 
 
 # Integration example - replace your reward computation with:
