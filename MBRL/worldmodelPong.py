@@ -23,30 +23,8 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 
-# In worldmodelPong.py, modify the reward function:
-def get_reward_from_ball_position(obs, frame_stack_size=4):
-    """Give rewards based on ball position and movement."""
-    
-    if frame_stack_size > 1:
-        obs = obs[(frame_stack_size - 1)::frame_stack_size]
 
-    ball_x = obs[8]
-    left_paddle_x = obs[4]
-    right_paddle_x = obs[0]
-    
-    # More balanced rewards - encourage active play
-    reward = jnp.where(
-        ball_x < left_paddle_x + 15,  
-        5.0,  # Higher reward for defending left
-        jnp.where(
-            ball_x > right_paddle_x - 15,  
-            -5.0,  # Penalty for ball near right
-            -0.1,  # Small penalty for inaction (ball in middle)
-        ),
-    )
-    return reward
-    # Add movement bonus (encourage action)
-    # You could track paddle movement if availabl
+
 
 
 def get_reward_from_observation_score(obs):
@@ -668,7 +646,7 @@ def compare_real_vs_model(
     ):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {get_reward_from_ball_position(real_obs, frame_stack_size=frame_stack_size):.2f}"
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {get_dense_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f}"
         )
 
         if error > 20 and render_debugging:
@@ -772,9 +750,9 @@ def compare_real_vs_model(
         
         
         
-        
-        
-        print(f"Reward : {get_reward_from_ball_position(obs[step_count + 1], frame_stack_size=frame_stack_size):.2f}")
+
+
+        print(f"Reward : {get_dense_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}")
 
         
 

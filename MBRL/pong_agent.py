@@ -16,12 +16,147 @@ import distrax
 from rtpt import RTPT
 from jax import lax
 
-from worldmodelPong import compare_real_vs_model
-from model_architectures import PongLSTM
-from worldmodelPong import get_reward_from_ball_position
+from worldmodelPong import compare_real_vs_model, get_enhanced_reward
+from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
 SEED = 42
+
+# Let's add debugging to understand what's happening with your lambda returns
+
+# Let's add debugging to understand what's happening with your lambda returns
+
+# Let's add debugging to understand what's happening with your lambda returns
+
+def debug_lambda_returns_computation(rewards, values, discounts, lambda_=0.95):
+    """
+    Debug version of lambda returns with detailed logging
+    """
+    print("=== DEBUGGING LAMBDA RETURNS ===")
+    
+    # Check input shapes and basic stats
+    print(f"Rewards shape: {rewards.shape}")
+    print(f"Values shape: {values.shape}")
+    print(f"Discounts shape: {discounts.shape}")
+    
+    print(f"\nRewards stats:")
+    print(f"  Mean: {rewards.mean():.4f}")
+    print(f"  Std: {rewards.std():.4f}")
+    print(f"  Min: {rewards.min():.4f}")
+    print(f"  Max: {rewards.max():.4f}")
+    print(f"  Non-zero count: {jnp.sum(rewards != 0)}")
+    
+    print(f"\nValues stats:")
+    print(f"  Mean: {values.mean():.4f}")
+    print(f"  Std: {values.std():.4f}")
+    print(f"  Min: {values.min():.4f}")
+    print(f"  Max: {values.max():.4f}")
+    
+    print(f"\nDiscounts stats:")
+    print(f"  Mean: {discounts.mean():.4f}")
+    print(f"  Unique values: {jnp.unique(discounts)}")
+    
+    # Let's examine a single trajectory in detail
+    print(f"\n=== SINGLE TRAJECTORY ANALYSIS ===")
+    traj_idx = 0
+    traj_rewards = rewards[:, traj_idx]  # Shape: (T,)
+    traj_values = values[:, traj_idx]    # Shape: (T,)
+    traj_discounts = discounts[:, traj_idx]  # Shape: (T,)
+    
+    print(f"Trajectory {traj_idx}:")
+    print(f"  Rewards: {traj_rewards[:10]} ...")  # First 10 steps
+    print(f"  Values: {traj_values[:10]} ...")
+    print(f"  Discounts: {traj_discounts[:10]} ...")
+    
+    # Manually compute lambda returns for this trajectory
+    T = len(traj_rewards)
+    bootstrap = traj_values[-1]
+    
+    # Compute step by step
+    lambda_returns = []
+    
+    # Start from the end and work backwards (this is how the paper does it)
+    next_lambda_return = bootstrap
+    
+    for t in reversed(range(T-1)):  # T-2, T-3, ..., 0
+        # V^λ_t = r_t + γ_t * [(1-λ) * v(s_{t+1}) + λ * V^λ_{t+1}]
+        reward_t = traj_rewards[t]
+        discount_t = traj_discounts[t]
+        value_next = traj_values[t+1] if t+1 < T-1 else bootstrap
+        
+        lambda_return_t = reward_t + discount_t * (
+            (1 - lambda_) * value_next + lambda_ * next_lambda_return
+        )
+        
+        lambda_returns.append(lambda_return_t)
+        next_lambda_return = lambda_return_t
+        
+        if t >= T-5:  # Show last few steps
+            print(f"  Step {t}: r={reward_t:.3f}, γ={discount_t:.3f}, "
+                  f"v_next={value_next:.3f}, λ_ret={lambda_return_t:.3f}")
+    
+    # Reverse to get chronological order
+    lambda_returns = jnp.array(lambda_returns[::-1])
+    
+    print(f"\nLambda returns for trajectory {traj_idx}:")
+    print(f"  Mean: {lambda_returns.mean():.4f}")
+    print(f"  First 5: {lambda_returns[:5]}")
+    print(f"  Last 5: {lambda_returns[-5:]}")
+    
+    return lambda_returns
+
+# Also let's check if your lambda_return_dreamerv2 function matches the paper
+def verify_lambda_return_implementation():
+    """
+    Verify the lambda return implementation against paper equation (4)
+    """
+    print("\n=== VERIFYING LAMBDA RETURN IMPLEMENTATION ===")
+    
+    # Create simple test case
+    T = 5
+    rewards = jnp.array([0.1, 0.2, -0.1, 0.3, 0.0])
+    values = jnp.array([1.0, 1.1, 0.9, 1.2, 0.8])
+    discounts = jnp.array([0.99, 0.99, 0.99, 0.99, 0.99])
+    bootstrap = 0.5
+    lambda_ = 0.95
+    
+    print(f"Test inputs:")
+    print(f"  Rewards: {rewards}")
+    print(f"  Values: {values}")
+    print(f"  Discounts: {discounts}")
+    print(f"  Bootstrap: {bootstrap}")
+    
+    # Manual computation following paper exactly
+    # V^λ_t = r_t + γ_t * [(1-λ) * v(s_{t+1}) + λ * V^λ_{t+1}]
+    
+    # Start from end
+    V_lambda = jnp.zeros(T)
+    V_lambda = V_lambda.at[-1].set(bootstrap)  # Last value is bootstrap
+    
+    for t in reversed(range(T-1)):
+        next_value = values[t+1] if t+1 < T-1 else bootstrap
+        V_lambda = V_lambda.at[t].set(
+            rewards[t] + discounts[t] * (
+                (1 - lambda_) * next_value + lambda_ * V_lambda[t+1]
+            )
+        )
+    
+    print(f"Manual lambda returns: {V_lambda}")
+    
+    # Compare with your implementation  
+    # Note: your function expects bootstrap as array, not scalar
+    bootstrap_array = jnp.array([bootstrap])
+    your_result = lambda_return_dreamerv2(
+        rewards, values, discounts, bootstrap_array, lambda_=lambda_, axis=0
+    )
+    print(f"Your implementation: {your_result}")
+    print(f"Difference: {jnp.abs(V_lambda - your_result).max():.6f}")
+
+# Add this to your training function right after computing targets:
+# debug_lambda_returns_computation(rewards, values, discounts)
+# verify_lambda_return_implementation()
+
+
 
 
 def flatten_obs(
@@ -115,7 +250,8 @@ def create_dreamerv2_critic():
             )(x)
             x = nn.elu(x)
 
-            value = nn.Dense(1, kernel_init=orthogonal(0.1), bias_init=constant(0.0))(x)
+            # value = nn.Dense(1, kernel_init=orthogonal(0.1), bias_init=constant(0.0))(x)
+            value = nn.Dense(1, kernel_init=orthogonal(0.001), bias_init=constant(0.0))(x)
 
             return jnp.squeeze(value, axis=-1)
 
@@ -131,7 +267,8 @@ def lambda_return_dreamerv2(
     axis: int = 0,
 ):
 
-    next_values = jnp.concatenate([values[1:], bootstrap[None]], axis=axis)
+    next_values = jnp.concatenate([values[1:], jnp.array([bootstrap])], axis=axis)
+    # next_values = jnp.concatenate([values[1:], bootstrap[None]], axis=axis)
 
     def compute_target(carry, inputs):
         next_lambda_return = carry
@@ -205,7 +342,9 @@ def generate_imagined_rollouts(
 
             reward = get_reward_from_ball_position(next_obs, frame_stack_size=4)
 
+            print(f"Raw reward before tanh: {reward}")
             reward = jnp.tanh(reward * 0.1)
+            print(f"Final reward after tanh: {reward}")
 
             discount_factor = jnp.array(discount)
 
@@ -316,8 +455,12 @@ def generate_real_rollouts(
             # Ensure dtype consistency - convert to float32 to match input
             next_obs = next_obs.astype(jnp.float32)
 
-            reward = get_reward_from_ball_position(next_obs, frame_stack_size=4)
-            reward = jnp.tanh(reward * 0.1)
+            # reward = get_enhanced_reward(next_obs, action, frame_stack_size=4)
+            reward = get_simple_dense_reward(next_obs, action, frame_stack_size=4)
+
+
+
+
 
             discount_factor = jnp.array(discount)
 
@@ -341,6 +484,10 @@ def generate_real_rollouts(
             values_seq,
             log_probs_seq,
         ) = trajectory_data
+
+        action_counts = jnp.bincount(actions_seq, length=6)
+        print(f"Action 3 (LEFT): {action_counts[3]}, Action 4 (RIGHTFIRE): {action_counts[4]}")
+
 
         observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
         rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq])
@@ -434,9 +581,16 @@ def train_dreamerv2_actor_critic(
         rewards, values, discounts
     )
 
+
+
+
     print(
         f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     )
+    # With this:
+    # debug_lambda_returns_computation(rewards, values, discounts)
+    print(f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}")
+    # exit()
 
     observations_flat = observations[:-1].reshape((T - 1) * B, -1)
     actions_flat = actions[:-1].reshape((T - 1) * B)
@@ -444,10 +598,18 @@ def train_dreamerv2_actor_critic(
     values_flat = values[:-1].reshape((T - 1) * B)
     old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
 
-    def critic_loss_fn(critic_params, obs, targets):
-        """DreamerV2 critic loss with squared error."""
-        predicted_values = critic_network.apply(critic_params, obs)
+    # def critic_loss_fn(critic_params, obs, targets):
+    #     """DreamerV2 critic loss with squared error."""
+    #     predicted_values = critic_network.apply(critic_params, obs)
 
+    #     loss = jnp.mean((predicted_values - targets) ** 2)
+    #     return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
+    def critic_loss_fn(critic_params, obs, targets):
+        predicted_values = critic_network.apply(critic_params, obs)
+        
+        # Clip to reasonable range
+        predicted_values = jnp.clip(predicted_values, -5.0, 5.0)
+        
         loss = jnp.mean((predicted_values - targets) ** 2)
         return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
 
@@ -468,7 +630,7 @@ def train_dreamerv2_actor_critic(
         # Add inaction penalty
         # Penalize all actions except 3 (LEFT) and 4 (RIGHTFIRE)
         mask = jnp.array([1, 1, 1, 0, 0, 1], dtype=pi.probs.dtype)
-        noop_penalty = 0.1 * jnp.sum(pi.probs * mask)
+        noop_penalty = 1 * jnp.sum(pi.probs * mask)
         
         entropy_loss = -entropy_scale * jnp.mean(entropy)
         
@@ -590,7 +752,7 @@ def main():
     actor_lr = 1e-4
     critic_lr = 3e-4
     lambda_ = 0.95
-    entropy_scale = 1e-3
+    entropy_scale = 1e-1
     discount = 0.99
 
     for i in range(training_runs):
@@ -673,7 +835,7 @@ def main():
             imagined_actions,
             imagined_values,
             imagined_log_probs,
-        ) = generate_imagined_rollouts(
+        ) = generate_real_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,

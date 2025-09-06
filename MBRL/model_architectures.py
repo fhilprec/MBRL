@@ -722,3 +722,163 @@ def PongDreamerRSSM(model_scale_factor=1):
         return prediction, new_rssm_state
 
     return hk.transform(forward)
+
+
+
+
+################ Reward functions ############################
+def get_dense_pong_reward(obs, action, frame_stack_size=4):
+    """
+    Dense reward function for Pong that provides continuous feedback.
+    Designed to work well with actor-critic methods.
+    """
+    
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+
+    ball_x = obs[8]
+    ball_y = obs[9]
+    left_paddle_x = obs[4]
+    left_paddle_y = obs[5]
+    right_paddle_x = obs[0]
+    
+    # Component 1: Ball tracking reward (most important)
+    # Reward being vertically aligned with the ball
+    y_distance = jnp.abs(ball_y - left_paddle_y)
+    tracking_reward = jnp.exp(-y_distance / 20.0) * 0.3  # 0-0.3 range
+    
+    # Component 2: Defensive positioning
+    # Reward being in good defensive position
+    defense_reward = jnp.where(
+        ball_x < left_paddle_x + 20,  # Ball approaching our side
+        0.2,  # Good defense
+        0.1   # Baseline reward for being ready
+    )
+    
+    # Component 3: Ball proximity reward
+    # Reward being close to ball horizontally when it's on our side
+    x_distance = jnp.abs(ball_x - left_paddle_x)
+    proximity_reward = jnp.where(
+        ball_x < left_paddle_x + 30,  # Ball on our side
+        jnp.exp(-x_distance / 30.0) * 0.2,  # 0-0.2 range
+        0.0
+    )
+    
+    # Component 4: Movement reward
+    # Encourage active play, but not random movement
+    movement_reward = jnp.where(
+        (action == 3) | (action == 4),  # LEFT or RIGHTFIRE actions
+        0.1,
+        -0.05  # Small penalty for no-op
+    )
+    
+    # Component 5: Critical events (sparse but important)
+    # Big rewards for actual game events
+    critical_reward = jnp.where(
+        ball_x < left_paddle_x + 5,  # Ball very close - potential save
+        jnp.where(
+            y_distance < 10,  # And we're aligned
+            1.0,  # Big reward for good save position
+            -0.5  # Penalty for missing the ball when close
+        ),
+        jnp.where(
+            ball_x > right_paddle_x - 5,  # Ball at opponent's side
+            0.5,  # Moderate reward for offensive position
+            0.0
+        )
+    )
+    
+    # Combine all components
+    total_reward = tracking_reward + defense_reward + proximity_reward + movement_reward + critical_reward
+    
+    # Ensure rewards are in reasonable range and mostly positive
+    # Most of the time, total should be positive (0.1 + 0.3 + 0.1 = 0.5 baseline)
+    return total_reward
+
+def get_simple_dense_reward(obs, action, frame_stack_size=4):
+    """
+    Simpler version if the above is too complex
+    """
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+
+    ball_y = obs[9]
+    left_paddle_y = obs[5]
+    
+    # Main reward: track the ball vertically
+    y_distance = jnp.abs(ball_y - left_paddle_y)
+    tracking_reward = 1.0 - jnp.minimum(y_distance / 50.0, 1.0)  # 0-1 range
+    
+    # Movement bonus
+    movement_bonus = jnp.where(
+        (action == 3) | (action == 4),
+        0.1,
+        -0.1
+    )
+    
+    # Base reward to keep things positive
+    base_reward = 0.1
+    final_reward = base_reward + tracking_reward + movement_bonus
+    return jnp.tanh(final_reward * 0.1)
+
+
+# Integration example - replace your reward computation with:
+def enhanced_reward_integration(obs, action, frame_stack_size=4):
+    """
+    How to integrate into your rollout functions
+    """
+    # Option 1: Use dense reward
+    reward = get_dense_pong_reward(obs, action, frame_stack_size)
+    
+    # Option 2: Blend with original if you want to keep some original signal
+    # original_reward = get_reward_from_ball_position(obs, frame_stack_size)
+    # dense_reward = get_dense_pong_reward(obs, action, frame_stack_size)
+    # reward = 0.3 * original_reward + 0.7 * dense_reward
+    
+    # No need for tanh scaling - rewards are already in good range
+    return reward
+
+
+
+# In worldmodelPong.py, modify the reward function:
+def get_reward_from_ball_position(obs, frame_stack_size=4):
+    """Give rewards based on ball position and movement."""
+    
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+
+    ball_x = obs[8]
+    left_paddle_x = obs[4]
+    right_paddle_x = obs[0]
+    
+    # More balanced rewards - encourage active play
+    reward = jnp.where(
+        ball_x < left_paddle_x + 15,  
+        5.0,  # Higher reward for defending left
+        jnp.where(
+            ball_x > right_paddle_x - 15,  
+            -5.0,  # Penalty for ball near right
+            0,  # Small penalty for inaction (ball in middle)
+        ),
+    )
+    return reward
+
+
+def get_enhanced_reward(obs, action, frame_stack_size=4):
+    # Original ball position reward
+    ball_reward = get_reward_from_ball_position(obs, frame_stack_size)
+    
+    # Ball tracking bonus - reward being near ball vertically
+    if frame_stack_size > 1:
+        obs_current = obs[(frame_stack_size - 1)::frame_stack_size]
+    
+    ball_y = obs_current[9]  # Ball Y position
+    paddle_y = obs_current[5]  # Left paddle Y position
+    
+    # Reward being close to ball Y position
+    distance_bonus = jnp.exp(-jnp.abs(ball_y - paddle_y) / 20.0) * 0.1
+    
+    # Movement variety bonus
+    movement_bonus = jnp.where((action == 3) | (action == 4), 0.05, -0.01)
+    
+    return ball_reward + distance_bonus + movement_bonus
