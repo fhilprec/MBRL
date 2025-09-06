@@ -456,7 +456,7 @@ def generate_real_rollouts(
             next_obs = next_obs.astype(jnp.float32)
 
             # reward = get_enhanced_reward(next_obs, action, frame_stack_size=4)
-            reward = get_simple_dense_reward(next_obs, action, frame_stack_size=4)
+            reward = stricter_reward(next_obs, action, frame_stack_size=4)
             
 
 
@@ -746,14 +746,14 @@ def main():
     training_runs = 1
 
     action_dim = 6
-    rollout_length = 45 #only 45 when using real rollouts since they wait for a couple of frames to start
+    rollout_length = 15 #only 45 when using real rollouts since they wait for a couple of frames to start
     num_rollouts = 1600
-    policy_epochs = 20
+    policy_epochs = 50
     actor_lr = 1e-4
     critic_lr = 3e-4
     lambda_ = 0.95
     entropy_scale = 1e-1
-    discount = 0.99
+    discount = 0.85
 
     for i in range(training_runs):
 

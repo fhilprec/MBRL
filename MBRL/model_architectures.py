@@ -813,10 +813,24 @@ def get_simple_dense_reward(obs, action, frame_stack_size=4):
     total = base_reward + tracking_reward + movement_bonus
     
     
-    jax.debug.print("Ball Y: {:.1f}, Paddle Y: {:.1f}, Distance: {:.1f}, Tracking: {:.2f}", ball_y, player_y, y_distance, tracking_reward)
+    # jax.debug.print("Ball Y: {:.1f}, Paddle Y: {:.1f}, Distance: {:.1f}, Tracking: {:.2f}", ball_y, player_y, y_distance, tracking_reward)
 
-    return total
+    return total * 0.5  # Scale down to keep rewards manageable
 
+
+def stricter_reward(obs, action, frame_stack_size=4):
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+        
+    ball_y = obs[9]
+    player_y = obs[1]
+    
+    y_distance = jnp.abs(ball_y - player_y)
+    tracking_reward = jnp.exp(-y_distance / 15.0)  # Sharper dropoff
+    
+    movement_bonus = jnp.where((action == 3) | (action == 4), 0.05, -0.1)
+    
+    return tracking_reward + movement_bonus  # No base reward
 
 # Integration example - replace your reward computation with:
 def enhanced_reward_integration(obs, action, frame_stack_size=4):
