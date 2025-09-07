@@ -469,7 +469,7 @@ def create_dreamerv2_critic():
 
             # value = nn.Dense(1, kernel_init=orthogonal(0.1), bias_init=constant(0.0))(x)
             # value = nn.Dense(1, kernel_init=orthogonal(0.001), bias_init=constant(0.0))(x)
-            value = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(35.0))(x)
+            value = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
 
             return jnp.squeeze(value, axis=-1)
 
@@ -850,6 +850,10 @@ def train_dreamerv2_actor_critic(
         f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     )
     print(f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}")
+    print(
+        f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
+    )
+    print(f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}")
 
     observations_flat = observations[:-1].reshape((T - 1) * B, -1)
     actions_flat = actions[:-1].reshape((T - 1) * B)
@@ -1127,14 +1131,14 @@ def main():
         'rollout_length': 45,
         'num_rollouts': 1600,
         'policy_epochs': 50,      # More epochs since we're stopping early
-        'actor_lr': 5e-6,         # Even lower
+        'actor_lr': 1e-6,         # Even lower
         'critic_lr': 1e-6,        # Even lower  
         'lambda_': 0.95,
         'entropy_scale': 5e-4,    # Much lower entropy regularization
         'discount': 0.95,
-        'max_grad_norm': 0.1,     # Extremely aggressive clipping
-        'target_kl': 0.2,         # More lenient to allow longer training
-        'early_stopping_patience': 15
+        'max_grad_norm': 1,     # Extremely aggressive clipping
+        'target_kl': 0.5,         # More lenient to allow longer training
+        'early_stopping_patience': 25
     }
 
 
