@@ -468,7 +468,8 @@ def create_dreamerv2_critic():
             x = nn.elu(x)
 
             # value = nn.Dense(1, kernel_init=orthogonal(0.1), bias_init=constant(0.0))(x)
-            value = nn.Dense(1, kernel_init=orthogonal(0.001), bias_init=constant(0.0))(x)
+            # value = nn.Dense(1, kernel_init=orthogonal(0.001), bias_init=constant(0.0))(x)
+            value = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(35.0))(x)
 
             return jnp.squeeze(value, axis=-1)
 
@@ -852,39 +853,39 @@ def train_dreamerv2_actor_critic(
     values_flat = values[:-1].reshape((T - 1) * B)
     old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
 
-    def critic_loss_fn(critic_params, obs, targets):
-        """DreamerV2 critic loss with squared error."""
-        predicted_values = critic_network.apply(critic_params, obs)
-
-        loss = jnp.mean((predicted_values - targets) ** 2)
-        return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
     # def critic_loss_fn(critic_params, obs, targets):
+    #     """DreamerV2 critic loss with squared error."""
     #     predicted_values = critic_network.apply(critic_params, obs)
+
+    #     loss = jnp.mean((predicted_values - targets) ** 2)
+    #     return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
+    def critic_loss_fn(critic_params, obs, targets):
+        predicted_values = critic_network.apply(critic_params, obs)
         
-    #     # Much more aggressive clipping to prevent explosions
-    #     predicted_values = jnp.clip(predicted_values, -3.0, 3.0)
-    #     targets = jnp.clip(targets, -3.0, 3.0)
+        # Use reasonable clipping bounds based on your actual data
+        predicted_values = jnp.clip(predicted_values, -50.0, 50.0)
+        targets = jnp.clip(targets, -50.0, 50.0)
         
-    #     # Use Huber loss instead of MSE for much better stability
-    #     diff = predicted_values - targets
-    #     huber_loss = jnp.where(
-    #         jnp.abs(diff) < 0.5,  # Smaller threshold for Huber
-    #         0.5 * diff**2,
-    #         0.5 * jnp.abs(diff) - 0.125
-    #     )
+        # Keep the Huber loss but with larger threshold
+        diff = predicted_values - targets
+        huber_loss = jnp.where(
+            jnp.abs(diff) < 5.0,  # Larger threshold
+            0.5 * diff**2,
+            5.0 * jnp.abs(diff) - 12.5
+        )
         
-    #     loss = jnp.mean(huber_loss)
+        loss = jnp.mean(huber_loss)
         
-    #     # Add L2 regularization to prevent parameter explosion
-    #     l2_reg = 1e-6 * sum(jnp.sum(p**2) for p in jax.tree.leaves(critic_params))
+        # Keep the L2 regularization
+        l2_reg = 1e-6 * sum(jnp.sum(p**2) for p in jax.tree.leaves(critic_params))
         
-    #     total_loss = loss + l2_reg
+        total_loss = loss + l2_reg
         
-    #     return total_loss, {
-    #         "critic_loss": total_loss, 
-    #         "critic_mean": jnp.mean(predicted_values),
-    #         "critic_std": jnp.std(predicted_values)
-    #     }
+        return total_loss, {
+            "critic_loss": total_loss, 
+            "critic_mean": jnp.mean(predicted_values),
+            "critic_std": jnp.std(predicted_values)
+        }
 
     def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
         """DreamerV2 actor loss with inaction penalty."""
@@ -925,6 +926,10 @@ def train_dreamerv2_actor_critic(
     metrics_history = []
 
     for epoch in range(num_epochs):
+
+         
+
+
         key, subkey = jax.random.split(key)
 
         perm = jax.random.permutation(subkey, (T - 1) * B)
@@ -933,6 +938,20 @@ def train_dreamerv2_actor_critic(
         targets_shuffled = targets_flat[perm]
         values_shuffled = values_flat[perm]
         old_log_probs_shuffled = old_log_probs_flat[perm]
+
+               # Debug critic predictions vs targets
+        if epoch == 0:  # Only on first epoch
+            current_preds = critic_network.apply(critic_state.params, obs_shuffled[:100])  # Sample 100
+            sample_targets = targets_shuffled[:100]
+            
+            print(f"\nCritic debugging (epoch {epoch}):")
+            print(f"  Target stats: mean={sample_targets.mean():.3f}, std={sample_targets.std():.3f}")
+            print(f"  Prediction stats: mean={current_preds.mean():.3f}, std={current_preds.std():.3f}")
+            print(f"  Scale difference: {abs(sample_targets.mean() - current_preds.mean()):.3f}")
+            
+            # Check initial loss
+            initial_loss = jnp.mean((current_preds - sample_targets) ** 2)
+            print(f"  Initial MSE loss: {initial_loss:.3f}")
 
 
         # Compute old policy distribution for KL divergence
@@ -1120,7 +1139,7 @@ def main():
         'num_rollouts': 1600,
         'policy_epochs': 50,      # More epochs since we're stopping early
         'actor_lr': 5e-6,         # Even lower
-        'critic_lr': 1e-5,        # Even lower  
+        'critic_lr': 1e-6,        # Even lower  
         'lambda_': 0.95,
         'entropy_scale': 5e-4,    # Much lower entropy regularization
         'discount': 0.95,
