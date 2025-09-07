@@ -848,6 +848,74 @@ def enhanced_reward_integration(obs, action, frame_stack_size=4):
     # No need for tanh scaling - rewards are already in good range
     return reward
 
+def improved_pong_reward(obs, action, frame_stack_size=4):
+    """
+    Improved reward function for Pong ball tracking.
+    
+    Args:
+        obs: Flattened observation (should be shape [56] for 4-frame stack)
+        action: Action taken
+        frame_stack_size: Number of stacked frames
+    """
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+    
+    # Extract ball and player positions from the latest frame
+    # Assuming standard Pong state format: [player_x, player_y, ..., ball_x, ball_y, ...]
+    player_y = obs[1]  # Player Y position
+    ball_x = obs[8]    # Ball X position  
+    ball_y = obs[9]    # Ball Y position
+    
+    # 1. Primary reward: Track ball vertically
+    y_distance = jnp.abs(ball_y - player_y)
+    tracking_reward = jnp.exp(-y_distance / 20.0)  # Exponential decay
+    
+    # 2. Bonus for being in the right horizontal zone when ball approaches
+    # Encourage positioning when ball is on player's side
+    ball_approaching = ball_x > 0.5  # Assuming normalized coordinates
+    positioning_bonus = jnp.where(
+        ball_approaching & (y_distance < 0.1), 
+        0.2, 
+        0.0
+    )
+    
+    # 3. Action rewards - encourage movement actions over no-op
+    # Actions 3 (LEFT) and 4 (RIGHTFIRE) are movement actions
+    movement_bonus = jnp.where(
+        (action == 3) | (action == 4),  # LEFT or RIGHTFIRE
+        0.05,   # Small bonus for movement
+        -0.02   # Small penalty for no-op/other actions
+    )
+    
+    # 4. Prevent extreme movements (optional stabilization)
+    # Penalize if player is at screen edges unnecessarily
+    edge_penalty = jnp.where(
+        (player_y < 0.1) | (player_y > 0.9),
+        -0.1,
+        0.0
+    )
+    
+    total_reward = tracking_reward 
+    
+    # Clip to reasonable range to prevent training instability
+    return jnp.clip(total_reward, -0.5, 1.5)
+
+def simple_movement_reward(obs, action, frame_stack_size=4):
+    # Only reward movement actions that reduce distance
+    movement_bonus = jnp.where(
+        (action == 3) | (action == 4),  # LEFT or RIGHTFIRE
+        1,   # Small bonus for movement
+        -1   # Small penalty for no-op/other actions
+    )
+    
+    if frame_stack_size > 1:
+        obs = obs[(frame_stack_size - 1)::frame_stack_size]
+    
+    # Simple distance-based reward
+  
+    distance = -30 + abs(obs[9] - obs[1])  # ball_y - player_y
+    return -(distance/10) + movement_bonus * 5  # Closer = better
+
 
 
 # In worldmodelPong.py, modify the reward function:
