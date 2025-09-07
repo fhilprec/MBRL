@@ -558,7 +558,7 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            reward = simple_movement_reward(next_obs, frame_stack_size=4)
+            reward = improved_pong_reward(next_obs, frame_stack_size=4)
 
             print(f"Raw reward before tanh: {reward}")
             reward = jnp.tanh(reward * 0.1)
@@ -674,7 +674,7 @@ def generate_real_rollouts(
             next_obs = next_obs.astype(jnp.float32)
 
             # reward = get_enhanced_reward(next_obs, action, frame_stack_size=4)
-            reward = simple_movement_reward(next_obs, action, frame_stack_size=4)
+            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
             
 
 
@@ -1061,7 +1061,7 @@ def evaluate_real_performance(actor_network, actor_params, obs_shape, num_episod
             action = scaled_pi.sample(seed=jax.random.PRNGKey(step_count))
             if step_count % 100 == 0:
                 obs_flat, _ = flatten_obs(obs, single_state=True)
-                training_reward = simple_movement_reward(obs_flat, action, frame_stack_size=4)
+                training_reward = improved_pong_reward(obs_flat, action, frame_stack_size=4)
                 print(f"  Training reward would be: {training_reward:.3f}")
 
                 obs_flat, _ = flatten_obs(obs, single_state=True)
@@ -1124,7 +1124,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 
 def main():
 
-    training_runs = 3
+    training_runs = 30
 
     training_params = {
         'action_dim': 6,
@@ -1136,7 +1136,7 @@ def main():
         'lambda_': 0.95,
         'entropy_scale': 5e-4,    # Much lower entropy regularization
         'discount': 0.95,
-        'max_grad_norm': 1,     # Extremely aggressive clipping
+        'max_grad_norm': 0.5,     # Extremely aggressive clipping
         'target_kl': 0.5,         # More lenient to allow longer training
         'early_stopping_patience': 25
     }
