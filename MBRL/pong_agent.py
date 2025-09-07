@@ -828,7 +828,11 @@ def train_dreamerv2_actor_critic(
     targets = jax.vmap(compute_trajectory_targets, in_axes=(1, 1, 1), out_axes=1)(
         rewards, values, discounts
     )
+    targets_mean = targets.mean()
+    targets_std = targets.std()
+    targets_normalized = (targets - targets_mean) / (targets_std + 1e-8)
 
+    print(f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}")
 
 
 
@@ -849,7 +853,7 @@ def train_dreamerv2_actor_critic(
 
     observations_flat = observations[:-1].reshape((T - 1) * B, -1)
     actions_flat = actions[:-1].reshape((T - 1) * B)
-    targets_flat = targets.reshape((T - 1) * B)
+    targets_flat = targets_normalized.reshape((T - 1) * B)
     values_flat = values[:-1].reshape((T - 1) * B)
     old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
 
@@ -860,32 +864,17 @@ def train_dreamerv2_actor_critic(
     #     loss = jnp.mean((predicted_values - targets) ** 2)
     #     return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
     def critic_loss_fn(critic_params, obs, targets):
-        predicted_values = critic_network.apply(critic_params, obs)
-        
-        # Use reasonable clipping bounds based on your actual data
-        predicted_values = jnp.clip(predicted_values, -50.0, 50.0)
-        targets = jnp.clip(targets, -50.0, 50.0)
-        
-        # Keep the Huber loss but with larger threshold
-        diff = predicted_values - targets
-        huber_loss = jnp.where(
-            jnp.abs(diff) < 5.0,  # Larger threshold
-            0.5 * diff**2,
-            5.0 * jnp.abs(diff) - 12.5
-        )
-        
-        loss = jnp.mean(huber_loss)
-        
-        # Keep the L2 regularization
-        l2_reg = 1e-6 * sum(jnp.sum(p**2) for p in jax.tree.leaves(critic_params))
-        
-        total_loss = loss + l2_reg
-        
-        return total_loss, {
-            "critic_loss": total_loss, 
-            "critic_mean": jnp.mean(predicted_values),
-            "critic_std": jnp.std(predicted_values)
-        }
+            predicted_values = critic_network.apply(critic_params, obs)
+            
+            # No clipping needed with normalized targets
+            diff = predicted_values - targets
+            loss = jnp.mean(diff**2)  # Simple MSE
+            
+            return loss, {
+                "critic_loss": loss, 
+                "critic_mean": jnp.mean(predicted_values),
+                "critic_std": jnp.std(predicted_values)
+            }
 
     def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
         """DreamerV2 actor loss with inaction penalty."""
