@@ -20,6 +20,7 @@ from worldmodelPong import compare_real_vs_model, get_enhanced_reward
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
+
 def lambda_return_dreamerv2(
     rewards: jnp.ndarray,
     values: jnp.ndarray,
@@ -51,329 +52,305 @@ def lambda_return_dreamerv2(
 
     return lambda_returns
 
+
 def compute_trajectory_targets(traj_rewards, traj_values, traj_discounts, lambda_=0.95):
     """Your trajectory target computation"""
     bootstrap = traj_values[-1]
-    
+
     targets = lambda_return_dreamerv2(
-        traj_rewards[:-1],  # Remove last reward
-        traj_values[:-1],   # Remove last value  
-        traj_discounts[:-1], # Remove last discount
+        traj_rewards[:-1],
+        traj_values[:-1],
+        traj_discounts[:-1],
         bootstrap,
         lambda_=lambda_,
         axis=0,
     )
     return targets
 
-def manual_lambda_returns_reference(rewards, values, discounts, bootstrap, lambda_=0.95):
+
+def manual_lambda_returns_reference(
+    rewards, values, discounts, bootstrap, lambda_=0.95
+):
     """
     Reference implementation following DreamerV2 paper equation (4):
     V^λ_t = r_t + γ_t * [(1-λ) * v(s_{t+1}) + λ * V^λ_{t+1}]
-    
+
     Computed backwards from the end.
     """
     T = len(rewards)
     lambda_returns = jnp.zeros(T)
-    
-    # Start from the end, work backwards
+
     next_lambda_return = bootstrap
-    
+
     for t in reversed(range(T)):
-        # Get next value: v(s_{t+1})
+
         if t == T - 1:
-            next_value = bootstrap  # Last timestep uses bootstrap
+            next_value = bootstrap
         else:
             next_value = values[t + 1]
-        
-        # Compute λ-return: V^λ_t = r_t + γ_t * [(1-λ) * v(s_{t+1}) + λ * V^λ_{t+1}]
+
         lambda_return = rewards[t] + discounts[t] * (
             (1 - lambda_) * next_value + lambda_ * next_lambda_return
         )
-        
+
         lambda_returns = lambda_returns.at[t].set(lambda_return)
         next_lambda_return = lambda_return
-    
+
     return lambda_returns
+
 
 def test_simple_case():
     """Test with a very simple 3-step trajectory"""
     print("=== TEST 1: Simple 3-step trajectory ===")
-    
-    # Simple trajectory: 3 timesteps
+
     rewards = jnp.array([1.0, 0.5, 0.0])
-    values = jnp.array([2.0, 1.5, 1.0])  
+    values = jnp.array([2.0, 1.5, 1.0])
     discounts = jnp.array([0.9, 0.9, 0.9])
     lambda_ = 0.8
-    
+
     print(f"Input:")
     print(f"  Rewards: {rewards}")
     print(f"  Values: {values}")
     print(f"  Discounts: {discounts}")
     print(f"  Lambda: {lambda_}")
     print(f"  Bootstrap (last value): {values[-1]}")
-    
-    # Your implementation
+
     your_targets = compute_trajectory_targets(rewards, values, discounts, lambda_)
-    
-    # Reference implementation
-    # For targets, we use rewards[:-1], values[:-1], discounts[:-1] with bootstrap=values[-1]
+
     ref_targets = manual_lambda_returns_reference(
         rewards[:-1], values[:-1], discounts[:-1], values[-1], lambda_
     )
-    
+
     print(f"\nResults:")
     print(f"  Your targets:      {your_targets}")
     print(f"  Reference targets: {ref_targets}")
     print(f"  Max difference:    {jnp.abs(your_targets - ref_targets).max():.8f}")
     print(f"  Match? {jnp.allclose(your_targets, ref_targets, atol=1e-6)}")
-    
-    # Manual step-by-step verification for reference
+
     print(f"\n  Manual step-by-step calculation:")
-    bootstrap = values[-1]  # 1.0
-    
-    # Working backwards for rewards[:-1] = [1.0, 0.5], values[:-1] = [2.0, 1.5]
-    # t=1: V^λ_1 = r_1 + γ_1 * [(1-λ) * bootstrap + λ * bootstrap] = 0.5 + 0.9 * 1.0 = 1.4
+    bootstrap = values[-1]
+
     v_lambda_1 = rewards[1] + discounts[1] * bootstrap
     print(f"    t=1: {rewards[1]} + {discounts[1]} * {bootstrap} = {v_lambda_1}")
-    
-    # t=0: V^λ_0 = r_0 + γ_0 * [(1-λ) * v_1 + λ * V^λ_1] = 1.0 + 0.9 * [0.2 * 1.5 + 0.8 * 1.4]
+
     blended_next = (1 - lambda_) * values[1] + lambda_ * v_lambda_1
     v_lambda_0 = rewards[0] + discounts[0] * blended_next
-    print(f"    t=0: {rewards[0]} + {discounts[0]} * ({1-lambda_} * {values[1]} + {lambda_} * {v_lambda_1})")
+    print(
+        f"    t=0: {rewards[0]} + {discounts[0]} * ({1-lambda_} * {values[1]} + {lambda_} * {v_lambda_1})"
+    )
     print(f"         = {rewards[0]} + {discounts[0]} * {blended_next} = {v_lambda_0}")
-    
+
     manual_result = jnp.array([v_lambda_0, v_lambda_1])
     print(f"  Manual result:     {manual_result}")
-    
+
     return jnp.allclose(your_targets, ref_targets, atol=1e-6)
+
 
 def test_edge_cases():
     """Test edge cases"""
     print("\n=== TEST 2: Edge cases ===")
-    
-    # Test with all zeros
+
     print("All zeros:")
     rewards = jnp.zeros(5)
     values = jnp.zeros(5)
     discounts = jnp.ones(5) * 0.99
-    
+
     your_result = compute_trajectory_targets(rewards, values, discounts)
-    ref_result = manual_lambda_returns_reference(rewards[:-1], values[:-1], discounts[:-1], values[-1])
-    
+    ref_result = manual_lambda_returns_reference(
+        rewards[:-1], values[:-1], discounts[:-1], values[-1]
+    )
+
     print(f"  Your result: {your_result}")
     print(f"  Reference:   {ref_result}")
     print(f"  Match? {jnp.allclose(your_result, ref_result, atol=1e-6)}")
-    
-    # Test with lambda=0 (should just be 1-step TD targets)
+
     print("\nLambda=0 (1-step TD):")
     rewards = jnp.array([1.0, 2.0, 0.5])
     values = jnp.array([1.0, 1.5, 2.0])
     discounts = jnp.array([0.9, 0.9, 0.9])
-    
+
     your_result = compute_trajectory_targets(rewards, values, discounts, lambda_=0.0)
-    # With lambda=0: V^λ_t = r_t + γ_t * v(s_{t+1})
-    expected = rewards[:-1] + discounts[:-1] * values[1:]  # 1-step TD targets
-    
-    print(f"  Your result: {your_result}")
-    print(f"  Expected:    {expected}")
-    print(f"  Match? {jnp.allclose(your_result, expected, atol=1e-6)}")
-    
-    # Test with lambda=1 (Monte Carlo returns)
-    print("\nLambda=1 (Monte Carlo):")
-    your_result = compute_trajectory_targets(rewards, values, discounts, lambda_=1.0)
-    # With lambda=1: should be discounted sum of rewards + bootstrap
-    bootstrap = values[-1]
-    # MC return for t=0: r_0 + γ_0 * r_1 + γ_0 * γ_1 * bootstrap
-    # MC return for t=1: r_1 + γ_1 * bootstrap
-    mc_0 = rewards[0] + discounts[0] * (rewards[1] + discounts[1] * bootstrap)
-    mc_1 = rewards[1] + discounts[1] * bootstrap
-    expected = jnp.array([mc_0, mc_1])
-    
+
+    expected = rewards[:-1] + discounts[:-1] * values[1:]
+
     print(f"  Your result: {your_result}")
     print(f"  Expected:    {expected}")
     print(f"  Match? {jnp.allclose(your_result, expected, atol=1e-6)}")
 
+    print("\nLambda=1 (Monte Carlo):")
+    your_result = compute_trajectory_targets(rewards, values, discounts, lambda_=1.0)
+
+    bootstrap = values[-1]
+
+    mc_0 = rewards[0] + discounts[0] * (rewards[1] + discounts[1] * bootstrap)
+    mc_1 = rewards[1] + discounts[1] * bootstrap
+    expected = jnp.array([mc_0, mc_1])
+
+    print(f"  Your result: {your_result}")
+    print(f"  Expected:    {expected}")
+    print(f"  Match? {jnp.allclose(your_result, expected, atol=1e-6)}")
+
+
 def test_realistic_pong_data():
     """Test with realistic Pong-like data"""
     print("\n=== TEST 3: Realistic Pong data ===")
-    
-    # Simulate a trajectory where player gets closer to ball, then hits it
+
     T = 10
     rewards = jnp.array([0.0, 0.1, 0.2, 0.3, 0.5, 1.0, 0.8, 0.5, 0.2, 0.0])
     values = jnp.array([1.0, 1.2, 1.5, 1.8, 2.2, 2.5, 2.0, 1.5, 1.0, 0.8])
     discounts = jnp.full(T, 0.95)
-    
+
     print(f"Trajectory length: {T}")
     print(f"Rewards: {rewards}")
     print(f"Values: {values}")
-    
+
     your_result = compute_trajectory_targets(rewards, values, discounts)
-    ref_result = manual_lambda_returns_reference(rewards[:-1], values[:-1], discounts[:-1], values[-1])
-    
+    ref_result = manual_lambda_returns_reference(
+        rewards[:-1], values[:-1], discounts[:-1], values[-1]
+    )
+
     print(f"\nTargets shape: {your_result.shape} (should be {T-1})")
     print(f"Your targets: {your_result}")
     print(f"Reference:    {ref_result}")
     print(f"Max diff: {jnp.abs(your_result - ref_result).max():.8f}")
     print(f"Match? {jnp.allclose(your_result, ref_result, atol=1e-6)}")
-    
-    # Check that targets are reasonable
+
     print(f"\nSanity checks:")
     print(f"  All finite? {jnp.all(jnp.isfinite(your_result))}")
     print(f"  Target range: [{your_result.min():.3f}, {your_result.max():.3f}]")
     print(f"  Target mean: {your_result.mean():.3f}")
 
+
 def run_all_tests():
     """Run all tests"""
     print("Testing compute_trajectory_targets function")
     print("=" * 60)
-    
+
     test1_pass = test_simple_case()
     test_edge_cases()
     test_realistic_pong_data()
-    
+
     print("\n" + "=" * 60)
     print("SUMMARY:")
     print(f"Simple case test: {'PASS' if test1_pass else 'FAIL'}")
     print("\nIf all tests pass, your compute_trajectory_targets function is correct.")
     print("If any test fails, there's a bug in the implementation.")
 
+
 SEED = 42
 
-# Let's add debugging to understand what's happening with your lambda returns
-
-# Let's add debugging to understand what's happening with your lambda returns
-
-# Let's add debugging to understand what's happening with your lambda returns
 
 def debug_lambda_returns_computation(rewards, values, discounts, lambda_=0.95):
     """
     Debug version of lambda returns with detailed logging
     """
     print("=== DEBUGGING LAMBDA RETURNS ===")
-    
-    # Check input shapes and basic stats
+
     print(f"Rewards shape: {rewards.shape}")
     print(f"Values shape: {values.shape}")
     print(f"Discounts shape: {discounts.shape}")
-    
+
     print(f"\nRewards stats:")
     print(f"  Mean: {rewards.mean():.4f}")
     print(f"  Std: {rewards.std():.4f}")
     print(f"  Min: {rewards.min():.4f}")
     print(f"  Max: {rewards.max():.4f}")
     print(f"  Non-zero count: {jnp.sum(rewards != 0)}")
-    
+
     print(f"\nValues stats:")
     print(f"  Mean: {values.mean():.4f}")
     print(f"  Std: {values.std():.4f}")
     print(f"  Min: {values.min():.4f}")
     print(f"  Max: {values.max():.4f}")
-    
+
     print(f"\nDiscounts stats:")
     print(f"  Mean: {discounts.mean():.4f}")
     print(f"  Unique values: {jnp.unique(discounts)}")
-    
-    # Let's examine a single trajectory in detail
+
     print(f"\n=== SINGLE TRAJECTORY ANALYSIS ===")
     traj_idx = 0
-    traj_rewards = rewards[:, traj_idx]  # Shape: (T,)
-    traj_values = values[:, traj_idx]    # Shape: (T,)
-    traj_discounts = discounts[:, traj_idx]  # Shape: (T,)
-    
+    traj_rewards = rewards[:, traj_idx]
+    traj_values = values[:, traj_idx]
+    traj_discounts = discounts[:, traj_idx]
+
     print(f"Trajectory {traj_idx}:")
-    print(f"  Rewards: {traj_rewards[:10]} ...")  # First 10 steps
+    print(f"  Rewards: {traj_rewards[:10]} ...")
     print(f"  Values: {traj_values[:10]} ...")
     print(f"  Discounts: {traj_discounts[:10]} ...")
-    
-    # Manually compute lambda returns for this trajectory
+
     T = len(traj_rewards)
     bootstrap = traj_values[-1]
-    
-    # Compute step by step
+
     lambda_returns = []
-    
-    # Start from the end and work backwards (this is how the paper does it)
+
     next_lambda_return = bootstrap
-    
-    for t in reversed(range(T-1)):  # T-2, T-3, ..., 0
-        # V^λ_t = r_t + γ_t * [(1-λ) * v(s_{t+1}) + λ * V^λ_{t+1}]
+
+    for t in reversed(range(T - 1)):
+
         reward_t = traj_rewards[t]
         discount_t = traj_discounts[t]
-        value_next = traj_values[t+1] if t+1 < T-1 else bootstrap
-        
+        value_next = traj_values[t + 1] if t + 1 < T - 1 else bootstrap
+
         lambda_return_t = reward_t + discount_t * (
             (1 - lambda_) * value_next + lambda_ * next_lambda_return
         )
-        
+
         lambda_returns.append(lambda_return_t)
         next_lambda_return = lambda_return_t
-        
-        if t >= T-5:  # Show last few steps
-            print(f"  Step {t}: r={reward_t:.3f}, γ={discount_t:.3f}, "
-                  f"v_next={value_next:.3f}, λ_ret={lambda_return_t:.3f}")
-    
-    # Reverse to get chronological order
+
+        if t >= T - 5:
+            print(
+                f"  Step {t}: r={reward_t:.3f}, γ={discount_t:.3f}, "
+                f"v_next={value_next:.3f}, λ_ret={lambda_return_t:.3f}"
+            )
+
     lambda_returns = jnp.array(lambda_returns[::-1])
-    
+
     print(f"\nLambda returns for trajectory {traj_idx}:")
     print(f"  Mean: {lambda_returns.mean():.4f}")
     print(f"  First 5: {lambda_returns[:5]}")
     print(f"  Last 5: {lambda_returns[-5:]}")
-    
+
     return lambda_returns
 
-# Also let's check if your lambda_return_dreamerv2 function matches the paper
+
 def verify_lambda_return_implementation():
     """
     Verify the lambda return implementation against paper equation (4)
     """
     print("\n=== VERIFYING LAMBDA RETURN IMPLEMENTATION ===")
-    
-    # Create simple test case
+
     T = 5
     rewards = jnp.array([0.1, 0.2, -0.1, 0.3, 0.0])
     values = jnp.array([1.0, 1.1, 0.9, 1.2, 0.8])
     discounts = jnp.array([0.99, 0.99, 0.99, 0.99, 0.99])
     bootstrap = 0.5
     lambda_ = 0.95
-    
+
     print(f"Test inputs:")
     print(f"  Rewards: {rewards}")
     print(f"  Values: {values}")
     print(f"  Discounts: {discounts}")
     print(f"  Bootstrap: {bootstrap}")
-    
-    # Manual computation following paper exactly
-    # V^λ_t = r_t + γ_t * [(1-λ) * v(s_{t+1}) + λ * V^λ_{t+1}]
-    
-    # Start from end
+
     V_lambda = jnp.zeros(T)
-    V_lambda = V_lambda.at[-1].set(bootstrap)  # Last value is bootstrap
-    
-    for t in reversed(range(T-1)):
-        next_value = values[t+1] if t+1 < T-1 else bootstrap
+    V_lambda = V_lambda.at[-1].set(bootstrap)
+
+    for t in reversed(range(T - 1)):
+        next_value = values[t + 1] if t + 1 < T - 1 else bootstrap
         V_lambda = V_lambda.at[t].set(
-            rewards[t] + discounts[t] * (
-                (1 - lambda_) * next_value + lambda_ * V_lambda[t+1]
-            )
+            rewards[t]
+            + discounts[t] * ((1 - lambda_) * next_value + lambda_ * V_lambda[t + 1])
         )
-    
+
     print(f"Manual lambda returns: {V_lambda}")
-    
-    # Compare with your implementation  
-    # Note: your function expects bootstrap as array, not scalar
+
     bootstrap_array = jnp.array([bootstrap])
     your_result = lambda_return_dreamerv2(
         rewards, values, discounts, bootstrap_array, lambda_=lambda_, axis=0
     )
     print(f"Your implementation: {your_result}")
     print(f"Difference: {jnp.abs(V_lambda - your_result).max():.6f}")
-
-# Add this to your training function right after computing targets:
-# debug_lambda_returns_computation(rewards, values, discounts)
-# verify_lambda_return_implementation()
-
-
 
 
 def flatten_obs(
@@ -418,7 +395,6 @@ def create_dreamerv2_actor(action_dim: int):
         def __call__(self, x):
 
             hidden_size = 64
-            # hidden_size = 512
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -468,17 +444,16 @@ def create_dreamerv2_critic():
             )(x)
             x = nn.elu(x)
 
-            # Output mean and log_std for a Normal distribution
             mean = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
-            log_std = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
-            
-            # Squeeze to remove last dimension and create Normal distribution
+            log_std = nn.Dense(
+                1, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+            )(x)
+
             mean = jnp.squeeze(mean, axis=-1)
             log_std = jnp.squeeze(log_std, axis=-1)
-            
-            # Clamp log_std to reasonable range
+
             log_std = jnp.clip(log_std, -10, 2)
-            
+
             return distrax.Normal(mean, jnp.exp(log_std))
 
     return DreamerV2Critic()
@@ -494,7 +469,6 @@ def lambda_return_dreamerv2(
 ):
 
     next_values = jnp.concatenate([values[1:], jnp.array([bootstrap])], axis=axis)
-    # next_values = jnp.concatenate([values[1:], bootstrap[None]], axis=axis)
 
     def compute_target(carry, inputs):
         next_lambda_return = carry
@@ -551,9 +525,8 @@ def generate_imagined_rollouts(
             action = pi.sample(seed=action_key)
             log_prob = pi.log_prob(action)
 
-
             value_dist = critic_network.apply(critic_params, obs)
-            value = value_dist.mean()  # Use the mean of the distribution as the value
+            value = value_dist.mean()
 
             normalized_obs = (obs - state_mean) / state_std
 
@@ -659,13 +632,10 @@ def generate_real_rollouts(
     def single_trajectory_rollout(cur_obs, subkey):
         """Generate a single trajectory starting from cur_obs."""
 
-        # Convert observation to pong state
         pong_state = pong_flat_observation_to_state(
             cur_obs, unflattener, frame_stack_size=4
         )
-        
-        # Create proper wrapper state structure
-        # The AtariWrapper expects a state with env_state attribute
+
         current_state = dummy_state.replace(env_state=pong_state)
 
         def rollout_step(carry, x):
@@ -677,19 +647,13 @@ def generate_real_rollouts(
             log_prob = pi.log_prob(action)
 
             value_dist = critic_network.apply(critic_params, obs)
-            value = value_dist.mean()  # Use the mean of the distribution as the value
+            value = value_dist.mean()
             next_obs, next_state, reward, done, _ = env.step(state, action)
             next_obs, _ = flatten_obs(next_obs, single_state=True)
-            
-            # Ensure dtype consistency - convert to float32 to match input
+
             next_obs = next_obs.astype(jnp.float32)
 
-            # reward = get_enhanced_reward(next_obs, action, frame_stack_size=4)
             reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-            
-
-
-
 
             discount_factor = jnp.array(discount)
 
@@ -715,8 +679,9 @@ def generate_real_rollouts(
         ) = trajectory_data
 
         action_counts = jnp.bincount(actions_seq, length=6)
-        print(f"Action 3 (LEFT): {action_counts[3]}, Action 4 (RIGHTFIRE): {action_counts[4]}")
-
+        print(
+            f"Action 3 (LEFT): {action_counts[3]}, Action 4 (RIGHTFIRE): {action_counts[4]}"
+        )
 
         observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
         rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq])
@@ -738,7 +703,6 @@ def generate_real_rollouts(
     return rollout_fn(initial_observations, keys)
 
 
-
 def train_dreamerv2_actor_critic(
     actor_params: Any,
     critic_params: Any,
@@ -758,7 +722,8 @@ def train_dreamerv2_actor_critic(
     entropy_scale: float = 1e-3,
     target_update_freq: int = 100,
     max_grad_norm: float = 100.0,
-    target_kl=0.01, early_stopping_patience=5
+    target_kl=0.01,
+    early_stopping_patience=5,
 ) -> Tuple[Any, Any, Any, Dict]:
     """Train DreamerV2 actor and critic networks following the paper exactly."""
 
@@ -787,7 +752,7 @@ def train_dreamerv2_actor_critic(
         tx=critic_tx,
     )
 
-    best_loss = float('inf')
+    best_loss = float("inf")
     patience_counter = 0
 
     update_counter = 0
@@ -809,8 +774,6 @@ def train_dreamerv2_actor_critic(
             axis=0,
         )
         return targets
-    
-    
 
     targets = jax.vmap(compute_trajectory_targets, in_axes=(1, 1, 1), out_axes=1)(
         rewards, values, discounts
@@ -819,28 +782,22 @@ def train_dreamerv2_actor_critic(
     targets_std = targets.std()
     targets_normalized = (targets - targets_mean) / (targets_std + 1e-8)
 
-    print(f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}")
-
-
-
-    #Comment this in to prove compute_trajectory_targets is working
-    # print("Starting Tests for compute_trajectory_targets function...")
-    # run_all_tests()
-
-
-    
-
-
-
+    print(
+        f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
+    )
 
     print(
         f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     )
-    print(f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}")
+    print(
+        f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
+    )
     print(
         f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
     )
-    print(f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}")
+    print(
+        f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
+    )
 
     observations_flat = observations[:-1].reshape((T - 1) * B, -1)
     actions_flat = actions[:-1].reshape((T - 1) * B)
@@ -851,12 +808,12 @@ def train_dreamerv2_actor_critic(
     """"
     Dreamerv2 code
      def critic_loss(self, seq, target):
-        # States:     [z0]  [z1]  [z2]   z3
-        # Rewards:    [r0]  [r1]  [r2]   r3
-        # Values:     [v0]  [v1]  [v2]   v3
-        # Weights:    [ 1]  [w1]  [w2]   w3
-        # Targets:    [t0]  [t1]  [t2]
-        # Loss:        l0    l1    l2
+        
+        
+        
+        
+        
+        
         dist = self.critic(seq['feat'][:-1])
         target = tf.stop_gradient(target)
         weight = tf.stop_gradient(seq['weight'])
@@ -865,31 +822,27 @@ def train_dreamerv2_actor_critic(
         return critic_loss, metrics
     
     """
+
     def critic_loss_fn(critic_params, obs, targets):
         dist = critic_network.apply(critic_params, obs)
         loss = -jnp.mean(dist.log_prob(targets))
         return loss, {"critic_loss": loss, "critic_mean": dist.mean()}
 
-
-
-
-
-
     """ def actor_loss(self, seq, target):
-    # Actions:      0   [a1]  [a2]   a3
-    #                  ^  |  ^  |  ^  |
-    #                 /   v /   v /   v
-    # States:     [z0]->[z1]-> z2 -> z3
-    # Targets:     t0   [t1]  [t2]
-    # Baselines:  [v0]  [v1]   v2    v3
-    # Entropies:        [e1]  [e2]
-    # Weights:    [ 1]  [w1]   w2    w3
-    # Loss:              l1    l2
+    
+    
+    
+    
+    
+    
+    
+    
+    
     metrics = {}
-    # Two states are lost at the end of the trajectory, one for the boostrap
-    # value prediction and one because the corresponding action does not lead
-    # anywhere anymore. One target is lost at the start of the trajectory
-    # because the initial state comes from the replay buffer.
+    
+    
+    
+    
     policy = self.actor(tf.stop_gradient(seq['feat'][:-2]))
     if self.config.actor_grad == 'dynamics':
       objective = target[1:]
@@ -916,43 +869,44 @@ def train_dreamerv2_actor_critic(
     metrics['actor_ent_scale'] = ent_scale
     return actor_loss, metrics"""
 
-    def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs, 
-                      actor_grad='both', mix_ratio=0.1):
+    def actor_loss_fn(
+        actor_params,
+        obs,
+        actions,
+        targets,
+        values,
+        old_log_probs,
+        actor_grad="both",
+        mix_ratio=0.1,
+    ):
         pi = actor_network.apply(actor_params, obs)
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
-        
+
         advantages = targets - values
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # DreamerV2's hybrid approach
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
-        dynamics_obj = targets  # Gradients flow through
-        
-        # Mix the two objectives
+        dynamics_obj = targets
+
         objective = (1 - mix_ratio) * reinforce_obj + mix_ratio * dynamics_obj
-            
-        # Add entropy regularization
+
         entropy_bonus = entropy_scale * entropy
         total_objective = objective + entropy_bonus
-        
-        # Final loss (negative because we want to maximize objective)
+
         actor_loss = -jnp.mean(total_objective)
-        
+
         return actor_loss, {
             "actor_loss": actor_loss,
             "objective": jnp.mean(objective),
             "entropy": jnp.mean(entropy),
             "advantages_mean": jnp.mean(advantages),
-            "mix_ratio": mix_ratio
+            "mix_ratio": mix_ratio,
         }
-    
+
     metrics_history = []
 
     for epoch in range(num_epochs):
-
-         
-
 
         key, subkey = jax.random.split(key)
 
@@ -963,20 +917,24 @@ def train_dreamerv2_actor_critic(
         values_shuffled = values_flat[perm]
         old_log_probs_shuffled = old_log_probs_flat[perm]
 
-               # Debug critic predictions vs targets
-        if epoch == 0:  # Only on first epoch
-            current_preds_dist = critic_network.apply(critic_state.params, obs_shuffled[:100])  # Sample 100
-            current_preds = current_preds_dist.mean()  # Extract mean from distribution
+        if epoch == 0:
+            current_preds_dist = critic_network.apply(
+                critic_state.params, obs_shuffled[:100]
+            )
+            current_preds = current_preds_dist.mean()
             sample_targets = targets_shuffled[:100]
 
             print(f"\nCritic debugging (epoch {epoch}):")
-            print(f"  Target stats: mean={sample_targets.mean():.3f}, std={sample_targets.std():.3f}")
-            print(f"  Prediction stats: mean={current_preds.mean():.3f}, std={current_preds.std():.3f}")
-            print(f"  Scale difference: {abs(sample_targets.mean() - current_preds.mean()):.3f}")
-        
+            print(
+                f"  Target stats: mean={sample_targets.mean():.3f}, std={sample_targets.std():.3f}"
+            )
+            print(
+                f"  Prediction stats: mean={current_preds.mean():.3f}, std={current_preds.std():.3f}"
+            )
+            print(
+                f"  Scale difference: {abs(sample_targets.mean() - current_preds.mean()):.3f}"
+            )
 
-
-        # Compute old policy distribution for KL divergence
         old_pi = actor_network.apply(actor_params, obs_shuffled)
         old_log_probs_new = old_pi.log_prob(actions_shuffled)
 
@@ -984,15 +942,13 @@ def train_dreamerv2_actor_critic(
             critic_loss_fn, has_aux=True
         )(critic_state.params, obs_shuffled, targets_shuffled)
 
-
-        # Check for gradient explosion
-        critic_grad_norm = jnp.sqrt(sum(jnp.sum(g**2) for g in jax.tree.leaves(critic_grads)))
+        critic_grad_norm = jnp.sqrt(
+            sum(jnp.sum(g**2) for g in jax.tree.leaves(critic_grads))
+        )
         if critic_grad_norm > 10.0:
-            print(f"Warning: Large critic gradients ({critic_grad_norm:.2f}) at epoch {epoch}")
-        
-
-
-
+            print(
+                f"Warning: Large critic gradients ({critic_grad_norm:.2f}) at epoch {epoch}"
+            )
 
         critic_state = critic_state.apply_gradients(grads=critic_grads)
 
@@ -1008,14 +964,14 @@ def train_dreamerv2_actor_critic(
         )
         actor_state = actor_state.apply_gradients(grads=actor_grads)
 
-         # Compute KL divergence for monitoring
         new_pi = actor_network.apply(actor_state.params, obs_shuffled)
         new_log_probs = new_pi.log_prob(actions_shuffled)
         kl_div = jnp.mean(old_log_probs_new - new_log_probs)
 
-        # Early stopping based on KL divergence
         if kl_div > target_kl:
-            print(f"Early stopping at epoch {epoch}: KL divergence {kl_div:.6f} > {target_kl}")
+            print(
+                f"Early stopping at epoch {epoch}: KL divergence {kl_div:.6f} > {target_kl}"
+            )
             break
 
         update_counter += 1
@@ -1028,26 +984,18 @@ def train_dreamerv2_actor_critic(
             f"Entropy: {actor_metrics['entropy']:.4f}"
         )
 
-        # Track best performance
         total_loss = actor_loss + critic_loss
         if total_loss < best_loss:
             best_loss = total_loss
             patience_counter = 0
         else:
             patience_counter += 1
-            
+
         if patience_counter >= early_stopping_patience:
-            print(f"Early stopping at epoch {epoch}: No improvement for {early_stopping_patience} epochs")
+            print(
+                f"Early stopping at epoch {epoch}: No improvement for {early_stopping_patience} epochs"
+            )
             break
-        
-        # # Enhanced logging
-        # if epoch % 5 == 0:
-        #     print(f"Epoch {epoch}:")
-        #     print(f"  Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}")
-        #     print(f"  Entropy: {actor_metrics['entropy']:.4f}, KL Div: {kl_div:.6f}")
-        #     print(f"  Advantage Mean: {actor_metrics.get('advantages_mean', 0):.4f}")
-        #     print(f"  Critic Pred Mean: {critic_metrics['critic_mean']:.4f}")
-        #     print(f"  Target Mean: {jnp.mean(targets_shuffled):.4f}")
 
     return actor_state.params, critic_state.params
 
@@ -1077,25 +1025,27 @@ def evaluate_real_performance(actor_network, actor_params, obs_shape, num_episod
 
             obs_tensor, _ = flatten_obs(obs, single_state=True)
 
-            
-
             pi = actor_network.apply(actor_params, obs_tensor)
-            temperature = 0.1  # Lower = more deterministic
+            temperature = 0.1
             scaled_logits = pi.logits / temperature
             scaled_pi = distrax.Categorical(logits=scaled_logits)
             action = scaled_pi.sample(seed=jax.random.PRNGKey(step_count))
             if step_count % 100 == 0:
                 obs_flat, _ = flatten_obs(obs, single_state=True)
-                training_reward = improved_pong_reward(obs_flat, action, frame_stack_size=4)
+                training_reward = improved_pong_reward(
+                    obs_flat, action, frame_stack_size=4
+                )
                 print(f"  Training reward would be: {training_reward:.3f}")
 
                 obs_flat, _ = flatten_obs(obs, single_state=True)
 
-                last_obs = obs_flat[(4 - 1)::4]
-                # Extract positions (adjust indices as needed)
+                last_obs = obs_flat[(4 - 1) :: 4]
+
                 player_y = last_obs[1]
-                ball_y = last_obs[9] 
-                print(f"  Player Y: {player_y:.2f}, Ball Y: {ball_y:.2f}, Distance: {abs(ball_y-player_y):.2f}")
+                ball_y = last_obs[9]
+                print(
+                    f"  Player Y: {player_y:.2f}, Ball Y: {ball_y:.2f}, Distance: {abs(ball_y-player_y):.2f}"
+                )
 
             obs, state, reward, done, _ = env.step(state, action)
             episode_reward += reward
@@ -1119,59 +1069,57 @@ def evaluate_real_performance(actor_network, actor_params, obs_shape, num_episod
 
 def analyze_policy_behavior(actor_network, actor_params, observations):
     """Analyze what the trained policy is doing"""
-    
+
     print(observations.shape)
 
-    # Sample some observations - flatten to 2D first
-    sample_obs = observations.reshape(-1, observations.shape[-1])[:1000]  # Take first 1000 obs
+    sample_obs = observations.reshape(-1, observations.shape[-1])[:1000]
     print(sample_obs.shape)
-    
-    # Get action probabilities
+
     pi = actor_network.apply(actor_params, sample_obs)
     action_probs = jnp.mean(pi.probs, axis=0)
-    
+
     print("\n=== POLICY ANALYSIS ===")
     action_names = ["NOOP", "FIRE", "RIGHT", "LEFT", "RIGHTFIRE", "LEFTFIRE"]
-    
+
     for i in range(len(action_names)):
-        prob_val = float(action_probs[i])  # Index into the array first
+        prob_val = float(action_probs[i])
         print(f"Action {i} ({action_names[i]}): {prob_val:.3f}")
-    
+
     entropy_val = float(jnp.mean(pi.entropy()))
     movement_prob = float(action_probs[3] + action_probs[4])
     most_likely_idx = int(jnp.argmax(action_probs))
-    
+
     print(f"Entropy: {entropy_val:.3f}")
     print(f"Favors movement: {movement_prob:.3f}")
     print(f"Most likely action: {most_likely_idx} ({action_names[most_likely_idx]})")
-    
+
     return action_probs
+
 
 def main():
 
     training_runs = 30
 
     training_params = {
-        'action_dim': 6,
-        'rollout_length': 45,
-        'num_rollouts': 1600,
-        'policy_epochs': 50,      # More epochs since we're stopping early
-        'actor_lr': 3e-4,         # Even lower
-        'critic_lr': 3e-4,        # Even lower  
-        'lambda_': 0.95,
-        'entropy_scale': 1e-4,    # Much lower entropy regularization
-        'discount': 0.95,
-        'max_grad_norm': 10.0,     # Extremely aggressive clipping
-        'target_kl': 1,         # More lenient to allow longer training
-        'early_stopping_patience': 25
+        "action_dim": 6,
+        "rollout_length": 45,
+        "num_rollouts": 1600,
+        "policy_epochs": 50,
+        "actor_lr": 3e-4,
+        "critic_lr": 3e-4,
+        "lambda_": 0.95,
+        "entropy_scale": 1e-4,
+        "discount": 0.95,
+        "max_grad_norm": 10.0,
+        "target_kl": 1,
+        "early_stopping_patience": 25,
     }
-
 
     for i in range(training_runs):
 
         parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
 
-        actor_network = create_dreamerv2_actor(training_params['action_dim'])
+        actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
 
         if os.path.exists("world_model_PongLSTM_pong.pkl"):
@@ -1230,10 +1178,7 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
-
         shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
-
-        
 
         print("Generating imagined rollouts...")
         (
@@ -1249,10 +1194,10 @@ def main():
             critic_params=critic_params,
             actor_network=actor_network,
             critic_network=critic_network,
-            initial_observations=shuffled_obs[:training_params['num_rollouts']],
-            rollout_length=training_params['rollout_length'],
+            initial_observations=shuffled_obs[: training_params["num_rollouts"]],
+            rollout_length=training_params["rollout_length"],
             normalization_stats=normalization_stats,
-            discount=training_params['discount'],
+            discount=training_params["discount"],
             key=jax.random.PRNGKey(SEED),
         )
 
@@ -1278,29 +1223,26 @@ def main():
         print(f"Imagined rollouts shape: {imagined_obs.shape}")
 
         print("Training DreamerV2 actor-critic...")
-        actor_params, critic_params = (
-            train_dreamerv2_actor_critic(
-                actor_params=actor_params,
-                critic_params=critic_params,
-                actor_network=actor_network,
-                critic_network=critic_network,
-                observations=imagined_obs,
-                actions=imagined_actions,
-                rewards=imagined_rewards,
-                discounts=imagined_discounts,
-                values=imagined_values,
-                log_probs=imagined_log_probs,
-                num_epochs=training_params['policy_epochs'],
-                actor_lr=training_params['actor_lr'],
-                critic_lr=training_params['critic_lr'],
-                key=jax.random.PRNGKey(2000),
-                lambda_=training_params['lambda_'],
-                entropy_scale=training_params['entropy_scale'],
-                target_kl=training_params['target_kl'],
-                early_stopping_patience=training_params['early_stopping_patience']
-            )
+        actor_params, critic_params = train_dreamerv2_actor_critic(
+            actor_params=actor_params,
+            critic_params=critic_params,
+            actor_network=actor_network,
+            critic_network=critic_network,
+            observations=imagined_obs,
+            actions=imagined_actions,
+            rewards=imagined_rewards,
+            discounts=imagined_discounts,
+            values=imagined_values,
+            log_probs=imagined_log_probs,
+            num_epochs=training_params["policy_epochs"],
+            actor_lr=training_params["actor_lr"],
+            critic_lr=training_params["critic_lr"],
+            key=jax.random.PRNGKey(2000),
+            lambda_=training_params["lambda_"],
+            entropy_scale=training_params["entropy_scale"],
+            target_kl=training_params["target_kl"],
+            early_stopping_patience=training_params["early_stopping_patience"],
         )
-
 
         print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
 
@@ -1315,11 +1257,6 @@ def main():
         analyze_policy_behavior(actor_network, actor_params, imagined_obs)
 
         save_model_checkpoints(actor_params, critic_params)
-
-    # evaluate_real_performance(
-    #         actor_network, actor_params, obs_shape, num_episodes=1
-    #     )
-    # exit()
 
 
 if __name__ == "__main__":

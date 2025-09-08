@@ -23,35 +23,12 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 
-
-
-
-
 def get_reward_from_observation_score(obs):
     """Extract reward from Pong observation - adjust index as needed for Pong"""
     if len(obs) < 100:
         raise ValueError(f"Observation must have sufficient elements, got {len(obs)}")
 
     return obs[-3] if len(obs) > 3 else 0
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 MODEL_ARCHITECTURE = PongLSTM
@@ -438,7 +415,6 @@ def train_world_model(
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
 
-    
     _, lstm_state_template = model.apply(params, rng, dummy_state, dummy_action, None)
 
     @jax.jit
@@ -455,7 +431,6 @@ def train_world_model(
         def scan_fn(rssm_state, inputs):
             current_state, current_action, target_next_state = inputs
 
-            
             pred_next_state, new_rssm_state = model.apply(
                 params, rng, current_state[None, :], current_action[None], rssm_state
             )
@@ -711,7 +686,6 @@ def compare_real_vs_model(
         normalization_stats = model_data.get("normalization_stats", None)
     world_model = MODEL_ARCHITECTURE(model_scale_factor)
 
-
     pygame.init()
     WIDTH = 160
     HEIGHT = 210
@@ -747,14 +721,10 @@ def compare_real_vs_model(
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
-        
-        
-        
 
-
-        print(f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}")
-
-        
+        print(
+            f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
+        )
 
         next_real_obs = obs[step_count + 1]
 

@@ -270,7 +270,6 @@ def render_agent(
         model_img = np.array(model_raster * 255, dtype=np.uint8)
         pygame.surfarray.blit_array(model_surface, model_img)
 
-
         action = get_action(loaded_actor_params, obs)
         reward = get_simple_dense_reward(obs, action, frame_stack_size=4)
         # print("action :", action)
