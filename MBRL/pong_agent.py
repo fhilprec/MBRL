@@ -779,7 +779,6 @@ def train_dreamerv2_actor_critic(
     key: jax.random.PRNGKey = None,
     lambda_: float = 0.95,
     entropy_scale: float = 1e-3,
-    use_reinforce: bool = True,
     target_update_freq: int = 100,
     max_grad_norm: float = 100.0,
     target_kl=0.01, early_stopping_patience=5
@@ -890,13 +889,18 @@ def train_dreamerv2_actor_critic(
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
 
-        if use_reinforce:
-            advantages = targets - values
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            reinforce_loss = -jnp.mean(log_prob * jax.lax.stop_gradient(advantages))
-            policy_loss = reinforce_loss
-        else:
-            policy_loss = -jnp.mean(targets)
+        #∇θ J(θ) = E[∇θ log π(a|s) * A(s,a)]
+        # θ = policy parameters
+        # π(a|s) = policy (probability of action a in state s)
+        # A(s,a) = advantage function
+
+
+        advantages = targets - values
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        reinforce_loss = -jnp.mean(log_prob * jax.lax.stop_gradient(advantages))
+        policy_loss = reinforce_loss
+
+        policy_loss = -jnp.mean(targets)
 
         # Add inaction penalty
         # Penalize all actions except 3 (LEFT) and 4 (RIGHTFIRE)
@@ -917,7 +921,7 @@ def train_dreamerv2_actor_critic(
             "entropy_loss": entropy_loss,
             "noop_penalty": noop_penalty,
             "entropy": jnp.mean(entropy),
-            "advantages_mean": jnp.mean(targets - values) if use_reinforce else 0.0,
+            "advantages_mean": jnp.mean(targets - values),
         }
     
     metrics_history = []
@@ -1275,8 +1279,7 @@ def main():
                 lambda_=training_params['lambda_'],
                 entropy_scale=training_params['entropy_scale'],
                 target_kl=training_params['target_kl'],
-                early_stopping_patience=training_params['early_stopping_patience'],
-                use_reinforce=True,
+                early_stopping_patience=training_params['early_stopping_patience']
             )
         )
 
