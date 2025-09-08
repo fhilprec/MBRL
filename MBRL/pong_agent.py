@@ -568,7 +568,7 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            reward = improved_pong_reward(next_obs, frame_stack_size=4)
+            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
             print(f"Raw reward before tanh: {reward}")
             reward = jnp.tanh(reward * 0.1)
@@ -848,52 +848,103 @@ def train_dreamerv2_actor_critic(
     values_flat = values[:-1].reshape((T - 1) * B)
     old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
 
-    # def critic_loss_fn(critic_params, obs, targets):
-    #     """DreamerV2 critic loss with squared error."""
-    #     predicted_values = critic_network.apply(critic_params, obs)
-
-    #     loss = jnp.mean((predicted_values - targets) ** 2)
-    #     return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
+    """"
+    Dreamerv2 code
+     def critic_loss(self, seq, target):
+        # States:     [z0]  [z1]  [z2]   z3
+        # Rewards:    [r0]  [r1]  [r2]   r3
+        # Values:     [v0]  [v1]  [v2]   v3
+        # Weights:    [ 1]  [w1]  [w2]   w3
+        # Targets:    [t0]  [t1]  [t2]
+        # Loss:        l0    l1    l2
+        dist = self.critic(seq['feat'][:-1])
+        target = tf.stop_gradient(target)
+        weight = tf.stop_gradient(seq['weight'])
+        critic_loss = -(dist.log_prob(target) * weight[:-1]).mean()
+        metrics = {'critic': dist.mode().mean()}
+        return critic_loss, metrics
+    
+    """
     def critic_loss_fn(critic_params, obs, targets):
         dist = critic_network.apply(critic_params, obs)
         loss = -jnp.mean(dist.log_prob(targets))
         return loss, {"critic_loss": loss, "critic_mean": dist.mean()}
 
-    def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
-        """DreamerV2 actor loss with inaction penalty."""
+
+
+
+
+
+    """ def actor_loss(self, seq, target):
+    # Actions:      0   [a1]  [a2]   a3
+    #                  ^  |  ^  |  ^  |
+    #                 /   v /   v /   v
+    # States:     [z0]->[z1]-> z2 -> z3
+    # Targets:     t0   [t1]  [t2]
+    # Baselines:  [v0]  [v1]   v2    v3
+    # Entropies:        [e1]  [e2]
+    # Weights:    [ 1]  [w1]   w2    w3
+    # Loss:              l1    l2
+    metrics = {}
+    # Two states are lost at the end of the trajectory, one for the boostrap
+    # value prediction and one because the corresponding action does not lead
+    # anywhere anymore. One target is lost at the start of the trajectory
+    # because the initial state comes from the replay buffer.
+    policy = self.actor(tf.stop_gradient(seq['feat'][:-2]))
+    if self.config.actor_grad == 'dynamics':
+      objective = target[1:]
+    elif self.config.actor_grad == 'reinforce':
+      baseline = self._target_critic(seq['feat'][:-2]).mode()
+      advantage = tf.stop_gradient(target[1:] - baseline)
+      action = tf.stop_gradient(seq['action'][1:-1])
+      objective = policy.log_prob(action) * advantage
+    elif self.config.actor_grad == 'both':
+      baseline = self._target_critic(seq['feat'][:-2]).mode()
+      advantage = tf.stop_gradient(target[1:] - baseline)
+      objective = policy.log_prob(seq['action'][1:-1]) * advantage
+      mix = common.schedule(self.config.actor_grad_mix, self.tfstep)
+      objective = mix * target[1:] + (1 - mix) * objective
+      metrics['actor_grad_mix'] = mix
+    else:
+      raise NotImplementedError(self.config.actor_grad)
+    ent = policy.entropy()
+    ent_scale = common.schedule(self.config.actor_ent, self.tfstep)
+    objective += ent_scale * ent
+    weight = tf.stop_gradient(seq['weight'])
+    actor_loss = -(weight[:-2] * objective).mean()
+    metrics['actor_ent'] = ent.mean()
+    metrics['actor_ent_scale'] = ent_scale
+    return actor_loss, metrics"""
+
+    def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs, 
+                      actor_grad='both', mix_ratio=0.1):
         pi = actor_network.apply(actor_params, obs)
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
-
-        #∇θ J(θ) = E[∇θ log π(a|s) * A(s,a)]
-        # θ = policy parameters
-        # π(a|s) = policy (probability of action a in state s)
-        # A(s,a) = advantage function
-
-
+        
         advantages = targets - values
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        reinforce_loss = -jnp.mean(log_prob * jax.lax.stop_gradient(advantages))
-        policy_loss = reinforce_loss
 
-        # Add inaction penalty
-        # Penalize all actions except 3 (LEFT) and 4 (RIGHTFIRE)
-        # mask = jnp.array([1, 1, 1, 0, 0, 1], dtype=pi.probs.dtype)
-        # noop_penalty = 1 * jnp.sum(pi.probs * mask)
-
-        # movement_mask = jnp.array([0.01, 0.01, 0.01, 1.0, 1.0, 0.01])  # Heavily favor movement
-        # movement_penalty = -jnp.sum(pi.probs * (1 - movement_mask)) * 2.0  
-
-        entropy_loss = -entropy_scale * jnp.mean(entropy)
-
-        total_loss = policy_loss + entropy_loss 
-
-        return total_loss, {
-            "actor_loss": total_loss,
-            "policy_loss": policy_loss,
-            "entropy_loss": entropy_loss,
+        # DreamerV2's hybrid approach
+        reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
+        dynamics_obj = targets  # Gradients flow through
+        
+        # Mix the two objectives
+        objective = (1 - mix_ratio) * reinforce_obj + mix_ratio * dynamics_obj
+            
+        # Add entropy regularization
+        entropy_bonus = entropy_scale * entropy
+        total_objective = objective + entropy_bonus
+        
+        # Final loss (negative because we want to maximize objective)
+        actor_loss = -jnp.mean(total_objective)
+        
+        return actor_loss, {
+            "actor_loss": actor_loss,
+            "objective": jnp.mean(objective),
             "entropy": jnp.mean(entropy),
-            "advantages_mean": jnp.mean(targets - values),
+            "advantages_mean": jnp.mean(advantages),
+            "mix_ratio": mix_ratio
         }
     
     metrics_history = []
@@ -1192,7 +1243,7 @@ def main():
             imagined_actions,
             imagined_values,
             imagined_log_probs,
-        ) = generate_real_rollouts(
+        ) = generate_imagined_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,
