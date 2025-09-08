@@ -737,30 +737,7 @@ def generate_real_rollouts(
     rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0))
     return rollout_fn(initial_observations, keys)
 
-# 4. Fix the final metrics calculation
-def safe_final_metrics(metrics_history):
-    """Safely compute final metrics even if history is empty"""
-    if not metrics_history:
-        return {
-            "actor_loss": 0.0,
-            "policy_loss": 0.0, 
-            "entropy_loss": 0.0,
-            "noop_penalty": 0.0,
-            "entropy": 0.0,
-            "advantages_mean": 0.0,
-            "critic_loss": 0.0,
-            "critic_mean": 0.0,
-        }
-    
-    # Get all keys from the first metric dict
-    all_keys = metrics_history[0].keys()
-    final_metrics = {}
-    
-    for key in all_keys:
-        values = [m[key] for m in metrics_history]
-        final_metrics[key] = jnp.mean(jnp.array(values))
-    
-    return final_metrics
+
 
 def train_dreamerv2_actor_critic(
     actor_params: Any,
@@ -813,7 +790,6 @@ def train_dreamerv2_actor_critic(
     best_loss = float('inf')
     patience_counter = 0
 
-    target_critic_params = jax.tree.map(lambda x: x.copy(), critic_params)
     update_counter = 0
 
     batch_size = observations.shape[0] * observations.shape[1]
@@ -900,12 +876,9 @@ def train_dreamerv2_actor_critic(
         reinforce_loss = -jnp.mean(log_prob * jax.lax.stop_gradient(advantages))
         policy_loss = reinforce_loss
 
-        policy_loss = -jnp.mean(targets)
-
         # Add inaction penalty
         # Penalize all actions except 3 (LEFT) and 4 (RIGHTFIRE)
         # mask = jnp.array([1, 1, 1, 0, 0, 1], dtype=pi.probs.dtype)
-        noop_penalty = 0
         # noop_penalty = 1 * jnp.sum(pi.probs * mask)
 
         # movement_mask = jnp.array([0.01, 0.01, 0.01, 1.0, 1.0, 0.01])  # Heavily favor movement
@@ -919,7 +892,6 @@ def train_dreamerv2_actor_critic(
             "actor_loss": total_loss,
             "policy_loss": policy_loss,
             "entropy_loss": entropy_loss,
-            "noop_penalty": noop_penalty,
             "entropy": jnp.mean(entropy),
             "advantages_mean": jnp.mean(targets - values),
         }
@@ -996,9 +968,6 @@ def train_dreamerv2_actor_critic(
             break
 
         update_counter += 1
-        if update_counter % target_update_freq == 0:
-            target_critic_params = jax.tree.map(lambda x: x.copy(), critic_state.params)
-            print(f"Updated target critic at step {update_counter}")
 
         epoch_metrics = {**critic_metrics, **actor_metrics}
         metrics_history.append(epoch_metrics)
@@ -1029,8 +998,7 @@ def train_dreamerv2_actor_critic(
         #     print(f"  Critic Pred Mean: {critic_metrics['critic_mean']:.4f}")
         #     print(f"  Target Mean: {jnp.mean(targets_shuffled):.4f}")
 
-        final_metrics = safe_final_metrics(metrics_history)
-    return actor_state.params, critic_state.params, target_critic_params, final_metrics
+    return actor_state.params, critic_state.params
 
 
 def evaluate_real_performance(actor_network, actor_params, obs_shape, num_episodes=5):
@@ -1137,13 +1105,13 @@ def main():
         'rollout_length': 45,
         'num_rollouts': 1600,
         'policy_epochs': 50,      # More epochs since we're stopping early
-        'actor_lr': 1e-6,         # Even lower
-        'critic_lr': 1e-6,        # Even lower  
+        'actor_lr': 3e-4,         # Even lower
+        'critic_lr': 3e-4,        # Even lower  
         'lambda_': 0.95,
-        'entropy_scale': 5e-4,    # Much lower entropy regularization
+        'entropy_scale': 1e-4,    # Much lower entropy regularization
         'discount': 0.95,
-        'max_grad_norm': 0.5,     # Extremely aggressive clipping
-        'target_kl': 0.5,         # More lenient to allow longer training
+        'max_grad_norm': 10.0,     # Extremely aggressive clipping
+        'target_kl': 1,         # More lenient to allow longer training
         'early_stopping_patience': 25
     }
 
@@ -1175,7 +1143,6 @@ def main():
 
         actor_params = None
         critic_params = None
-        target_critic_params = None
 
         if os.path.exists("actor_params.pkl"):
             try:
@@ -1260,7 +1227,7 @@ def main():
         print(f"Imagined rollouts shape: {imagined_obs.shape}")
 
         print("Training DreamerV2 actor-critic...")
-        actor_params, critic_params, target_critic_params, training_metrics = (
+        actor_params, critic_params = (
             train_dreamerv2_actor_critic(
                 actor_params=actor_params,
                 critic_params=critic_params,
@@ -1283,26 +1250,21 @@ def main():
             )
         )
 
-        if training_metrics:
-            print(f"Final training metrics:")
-            for key, value in training_metrics.items():
-                print(f"  {key}: {value:.4f}")
-            print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
 
-        def save_model_checkpoints(actor_params, critic_params, target_critic_params):
+        print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
+
+        def save_model_checkpoints(actor_params, critic_params):
             """Save parameters with consistent structure"""
             with open("actor_params.pkl", "wb") as f:
                 pickle.dump({"params": actor_params}, f)
             with open("critic_params.pkl", "wb") as f:
                 pickle.dump({"params": critic_params}, f)
-            with open("target_critic_params.pkl", "wb") as f:
-                pickle.dump({"params": target_critic_params}, f)
-            print("Saved actor, critic, and target critic parameters")
+            print("Saved actor, critic parameters")
 
         analyze_policy_behavior(actor_network, actor_params, imagined_obs)
 
-        save_model_checkpoints(actor_params, critic_params, target_critic_params)
-    
+        save_model_checkpoints(actor_params, critic_params)
+
     # evaluate_real_performance(
     #         actor_network, actor_params, obs_shape, num_episodes=1
     #     )
