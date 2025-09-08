@@ -417,7 +417,8 @@ def create_dreamerv2_actor(action_dim: int):
         @nn.compact
         def __call__(self, x):
 
-            hidden_size = 512
+            hidden_size = 64
+            # hidden_size = 512
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -444,13 +445,13 @@ def create_dreamerv2_actor(action_dim: int):
 
 
 def create_dreamerv2_critic():
-    """Create DreamerV2 Critic network with ~1M parameters and ELU activations."""
+    """Create DreamerV2 Critic network with distributional output."""
 
     class DreamerV2Critic(nn.Module):
 
         @nn.compact
         def __call__(self, x):
-            hidden_size = 512
+            hidden_size = 64
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -467,11 +468,18 @@ def create_dreamerv2_critic():
             )(x)
             x = nn.elu(x)
 
-            # value = nn.Dense(1, kernel_init=orthogonal(0.1), bias_init=constant(0.0))(x)
-            # value = nn.Dense(1, kernel_init=orthogonal(0.001), bias_init=constant(0.0))(x)
-            value = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
-
-            return jnp.squeeze(value, axis=-1)
+            # Output mean and log_std for a Normal distribution
+            mean = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
+            log_std = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
+            
+            # Squeeze to remove last dimension and create Normal distribution
+            mean = jnp.squeeze(mean, axis=-1)
+            log_std = jnp.squeeze(log_std, axis=-1)
+            
+            # Clamp log_std to reasonable range
+            log_std = jnp.clip(log_std, -10, 2)
+            
+            return distrax.Normal(mean, jnp.exp(log_std))
 
     return DreamerV2Critic()
 
@@ -543,7 +551,9 @@ def generate_imagined_rollouts(
             action = pi.sample(seed=action_key)
             log_prob = pi.log_prob(action)
 
-            value = critic_network.apply(critic_params, obs)
+
+            value_dist = critic_network.apply(critic_params, obs)
+            value = value_dist.mean()  # Use the mean of the distribution as the value
 
             normalized_obs = (obs - state_mean) / state_std
 
@@ -598,7 +608,8 @@ def generate_imagined_rollouts(
         discounts = jnp.concatenate([jnp.array([discount]), discounts_seq])
 
         init_action = jnp.zeros_like(actions_seq[0])
-        initial_value = critic_network.apply(critic_params, cur_obs)
+        initial_value_dist = critic_network.apply(critic_params, cur_obs)
+        initial_value = initial_value_dist.mean()
         actions = jnp.concatenate([init_action[None, ...], actions_seq])
         values = jnp.concatenate([initial_value[None, ...], values_seq])
         log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
@@ -665,8 +676,8 @@ def generate_real_rollouts(
             action = pi.sample(seed=action_key)
             log_prob = pi.log_prob(action)
 
-            value = critic_network.apply(critic_params, obs)
-            
+            value_dist = critic_network.apply(critic_params, obs)
+            value = value_dist.mean()  # Use the mean of the distribution as the value
             next_obs, next_state, reward, done, _ = env.step(state, action)
             next_obs, _ = flatten_obs(next_obs, single_state=True)
             
@@ -712,7 +723,8 @@ def generate_real_rollouts(
         discounts = jnp.concatenate([jnp.array([discount]), discounts_seq])
 
         init_action = jnp.zeros_like(actions_seq[0])
-        initial_value = critic_network.apply(critic_params, cur_obs)
+        initial_value_dist = critic_network.apply(critic_params, cur_obs)
+        initial_value = initial_value_dist.mean()
         actions = jnp.concatenate([init_action[None, ...], actions_seq])
         values = jnp.concatenate([initial_value[None, ...], values_seq])
         log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
@@ -868,17 +880,9 @@ def train_dreamerv2_actor_critic(
     #     loss = jnp.mean((predicted_values - targets) ** 2)
     #     return loss, {"critic_loss": loss, "critic_mean": jnp.mean(predicted_values)}
     def critic_loss_fn(critic_params, obs, targets):
-            predicted_values = critic_network.apply(critic_params, obs)
-            
-            # No clipping needed with normalized targets
-            diff = predicted_values - targets
-            loss = jnp.mean(diff**2)  # Simple MSE
-            
-            return loss, {
-                "critic_loss": loss, 
-                "critic_mean": jnp.mean(predicted_values),
-                "critic_std": jnp.std(predicted_values)
-            }
+        dist = critic_network.apply(critic_params, obs)
+        loss = -jnp.mean(dist.log_prob(targets))
+        return loss, {"critic_loss": loss, "critic_mean": dist.mean()}
 
     def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
         """DreamerV2 actor loss with inaction penalty."""
@@ -934,17 +938,15 @@ def train_dreamerv2_actor_critic(
 
                # Debug critic predictions vs targets
         if epoch == 0:  # Only on first epoch
-            current_preds = critic_network.apply(critic_state.params, obs_shuffled[:100])  # Sample 100
+            current_preds_dist = critic_network.apply(critic_state.params, obs_shuffled[:100])  # Sample 100
+            current_preds = current_preds_dist.mean()  # Extract mean from distribution
             sample_targets = targets_shuffled[:100]
-            
+
             print(f"\nCritic debugging (epoch {epoch}):")
             print(f"  Target stats: mean={sample_targets.mean():.3f}, std={sample_targets.std():.3f}")
             print(f"  Prediction stats: mean={current_preds.mean():.3f}, std={current_preds.std():.3f}")
             print(f"  Scale difference: {abs(sample_targets.mean() - current_preds.mean()):.3f}")
-            
-            # Check initial loss
-            initial_loss = jnp.mean((current_preds - sample_targets) ** 2)
-            print(f"  Initial MSE loss: {initial_loss:.3f}")
+        
 
 
         # Compute old policy distribution for KL divergence
