@@ -942,13 +942,13 @@ def train_dreamerv2_actor_critic(
             critic_loss_fn, has_aux=True
         )(critic_state.params, obs_shuffled, targets_shuffled)
 
-        critic_grad_norm = jnp.sqrt(
-            sum(jnp.sum(g**2) for g in jax.tree.leaves(critic_grads))
-        )
-        if critic_grad_norm > 10.0:
-            print(
-                f"Warning: Large critic gradients ({critic_grad_norm:.2f}) at epoch {epoch}"
-            )
+        # critic_grad_norm = jnp.sqrt(
+        #     sum(jnp.sum(g**2) for g in jax.tree.leaves(critic_grads))
+        # )
+        # if critic_grad_norm > 10.0:
+        #     print(
+        #         f"Warning: Large critic gradients ({critic_grad_norm:.2f}) at epoch {epoch}"
+        #     )
 
         critic_state = critic_state.apply_gradients(grads=critic_grads)
 
@@ -1188,7 +1188,7 @@ def main():
             imagined_actions,
             imagined_values,
             imagined_log_probs,
-        ) = generate_imagined_rollouts(
+        ) = generate_real_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,

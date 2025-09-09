@@ -873,13 +873,15 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     ball_y = obs[9]  # Ball Y position
 
     # 1. Primary reward: Track ball vertically
-    y_distance = jnp.abs(ball_y - player_y)
-    tracking_reward = jnp.exp(-y_distance / 20.0)  # Exponential decay
+    
+    tracking_reward = 10 - abs(obs[9] - obs[1])  # ball_y - player_y
+    # y_distance = jnp.abs(ball_y - player_y)
+    # tracking_reward = jnp.exp(-y_distance / 20.0)  # Exponential decay
 
     # 2. Bonus for being in the right horizontal zone when ball approaches
     # Encourage positioning when ball is on player's side
     ball_approaching = ball_x > 0.5  # Assuming normalized coordinates
-    positioning_bonus = jnp.where(ball_approaching & (y_distance < 0.1), 0.2, 0.0)
+    # positioning_bonus = jnp.where(ball_approaching & (y_distance < 0.1), 0.2, 0.0)
 
     # 3. Action rewards - encourage movement actions over no-op
     # Actions 3 (LEFT) and 4 (RIGHTFIRE) are movement actions
@@ -893,7 +895,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     # Penalize if player is at screen edges unnecessarily
     edge_penalty = jnp.where((player_y < 0.1) | (player_y > 0.9), -0.1, 0.0)
 
-    total_reward = tracking_reward
+    total_reward = tracking_reward * 0.5 + movement_bonus * 5
 
     # Clip to reasonable range to prevent training instability
     return jnp.clip(total_reward, -0.5, 1.5)
