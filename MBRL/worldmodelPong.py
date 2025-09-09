@@ -621,7 +621,7 @@ def compare_real_vs_model(
     ):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
         print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f}"
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f} Extracted Reward : {real_obs[-5]-real_obs[-1]}"
         )
 
         if error > 20 and render_debugging:

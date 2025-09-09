@@ -887,7 +887,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     # Actions 3 (LEFT) and 4 (RIGHTFIRE) are movement actions
     movement_bonus = jnp.where(
         (action == 3) | (action == 4),  # LEFT or RIGHTFIRE
-        0.05,  # Small bonus for movement
+        0.5,  # Small bonus for movement
         -0.02,  # Small penalty for no-op/other actions
     )
 

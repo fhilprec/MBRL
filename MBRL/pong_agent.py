@@ -653,11 +653,25 @@ def generate_real_rollouts(
 
             next_obs = next_obs.astype(jnp.float32)
 
-            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
+            # reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
+            
+
+            old_score =  obs[-5]-obs[-1]
+            new_score =  next_obs[-5]-next_obs[-1]
+
+            reward = new_score - old_score
+            reward = jnp.where(jnp.abs(reward) > 1, 0.0, reward)
+
+
+            # jax.debug.print("obs[-5] : {} , obs[-1] : {}, next_obs[-5] : {}, next_obs[-1] : {}, reward : {}", obs[-5], obs[-1], next_obs[-5], next_obs[-1], reward)
+            # jax.debug.print("obs[-1] : {}", obs[-1])
+            # jax.debug.print("next_obs[-5] : {}", next_obs[-5])
+            # jax.debug.print("next_obs[-1] : {}", next_obs[-1])
+            # jax.debug.print("REWARD : {}", reward)
 
             discount_factor = jnp.array(discount)
 
-            step_data = (next_obs, reward, discount_factor, action, value, log_prob)
+            step_data = (next_obs, reward, discount_factor, action, value, log_prob, done)
             new_carry = (key, next_obs, next_state)
 
             return new_carry, step_data
@@ -676,6 +690,7 @@ def generate_real_rollouts(
             actions_seq,
             values_seq,
             log_probs_seq,
+            dones_seq,
         ) = trajectory_data
 
         action_counts = jnp.bincount(actions_seq, length=6)
@@ -687,6 +702,7 @@ def generate_real_rollouts(
         rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq])
         discounts = jnp.concatenate([jnp.array([discount]), discounts_seq])
 
+
         init_action = jnp.zeros_like(actions_seq[0])
         initial_value_dist = critic_network.apply(critic_params, cur_obs)
         initial_value = initial_value_dist.mean()
@@ -694,7 +710,7 @@ def generate_real_rollouts(
         values = jnp.concatenate([initial_value[None, ...], values_seq])
         log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
 
-        return observations, rewards, discounts, actions, values, log_probs
+        return observations, rewards, discounts, actions, values, log_probs, dones_seq
 
     num_trajectories = initial_observations.shape[0]
     keys = jax.random.split(key, num_trajectories)
@@ -810,9 +826,7 @@ def train_dreamerv2_actor_critic(
      def critic_loss(self, seq, target):
         
         
-        
-        
-        
+
         
         dist = self.critic(seq['feat'][:-1])
         target = tf.stop_gradient(target)
@@ -886,15 +900,15 @@ def train_dreamerv2_actor_critic(
         advantages = targets - values
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
-        dynamics_obj = targets
 
-        objective = (1 - mix_ratio) * reinforce_obj + mix_ratio * dynamics_obj
+        reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
+
+        objective =  -reinforce_obj 
 
         entropy_bonus = entropy_scale * entropy
         total_objective = objective + entropy_bonus
 
-        actor_loss = -jnp.mean(total_objective)
+        actor_loss = jnp.mean(total_objective)
 
         return actor_loss, {
             "actor_loss": actor_loss,
@@ -917,23 +931,23 @@ def train_dreamerv2_actor_critic(
         values_shuffled = values_flat[perm]
         old_log_probs_shuffled = old_log_probs_flat[perm]
 
-        if epoch == 0:
-            current_preds_dist = critic_network.apply(
-                critic_state.params, obs_shuffled[:100]
-            )
-            current_preds = current_preds_dist.mean()
-            sample_targets = targets_shuffled[:100]
+        # if epoch == 0:
+        #     current_preds_dist = critic_network.apply(
+        #         critic_state.params, obs_shuffled[:100]
+        #     )
+        #     current_preds = current_preds_dist.mean()
+        #     sample_targets = targets_shuffled[:100]
 
-            print(f"\nCritic debugging (epoch {epoch}):")
-            print(
-                f"  Target stats: mean={sample_targets.mean():.3f}, std={sample_targets.std():.3f}"
-            )
-            print(
-                f"  Prediction stats: mean={current_preds.mean():.3f}, std={current_preds.std():.3f}"
-            )
-            print(
-                f"  Scale difference: {abs(sample_targets.mean() - current_preds.mean()):.3f}"
-            )
+        #     print(f"\nCritic debugging (epoch {epoch}):")
+        #     print(
+        #         f"  Target stats: mean={sample_targets.mean():.3f}, std={sample_targets.std():.3f}"
+        #     )
+        #     print(
+        #         f"  Prediction stats: mean={current_preds.mean():.3f}, std={current_preds.std():.3f}"
+        #     )
+        #     print(
+        #         f"  Scale difference: {abs(sample_targets.mean() - current_preds.mean()):.3f}"
+        #     )
 
         old_pi = actor_network.apply(actor_params, obs_shuffled)
         old_log_probs_new = old_pi.log_prob(actions_shuffled)
@@ -968,11 +982,11 @@ def train_dreamerv2_actor_critic(
         new_log_probs = new_pi.log_prob(actions_shuffled)
         kl_div = jnp.mean(old_log_probs_new - new_log_probs)
 
-        if kl_div > target_kl:
-            print(
-                f"Early stopping at epoch {epoch}: KL divergence {kl_div:.6f} > {target_kl}"
-            )
-            break
+        # if kl_div > target_kl:
+        #     print(
+        #         f"Early stopping at epoch {epoch}: KL divergence {kl_div:.6f} > {target_kl}"
+        #     )
+        #     break
 
         update_counter += 1
 
@@ -1102,8 +1116,8 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 45,
-        "num_rollouts": 1600,
+        "rollout_length": 128,
+        "num_rollouts": 3000,
         "policy_epochs": 50,
         "actor_lr": 3e-4,
         "critic_lr": 3e-4,
@@ -1188,6 +1202,7 @@ def main():
             imagined_actions,
             imagined_values,
             imagined_log_probs,
+            dones_seq
         ) = generate_real_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
@@ -1200,6 +1215,11 @@ def main():
             discount=training_params["discount"],
             key=jax.random.PRNGKey(SEED),
         )
+
+        # print(jnp.sum(dones_seq))
+        # exit()
+
+        print(imagined_rewards[:1000])
 
         parser.add_argument("--render", type=int, help="Number of rollouts to render")
         args = parser.parse_args()
