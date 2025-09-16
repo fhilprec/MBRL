@@ -332,13 +332,6 @@ def generate_real_rollouts(
             reward = new_score - old_score
             reward = jnp.where(jnp.abs(reward) > 1, 0.0, reward)
 
-
-            # jax.debug.print("obs[-5] : {} , obs[-1] : {}, next_obs[-5] : {}, next_obs[-1] : {}, reward : {}", obs[-5], obs[-1], next_obs[-5], next_obs[-1], reward)
-            # jax.debug.print("obs[-1] : {}", obs[-1])
-            # jax.debug.print("next_obs[-5] : {}", next_obs[-5])
-            # jax.debug.print("next_obs[-1] : {}", next_obs[-1])
-            # jax.debug.print("REWARD : {}", reward)
-
             discount_factor = jnp.array(discount)
 
             step_data = (next_obs, reward, discount_factor, action, value, log_prob, done)
@@ -663,10 +656,10 @@ def train_dreamerv2_actor_critic(
         epoch_metrics = {**critic_metrics, **actor_metrics}
         metrics_history.append(epoch_metrics)
 
-        # print(
-        #     f"Epoch {epoch}: Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}, "
-        #     f"Entropy: {actor_metrics['entropy']:.4f}"
-        # )
+        print(
+            f"Epoch {epoch}: Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}, "
+            f"Entropy: {actor_metrics['entropy']:.4f}"
+        )
 
         total_loss = actor_loss + critic_loss
         if total_loss < best_loss:
