@@ -798,26 +798,26 @@ def train_dreamerv2_actor_critic(
     targets_std = targets.std()
     targets_normalized = (targets - targets_mean) / (targets_std + 1e-8)
 
-    print(
-        f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    )
+    # print(
+    #     f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
+    # )
 
     print(
         f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     )
-    print(
-        f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
-    )
-    print(
-        f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    )
-    print(
-        f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    )
+    # print(
+    #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
+    # )
+    # print(
+    #     f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
+    # )
+    # print(
+    #     f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
+    # )
 
     observations_flat = observations[:-1].reshape((T - 1) * B, -1)
     actions_flat = actions[:-1].reshape((T - 1) * B)
-    targets_flat = targets_normalized.reshape((T - 1) * B)
+    targets_flat = targets.reshape((T - 1) * B)
     values_flat = values[:-1].reshape((T - 1) * B)
     old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
 
@@ -898,7 +898,7 @@ def train_dreamerv2_actor_critic(
         entropy = pi.entropy()
 
         advantages = targets - values
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
 
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
@@ -906,7 +906,7 @@ def train_dreamerv2_actor_critic(
         objective =  -reinforce_obj 
 
         entropy_bonus = entropy_scale * entropy
-        total_objective = objective + entropy_bonus
+        total_objective = objective - entropy_bonus
 
         actor_loss = jnp.mean(total_objective)
 
@@ -925,11 +925,11 @@ def train_dreamerv2_actor_critic(
         key, subkey = jax.random.split(key)
 
         perm = jax.random.permutation(subkey, (T - 1) * B)
-        obs_shuffled = observations_flat[perm]
-        actions_shuffled = actions_flat[perm]
-        targets_shuffled = targets_flat[perm]
-        values_shuffled = values_flat[perm]
-        old_log_probs_shuffled = old_log_probs_flat[perm]
+        obs_shuffled = observations_flat#[perm]
+        actions_shuffled = actions_flat#[perm]
+        targets_shuffled = targets_flat#[perm]
+        values_shuffled = values_flat#[perm]
+        old_log_probs_shuffled = old_log_probs_flat#[perm]
 
         # if epoch == 0:
         #     current_preds_dist = critic_network.apply(
@@ -1122,7 +1122,7 @@ def main():
         "actor_lr": 3e-4,
         "critic_lr": 3e-4,
         "lambda_": 0.95,
-        "entropy_scale": 1e-4,
+        "entropy_scale": 1e-2,
         "discount": 0.95,
         "max_grad_norm": 10.0,
         "target_kl": 1,
