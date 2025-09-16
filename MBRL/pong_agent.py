@@ -322,15 +322,15 @@ def generate_real_rollouts(
             next_obs, _ = flatten_obs(next_obs, single_state=True)
 
             next_obs = next_obs.astype(jnp.float32)
-
-            # reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
             
 
             old_score =  obs[-5]-obs[-1]
             new_score =  next_obs[-5]-next_obs[-1]
 
             reward = new_score - old_score
-            reward = jnp.where(jnp.abs(reward) > 1, 0.0, reward)
+            score_reward = jnp.where(jnp.abs(reward) > 1, 0.0, reward) * 100
+
+            reward = score_reward + improved_pong_reward(next_obs, action, frame_stack_size=4)
 
             discount_factor = jnp.array(discount)
 
