@@ -603,8 +603,7 @@
 \msg_new:nnn{tudapub} {unknown-language} {
 	You~selected~an~unknown~language~#1.\\
 	The~Variable~#2~does~not~have~a~predefined~value.\\
-	Ensure~to~redefine~#2~to~match~your~language.\\
-	Otherwise~the~ngerman~vaue~#3~will~be~used.
+	Ensure~to~redefine~#2~to~match~your~language.
 }
 
 \cs_new:Nn \ptxcd_define_captionFallback:Nn {
@@ -617,7 +616,6 @@
 
 \cs_new:Nn \ptxcd_declare_caption:Nnnn {
 	\ptxcd_define_captionFallback:Nn #1 {#2}
-	\defcaptionname{ngerman, german}{#1}{#2}
 	\defcaptionname{english, USenglish, american}{#1}{#3}
 	\defcaptionname{UKenglish, british}{#1}{#4}
 }
