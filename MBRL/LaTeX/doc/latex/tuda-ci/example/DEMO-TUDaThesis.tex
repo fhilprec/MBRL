@@ -1,0 +1,538 @@
+%% Master Thesis Table of Contents
+%% Integrating Object-Centric Learning with Model-Based Reinforcement Learning
+
+\documentclass[
+	english,
+	ruledheaders=section,
+	class=report,
+	thesis={type=master},
+	accentcolor=9c,
+	custommargins=true,
+	marginpar=false,
+	parskip=half-,
+	fontsize=11pt,
+]{tudapub}
+
+\usepackage{iftex}
+\ifPDFTeX
+	\usepackage[utf8]{inputenc}
+\fi
+
+%%%%%%%%%%%%%%%%%%%
+% Language settings
+%%%%%%%%%%%%%%%%%%%
+\usepackage[ngerman, main=english]{babel}
+\usepackage[autostyle]{csquotes}
+\usepackage{microtype}
+
+%%%%%%%%%%%%%%%%%%%
+% Bibliography
+%%%%%%%%%%%%%%%%%%%
+\usepackage{biblatex}
+\bibliography{references}
+
+%%%%%%%%%%%%%%%%%%%
+% Table packages
+%%%%%%%%%%%%%%%%%%%
+\usepackage{tabularx}
+\usepackage{booktabs}
+
+%%%%%%%%%%%%%%%%%%%
+% Math packages
+%%%%%%%%%%%%%%%%%%%
+\usepackage{mathtools}
+\usepackage{amssymb}
+\usepackage{siunitx}
+
+%%%%%%%%%%%%%%%%%%%
+% Additional packages
+%%%%%%%%%%%%%%%%%%%
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+\begin{document}
+
+\Metadata{
+	title=Integrating Object-Centric Learning with Model-Based Reinforcement Learning,
+	author=Your Name
+}
+
+\title{Integrating Object-Centric Learning with Model-Based Reinforcement Learning}
+\subtitle{A Study on Enhanced Sample Efficiency and Generalization in Atari Pong}
+\author[Y. Name]{Your Full Name}
+\studentID{1234567}
+\reviewer{Prof. Dr. Supervisor Name \and Dr. Second Reviewer}
+
+\department{inf} % Informatik
+\institute{Institute of Computer Science}
+\group{Machine Learning Research Group}
+
+\submissiondate{\today}
+\examdate{\today}
+
+\maketitle
+
+\affidavit
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+% List of Abbreviations
+\chapter*{List of Abbreviations}
+\addcontentsline{toc}{chapter}{List of Abbreviations}
+\begin{tabular}{ll}
+RL & Reinforcement Learning \\
+MBRL & Model-Based Reinforcement Learning \\
+MFRL & Model-Free Reinforcement Learning \\
+CNN & Convolutional Neural Network \\
+LSTM & Long Short-Term Memory \\
+PPO & Proximal Policy Optimization \\
+A3C & Asynchronous Advantage Actor-Critic \\
+DQN & Deep Q-Network \\
+RSSM & Recurrent State Space Model \\
+KL & Kullback-Leibler \\
+MSE & Mean Squared Error \\
+RGB & Red-Green-Blue \\
+GPU & Graphics Processing Unit \\
+JAX & Just After eXecution \\
+\end{tabular}
+
+\chapter{Introduction}
+\label{chap:introduction}
+
+\section{Motivation and Problem Statement}
+\label{sec:motivation}
+
+Reinforcement Learning (RL) has achieved remarkable success in various domains, from game playing to robotics. However, traditional RL approaches face significant challenges in terms of sample efficiency and generalization capabilities. Model-free methods, while effective in specific environments, often require millions of environment interactions to learn optimal policies. Model-based approaches attempt to address this limitation by learning explicit world models, but they frequently struggle with the complexity of high-dimensional observations and the compounding errors in long-horizon planning.
+
+Object-centric representations offer a promising avenue for addressing these challenges by decomposing complex scenes into meaningful object-level abstractions. By focusing on relevant entities and their relationships rather than raw pixel representations, agents can potentially achieve better sample efficiency and improved generalization to unseen scenarios.
+
+ \section{Research Questions and Objectives}
+\label{sec:research_questions}
+
+This thesis addresses the following research questions:
+\begin{enumerate}
+    \item How can object-centric representations be effectively integrated into model-based reinforcement learning frameworks?
+    \item What are the benefits of this integration in terms of sample efficiency and generalization capabilities?
+    \item How does the proposed approach compare to existing model-free and pixel-based model-based methods?
+\end{enumerate}
+
+The primary objectives of this work are:
+\begin{itemize}
+    \item Design and implement an integrated object-centric model-based RL system
+    \item Evaluate the approach on the Atari Pong environment
+    \item Analyze the impact of object-centric representations on learning efficiency
+    \item Assess the interpretability and generalization capabilities of the learned models
+\end{itemize}
+
+\section{Contributions}
+\label{sec:contributions}
+
+The main contributions of this thesis are:
+\begin{enumerate}
+    \item A novel integration of object-centric state representations with model-based reinforcement learning
+    \item Implementation of multiple world model architectures optimized for structured state spaces
+    \item Comprehensive experimental evaluation demonstrating improved sample efficiency
+    \item Analysis of the interpretability benefits of object-centric world models
+    \item Open-source implementation enabling reproducible research
+\end{enumerate}
+
+\section{Thesis Structure}
+\label{sec:structure}
+
+This thesis is organized as follows: Chapter~\ref{chap:background} provides the necessary background on reinforcement learning and object-centric representations. Chapter~\ref{chap:methodology} presents the theoretical framework and integration strategy. Chapter~\ref{chap:implementation} details the technical implementation. Chapter~\ref{chap:experiments} presents experimental results and analysis. Chapter~\ref{chap:discussion} discusses the implications and limitations of the approach. Chapter~\ref{chap:conclusion} concludes the thesis and outlines future research directions.
+
+\chapter{Background and Related Work}
+\label{chap:background}
+
+\section{Reinforcement Learning Fundamentals}
+\label{sec:rl_fundamentals}
+
+
+
+\subsection{Model-Free vs. Model-Based Approaches}
+\label{subsec:mf_vs_mb}
+There are two main categories in Reinforcement learning. First of all Model-Free Reinforcement Learning focousses on training an agent without explicitly learning a model of the environment. There is no prediction of future states but purely an agent that takes in observation and directly computes Decisions. Whereas Model Based Reinforcement Learning usually consists of a world model part that tries to make predicitons on how the environment will behave in the future. This can be done using actual predicition of next observations directly or using some kind of latent space and making predictions there.
+
+
+\subsection{Sample Efficiency Challenges}
+\label{subsec:sample_efficiency}
+Sample Efficiency so the optimisation of the amount of rollouts that is sampled in the actual environment can have multiple motivations. On the one hand the actual environment can be something in the physical world where there are contraints on the amount of times a physical object like a robot can move or how fast one can generate real samples. On the other hand computing states in the actual environment might me more costly and can therefore lower training speed depending on the complexity of the environment. For example running a game can be more resource intensive than computing a next (latent) state in the internal representation.
+Model based approaches usually vastly improve sample effiency because the data hungry step of training the agent can be done in the worldmodel. Meaning the worldmodel creates artificial rollouts (or parts of them) in which the actor can then do its training. The worldmodel has to of course sample training data in the actual environment but it usually requires way less training steps.
+
+\subsection{Generalization Problems}
+\label{subsec:generalization}
+Moreover Model-Free approaches  sometimes suffer from generalization problems. They overfit on a certain state of the environment. A common thing is the background color of the game if the actor is training on visual input. Thus changing the background which would have zero impact on the performance of a human player can drastically decrease the performance of an agent. Model Based Approaches usually come with some form of abstraction be it latent space or object centric things which usually do not suffer that much from simple changes in the environment. Also due to the error of the Environment Prediction an actor might see more diverse things to begin with.
+
+\section{Model-Based Reinforcement Learning}
+\label{sec:mbrl}
+
+\subsection{World Model Learning}
+\label{subsec:world_models}
+There are multiple way to to train a world model. As mentioned above already you can predict latent states or directly predict future observations. There are also multiple different architectures which can do the job. From a simple MLP over LSTMs to Transformers there have been many different approiaches to that same problem
+
+\subsection{Planning with Learned Models}
+\label{subsec:planning}
+
+\subsection{DreamerV2 Architecture}
+\label{subsec:dreamerv2_arch}
+
+
+
+Explain in general what dreamer does
+what are the components and how do they play together
+
+\subsection{DreamerV2 TD Lambda Targets}
+\label{subsec:td_lambda}
+
+
+The $\lambda$-target is defined recursively as:
+\begin{equation}
+V^{\lambda}_t = \hat{r}_t + \hat{\gamma}_t \cdot \begin{cases}
+(1 - \lambda)v_\xi(\hat{z}_{t+1}) + \lambda V^{\lambda}_{t+1} & \text{if } t < H \\
+v_\xi(\hat{z}_H) & \text{if } t = H
+\end{cases}
+\end{equation}
+
+where $\hat{r}_t$ represents the predicted reward, $\hat{\gamma}_t$ is the predicted discount factor, $v_\xi(\hat{z}_t)$ is the critic's value estimate, and $\lambda = 0.95$ controls the weighting between immediate and future rewards. This formulation creates a weighted average of n-step returns, where longer horizons receive exponentially decreasing weights.
+
+In my case I dont have z but simply the observation itself. So no latent space.
+
+
+
+
+\subsection{DreamerV2 Actor Loss}
+\label{subsec:actor_loss}
+
+The actor network in DreamerV2 employs a sophisticated loss function that combines multiple gradient estimators to achieve both learning efficiency and convergence stability. The actor aims to maximize the same $\lambda$-return targets used for critic training, incorporating intermediate rewards directly rather than relying solely on terminal value estimates.
+
+The combined actor loss function is formulated as:
+\begin{align}
+\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \quad \text{[REINFORCE]} \\
+& -(1-\rho)V^{\lambda}_t \quad \text{[Dynamics Backprop]} \\
+& -\eta \mathcal{H}[a_t|\hat{z}_t] \quad \text{[Entropy Regularization]} \Big]
+\end{align}
+
+The loss function incorporates three distinct components:
+
+\textbf{REINFORCE Gradients:}  REINFORCE algorithm, which maximizes the log-probability of actions weighted by their advantage values. The advantage is computed to be the difference between the lambda-return and the critic's estimate, with gradients stopped around the targets (denoted by sg stop gradient) to prevent interference with critic learning
+
+\textbf{Entropy Regularization:} The third term encourages exploration by maximizing the entropy of the action distribution. The entropy coefficient $\eta$ controls the trade-off between exploitation and exploration, with higher values promoting more diverse action selection.
+
+The weighting parameter $\rho$ determines the relative contribution of REINFORCE versus straight-through gradients. For discrete action spaces like Atari, DreamerV2 typically uses $\rho = 1$ (pure REINFORCE) with $\eta = 10^{-3}$, while continuous control tasks benefit from $\rho = 0$ (pure dynamics backpropagation) with $\eta = 10^{-4}$.
+
+\subsection{DreamerV2 Critic Loss}
+\label{subsec:critic_loss}
+
+The critic network in DreamerV2 serves as a value function approximator that estimates the expected discounted sum of future rewards from any given latent state. This component is essential for both the $\lambda$-target computation and providing baseline estimates for the REINFORCE algorithm, making it a cornerstone of the learning process.
+
+The critic is trained using temporal difference learning with the $\lambda$-targets as regression targets. The loss function is formulated as a squared error between the critic's predictions and the computed $\lambda$-returns:
+\begin{equation}
+\mathcal{L}(\xi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \frac{1}{2} \left(v_\xi(\hat{z}_t) - \text{sg}(V^{\lambda}_t)\right)^2\right]
+\end{equation}
+
+where $v_\xi(\hat{z}_t)$ represents the critic's value estimate for latent state $\hat{z}_t$, and $\text{sg}(V^{\lambda}_t)$ denotes the $\lambda$-target with stopped gradients. The gradient stopping prevents the critic's learning from interfering with the target computation, maintaining the stability of the temporal difference updates.
+
+Several key design choices enhance the critic's learning efficiency:
+
+\textbf{Target Network Stabilization:} Following the approach used in Deep Q-Networks, DreamerV2 employs a target network that provides stable targets for critic learning. The target network is a delayed copy of the critic parameters, updated every 100 gradient steps. This approach prevents the rapid changes in the critic from destabilizing the learning targets.
+
+\textbf{Trajectory Weighting:} The loss terms are weighted by cumulative predicted discount factors to account for episode termination probabilities. This weighting ensures that states likely to lead to episode endings receive appropriate emphasis during training.
+
+\textbf{Compact State Representation:} Unlike traditional value functions that operate on high-dimensional observations, the DreamerV2 critic leverages the compact latent states $\hat{z}_t$ learned by the world model. This representation provides several advantages: reduced computational complexity, better generalization across similar states, and improved learning efficiency due to the structured nature of the latent space.
+
+The critic architecture consists of a multi-layer perceptron with ELU activations and approximately 1 million trainable parameters. The network outputs a single scalar value representing the expected return from the input state, enabling efficient batch processing of imagined trajectories during training.
+
+
+
+\subsection{TD Lambda Targets}
+\label{subsec:tdlambdatargets}
+
+\subsection{TD Lambda Targets}
+\label{subsec:tdlambdatargets}
+
+\subsection{TD Lambda Targets}
+\label{subsec:tdlambdatargets}
+
+
+
+\section{Object-Centric Representations}
+\label{sec:object_centric}
+
+\subsection{Limitations of Pixel-Based Representations}
+\label{subsec:pixel_limitations}
+
+\subsection{Object-Centric Learning Approaches}
+\label{subsec:oc_approaches}
+
+\subsection{Relational Reasoning in RL}
+\label{subsec:relational_reasoning}
+
+\section{Current Limitations and Research Gaps}
+\label{sec:limitations}
+
+\subsection{Lack of Integration Between Approaches}
+\label{subsec:integration_gap}
+
+\subsection{Misalignment Problems}
+\label{subsec:misalignment}
+
+\subsection{Generalization Challenges}
+\label{subsec:gen_challenges}
+
+\chapter{Methodology}
+\label{chap:methodology}
+
+\section{Theoretical Framework}
+\label{sec:framework}
+
+\subsection{Object-Centric World Model Design}
+\label{subsec:oc_world_model}
+
+\subsection{Integration Strategy with Model-Based RL}
+\label{subsec:integration_strategy}
+
+\subsection{Expected Benefits Analysis}
+\label{subsec:benefits_analysis}
+
+\section{Implementation Approach}
+\label{sec:implementation_approach}
+
+\subsection{Environment Selection (Atari Pong)}
+\label{subsec:env_selection}
+
+\subsection{Object-Centric State Representation}
+\label{subsec:state_representation}
+
+\subsection{World Model Architecture Design}
+\label{subsec:architecture_design}
+
+\section{Experimental Design}
+\label{sec:experimental_design}
+
+\subsection{Baseline Comparisons}
+\label{subsec:baselines}
+
+\subsection{Evaluation Metrics}
+\label{subsec:metrics}
+
+\subsection{Ablation Studies}
+\label{subsec:ablation}
+
+\chapter{Implementation}
+\label{chap:implementation}
+
+\section{Environment and Setup}
+\label{sec:environment}
+
+\subsection{Pong Environment Characteristics}
+\label{subsec:pong_characteristics}
+
+\subsection{Object-Centric State Extraction}
+\label{subsec:state_extraction}
+
+\subsection{Frame Stacking and Preprocessing}
+\label{subsec:preprocessing}
+
+\section{World Model Architecture}
+\label{sec:world_model_arch}
+
+\subsection{LSTM-Based World Model (PongLSTM)}
+\label{subsec:ponglstm}
+
+\subsection{Alternative Architectures Explored}
+\label{subsec:alternative_architectures}
+
+\subsection{State Normalization and Stability}
+\label{subsec:normalization}
+
+\section{Actor-Critic Integration}
+\label{sec:actor_critic}
+
+\subsection{DreamerV2-Style Actor-Critic}
+\label{subsec:dreamer_ac}
+
+\subsection{Policy Learning in Imagined Rollouts}
+\label{subsec:imagined_rollouts}
+
+\subsection{Lambda-Return Computation}
+\label{subsec:lambda_returns}
+
+\section{Training Pipeline}
+\label{sec:training_pipeline}
+
+\subsection{Experience Collection}
+\label{subsec:experience_collection}
+
+\subsection{World Model Training}
+\label{subsec:world_model_training}
+
+\subsection{Policy Optimization}
+\label{subsec:policy_optimization}
+
+\chapter{Experiments and Results}
+\label{chap:experiments}
+
+\section{Experimental Setup}
+\label{sec:exp_setup}
+
+\subsection{Hyperparameters and Configuration}
+\label{subsec:hyperparameters}
+
+\subsection{Hardware and Implementation Details}
+\label{subsec:hardware}
+
+\subsection{Evaluation Protocol}
+\label{subsec:eval_protocol}
+
+\section{World Model Performance}
+\label{sec:world_model_perf}
+
+\subsection{Prediction Accuracy Analysis}
+\label{subsec:prediction_accuracy}
+
+\subsection{Long-Term Rollout Quality}
+\label{subsec:rollout_quality}
+
+\subsection{Model Stability Assessment}
+\label{subsec:stability}
+
+\section{Policy Learning Results}
+\label{sec:policy_results}
+
+\subsection{Sample Efficiency Comparison}
+\label{subsec:sample_efficiency_comp}
+
+\subsection{Final Performance Evaluation}
+\label{subsec:final_performance}
+
+\subsection{Learning Curve Analysis}
+\label{subsec:learning_curves}
+
+\section{Ablation Studies}
+\label{sec:ablation_studies}
+
+\subsection{Impact of Object-Centric Representations}
+\label{subsec:oc_impact}
+
+\subsection{Architecture Component Analysis}
+\label{subsec:architecture_analysis}
+
+\subsection{Reward Function Design Effects}
+\label{subsec:reward_effects}
+
+\section{Visualization and Interpretability}
+\label{sec:visualization}
+
+\subsection{Real vs. Model Comparison}
+\label{subsec:real_vs_model}
+
+\subsection{Learned Representations Analysis}
+\label{subsec:representation_analysis}
+
+\subsection{Policy Behavior Visualization}
+\label{subsec:policy_visualization}
+
+\chapter{Discussion}
+\label{chap:discussion}
+
+\section{Analysis of Results}
+\label{sec:results_analysis}
+
+\subsection{Strengths of the Proposed Approach}
+\label{subsec:strengths}
+
+\subsection{Limitations and Challenges}
+\label{subsec:limitations_challenges}
+
+\subsection{Comparison with Existing Methods}
+\label{subsec:comparison}
+
+\section{Technical Insights}
+\label{sec:technical_insights}
+
+\subsection{World Model Design Choices}
+\label{subsec:design_choices}
+
+\subsection{Training Stability Issues}
+\label{subsec:stability_issues}
+
+\subsection{Reward Engineering Importance}
+\label{subsec:reward_engineering}
+
+\section{Implications for Object-Centric RL}
+\label{sec:implications}
+
+\subsection{Benefits of Integration}
+\label{subsec:integration_benefits}
+
+\subsection{Generalization Potential}
+\label{subsec:generalization_potential}
+
+\subsection{Scalability Considerations}
+\label{subsec:scalability}
+
+\section{Future Research Directions}
+\label{sec:future_work}
+
+\subsection{More Complex Environments}
+\label{subsec:complex_environments}
+
+\subsection{Improved Object Discovery}
+\label{subsec:object_discovery}
+
+\subsection{Multi-Object Scenarios}
+\label{subsec:multi_object}
+
+\chapter{Conclusion}
+\label{chap:conclusion}
+
+\section{Summary of Contributions}
+\label{sec:summary_contributions}
+
+\section{Key Findings}
+\label{sec:key_findings}
+
+\section{Limitations and Future Work}
+\label{sec:limitations_future}
+
+\section{Final Remarks}
+\label{sec:final_remarks}
+
+\printbibliography
+
+\appendix
+
+\chapter{Implementation Details}
+\label{app:implementation}
+
+\section{Code Structure and Organization}
+\label{app:code_structure}
+
+\section{Hyperparameter Sensitivity Analysis}
+\label{app:hyperparameter_analysis}
+
+\section{Additional Experimental Results}
+\label{app:additional_results}
+
+\chapter{Technical Specifications}
+\label{app:technical_specs}
+
+\section{Hardware Requirements}
+\label{app:hardware_requirements}
+
+\section{Software Dependencies}
+\label{app:software_dependencies}
+
+\section{Reproducibility Guidelines}
+\label{app:reproducibility}
+
+\chapter{Supplementary Figures and Tables}
+\label{app:supplementary}
+
+\end{document}
