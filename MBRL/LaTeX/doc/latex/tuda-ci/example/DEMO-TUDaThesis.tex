@@ -259,6 +259,7 @@ The critic architecture consists of a multi-layer perceptron with ELU activation
 \subsection{Limitations of Pixel-Based Representations}
 \label{subsec:pixel_limitations}
 
+
 \begin{itemize}
 	\item \textbf{High Dimensionality:} Pixel observations are inherently high-dimensional, leading to increased computational requirements and slower learning. The agent must process large amounts of redundant information, much of which may be irrelevant to the task.
 	\item \textbf{Poor Generalization:} Agents trained on pixel data tend to overfit to specific visual details, such as background colors or textures. Even minor changes in the environment's appearance can significantly degrade performance, as the agent fails to recognize semantically identical states that look different at the pixel level.
