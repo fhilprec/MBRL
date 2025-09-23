@@ -19,6 +19,8 @@ sudo apt-get install -y texlive-science
 # Additional useful packages (if not included above)
 sudo apt-get install -y texlive-xetex texlive-pictures texlive-pstricks
 
+sudo apt install biber
+
 # If urcls is not available via apt, download and install manually:
 if ! kpsewhich URspecialopts.sty > /dev/null; then
     echo "URspecialopts.sty not found, installing urcls manually..."
@@ -29,3 +31,11 @@ if ! kpsewhich URspecialopts.sty > /dev/null; then
 fi
 
 echo "All required LaTeX packages should now be installed."
+
+
+
+
+
+
+
+rm -f *.aux *.log *.out *.toc *.bbl *.blg *.fls *.fdb_latexmk *.synctex.gz *.bcf *.run.xml; TEXINPUTS=.:/home/fhilprec/MBRL/MBRL/LaTeX/tex/latex/tuda-ci//: latexmk -pdf -f DEMO-TUDaThesis.tex

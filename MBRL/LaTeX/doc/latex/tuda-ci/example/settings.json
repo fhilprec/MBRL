@@ -1,0 +1,5 @@
+{
+  "latex-workshop.latex.env": {
+    "TEXINPUTS": ".:/home/fhilprec/MBRL/MBRL/LaTeX/tex/latex/tuda-ci//:"
+  }
+}

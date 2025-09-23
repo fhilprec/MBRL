@@ -13,10 +13,14 @@
 	fontsize=11pt,
 ]{tudapub}
 
+
+
 \usepackage{iftex}
 \ifPDFTeX
 	\usepackage[utf8]{inputenc}
 \fi
+
+
 
 %%%%%%%%%%%%%%%%%%%
 % Language settings
@@ -25,11 +29,18 @@
 \usepackage[autostyle]{csquotes}
 \usepackage{microtype}
 
+
 %%%%%%%%%%%%%%%%%%%
 % Bibliography
 %%%%%%%%%%%%%%%%%%%
 \usepackage{biblatex}
-\bibliography{references}
+\addbibresource{references.bib}
+
+
+\DefineBibliographyStrings{english}{
+  bibliography = {References},
+}
+
 
 %%%%%%%%%%%%%%%%%%%
 % Table packages
@@ -174,13 +185,14 @@ Moreover Model-Free approaches  sometimes suffer from generalization problems. T
 
 \subsection{World Model Learning}
 \label{subsec:world_models}
-There are multiple way to to train a world model. As mentioned above already you can predict latent states or directly predict future observations. There are also multiple different architectures which can do the job. From a simple MLP over LSTMs to Transformers there have been many different approiaches to that same problem
+There are multiple way to to train a world model. As mentioned above already you can predict latent states or directly predict future observations. There are also multiple different architectures which can do the job. From a simple MLP over LSTMs to Transformers there have been many different approiaches to that same problem. Tes
 
 \subsection{Planning with Learned Models}
 \label{subsec:planning}
 
 \subsection{DreamerV2 Architecture}
 \label{subsec:dreamerv2_arch}
+DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
 
 
 
@@ -504,7 +516,7 @@ The critic architecture consists of a multi-layer perceptron with ELU activation
 \section{Final Remarks}
 \label{sec:final_remarks}
 
-\printbibliography
+\printbibliography[title={References}]
 
 \appendix
 
