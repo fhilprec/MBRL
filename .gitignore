@@ -9,3 +9,19 @@ results/
 .DS_Store
 docs/build/
 *.pkl
+
+# LaTeX compilation artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.pdf
+*.synctex.gz
+*.toc
+*.xmpdata
+*.xmpi
+
+# LaTeX formatting backups
+*.bak*
+indent.log
+.latexindent.yaml

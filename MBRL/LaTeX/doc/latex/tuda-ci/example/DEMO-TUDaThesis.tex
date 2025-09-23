@@ -68,22 +68,22 @@
 \begin{document}
 
 \Metadata{
-	title=Integrating Object-Centric Learning with Model-Based Reinforcement Learning,
+	title=Structured World Understanding: Integrating Object-Centric Learning with Model-Based Reinforcement Learning,
 	author=Your Name
 }
 
-\title{Integrating Object-Centric Learning with Model-Based Reinforcement Learning}
-\subtitle{A Study on Enhanced Sample Efficiency and Generalization in Atari Pong}
+\title{Structured World Understanding: Integrating Object-Centric Learning with Model-Based Reinforcement Learning}
+\subtitle{Master's Thesis: Summer Semester 2025}
 \author[Y. Name]{Your Full Name}
 \studentID{1234567}
-\reviewer{Prof. Dr. Supervisor Name \and Dr. Second Reviewer}
+\reviewer{Jannis Blüml}
 
 \department{Department of Computer Science}
 \institute{Institute of Computer Science}
 \group{Machine Learning Research Group}
 
-\submissiondate{\today}
-\examdate{\today}
+\submissiondate{24.10.2025}
+\examdate{24.10.2025}
 
 \maketitle
 
@@ -97,61 +97,57 @@
 \chapter*{List of Abbreviations}
 \addcontentsline{toc}{chapter}{List of Abbreviations}
 \begin{tabular}{ll}
-RL & Reinforcement Learning \\
-MBRL & Model-Based Reinforcement Learning \\
-MFRL & Model-Free Reinforcement Learning \\
-CNN & Convolutional Neural Network \\
-LSTM & Long Short-Term Memory \\
-PPO & Proximal Policy Optimization \\
-A3C & Asynchronous Advantage Actor-Critic \\
-DQN & Deep Q-Network \\
-RSSM & Recurrent State Space Model \\
-KL & Kullback-Leibler \\
-MSE & Mean Squared Error \\
-RGB & Red-Green-Blue \\
-GPU & Graphics Processing Unit \\
-JAX & Just After eXecution \\
+	RL   & Reinforcement Learning              \\
+	MBRL & Model-Based Reinforcement Learning  \\
+	MFRL & Model-Free Reinforcement Learning   \\
+	CNN  & Convolutional Neural Network        \\
+	LSTM & Long Short-Term Memory              \\
+	PPO  & Proximal Policy Optimization        \\
+	A3C  & Asynchronous Advantage Actor-Critic \\
+	DQN  & Deep Q-Network                      \\
+	RSSM & Recurrent State Space Model         \\
+	KL   & Kullback-Leibler                    \\
+	MSE  & Mean Squared Error                  \\
+	RGB  & Red-Green-Blue                      \\
+	GPU  & Graphics Processing Unit            \\
+	JAX  & Just After eXecution                \\
 \end{tabular}
 
 \chapter{Introduction}
 \label{chap:introduction}
 
-\section{Motivation and Problem Statement}
-\label{sec:motivation}
+\section{Context}
+\label{sec:context}
 
-Reinforcement Learning (RL) has achieved remarkable success in various domains, from game playing to robotics. However, traditional RL approaches face significant challenges in terms of sample efficiency and generalization capabilities. Model-free methods, while effective in specific environments, often require millions of environment interactions to learn optimal policies. Model-based approaches attempt to address this limitation by learning explicit world models, but they frequently struggle with the complexity of high-dimensional observations and the compounding errors in long-horizon planning.
+Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference between Model Based Reinforcement Learning and Model Free Reinforcement Learning. The Latter focuses on the learning of only the Agent which is deployed in the environment (or learns from samples). Thus the agent will have no explicit way of predicting the next state of the environment, although sufficiently large for example neural networks might create some implicit model of the world. Model based Reinforcement learning augments the architecture by a Model that is predicting the next state of the world but also still trains an agent. So there are usually two separate models. That might improve sample efficiency since once the world model is trained it can be used to train the agent without any need of additional sampling in the environment. Another hope of Model based approaches is that they can achiever a better understanding of the environment and thus generelize better to new unseen situations.
 
-Object-centric representations offer a promising avenue for addressing these challenges by decomposing complex scenes into meaningful object-level abstractions. By focusing on relevant entities and their relationships rather than raw pixel representations, agents can potentially achieve better sample efficiency and improved generalization to unseen scenarios.
+Given that well established separation in Reinforcement Learning there are different approaches that might yield improvements in abstract reasoning for reinforcement learning agents. The approach of Object-Centricity tries to improve RL-Agents by not focusing on for example pixel representations of the environment (given that the environment might be some kind of game like the Atari Benchmark) but rather translating those pixel based representation to abstract relational concepts (e.g. separating a game screen into distinct entities like player character, enemies, and collectibles rather than processing it as an undifferentiated grid of pixels).
 
- \section{Research Questions and Objectives}
-\label{sec:research_questions}
+\section{Goal}
+\label{sec:goal}
 
-This thesis addresses the following research questions:
-\begin{enumerate}
-    \item How can object-centric representations be effectively integrated into model-based reinforcement learning frameworks?
-    \item What are the benefits of this integration in terms of sample efficiency and generalization capabilities?
-    \item How does the proposed approach compare to existing model-free and pixel-based model-based methods?
-\end{enumerate}
+\textbf{The task of this Thesis can be summarized as follows:}
+Currently there are no attempts to combine model based approaches and Object-Centric ones. Since both have the goal of improving abstract reasoning by developing a more abstract understanding of the world and improving sample efficiency the vision is to use both things to arrive at a more robust solution.
 
-The primary objectives of this work are:
-\begin{itemize}
-    \item Design and implement an integrated object-centric model-based RL system
-    \item Evaluate the approach on the Atari Pong environment
-    \item Analyze the impact of object-centric representations on learning efficiency
-    \item Assess the interpretability and generalization capabilities of the learned models
-\end{itemize}
+\subsection{Problem}
+\label{subsec:problem}
 
-\section{Contributions}
-\label{sec:contributions}
+A common pitfall of Reinforcement Learning is the misalignment problem, which can be summarized to an agent learning a policy, which indeed maximizes its reward but which does not represent what humans would like the agent to learn. This can for example be the agent exploiting some flaw in the environment and therefore avoiding to actually play and therefore learn the game. Moreover model free approaches are usually fairly sample inefficient since the agent has no other way of gaining examples (performing roll outs) then actually playing the game and exploring it.
 
-The main contributions of this thesis are:
-\begin{enumerate}
-    \item A novel integration of object-centric state representations with model-based reinforcement learning
-    \item Implementation of multiple world model architectures optimized for structured state spaces
-    \item Comprehensive experimental evaluation demonstrating improved sample efficiency
-    \item Analysis of the interpretability benefits of object-centric world models
-    \item Open-source implementation enabling reproducible research
-\end{enumerate}
+Lastly generalization of the agents is often a big problems. Changing small and meaningless things in the environment sometimes lead to disastrous drops in performance. For example for Agents performing on pixel representations this might involve changing the background color. For humans this would not make a difference but agents sometimes fail, since they do no have a way to actually understand the game they are playing but rather rely on certain tricks that they learn during training which are not robust to changes.
+
+\subsection{Solution}
+\label{subsec:solution}
+
+The proposed solution combines model-based reinforcement learning with object-centered representations to solve the identified problems. This integration offers several potential benefits.
+
+First of all, model-based approaches can significantly improve sampling efficiency by allowing the agent to learn from simulated experiences generated by the world model. In combination with object-centered representations, the world model can make predictions in a more structured and compact state space that focuses on relevant objects and their relationships rather than raw pixels. This should enable more efficient learning with fewer environmental interactions.
+
+Second, an object-centric world model could improve generalization capabilities. By decomposing scenes into objects and their relationships, the agent develops an understanding of the environment that is more robust to superficial changes. The hope is that this structured representation combined with model based approaches enhances generalization abilities even further.
+
+Third, the combination could improve interpretability. Object-centered representations make it easier to understand what the agent considers important in the environment and how it reasons about state transitions. This interpretability could help identify and address mismatch issues by providing insight into why an agent makes certain decisions or why it might exploit loopholes in the environment.
+
+The implementation strategy will focus on integrating object-centered perception modules into established model-based RL frameworks. This will require the development of methods to incorporate object-centered representations into world model predictions.
 
 \section{Thesis Structure}
 \label{sec:structure}
@@ -164,12 +160,9 @@ This thesis is organized as follows: Chapter~\ref{chap:background} provides the 
 \section{Reinforcement Learning Fundamentals}
 \label{sec:rl_fundamentals}
 
-
-
 \subsection{Model-Free vs. Model-Based Approaches}
 \label{subsec:mf_vs_mb}
 There are two main categories in Reinforcement learning. First of all Model-Free Reinforcement Learning focousses on training an agent without explicitly learning a model of the environment. There is no prediction of future states but purely an agent that takes in observation and directly computes Decisions. Whereas Model Based Reinforcement Learning usually consists of a world model part that tries to make predicitons on how the environment will behave in the future. This can be done using actual predicition of next observations directly or using some kind of latent space and making predictions there.
-
 
 \subsection{Sample Efficiency Challenges}
 \label{subsec:sample_efficiency}
@@ -194,29 +187,23 @@ There are multiple way to to train a world model. As mentioned above already you
 \label{subsec:dreamerv2_arch}
 DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
 
-
-
 Explain in general what dreamer does
 what are the components and how do they play together
 
 \subsection{DreamerV2 TD Lambda Targets}
 \label{subsec:td_lambda}
 
-
 The $\lambda$-target is defined recursively as:
 \begin{equation}
-V^{\lambda}_t = \hat{r}_t + \hat{\gamma}_t \cdot \begin{cases}
-(1 - \lambda)v_\xi(\hat{z}_{t+1}) + \lambda V^{\lambda}_{t+1} & \text{if } t < H \\
-v_\xi(\hat{z}_H) & \text{if } t = H
-\end{cases}
+	V^{\lambda}_t = \hat{r}_t + \hat{\gamma}_t \cdot \begin{cases}
+		(1 - \lambda)v_\xi(\hat{z}_{t+1}) + \lambda V^{\lambda}_{t+1} & \text{if } t < H \\
+		v_\xi(\hat{z}_H)                                              & \text{if } t = H
+	\end{cases}
 \end{equation}
 
 where $\hat{r}_t$ represents the predicted reward, $\hat{\gamma}_t$ is the predicted discount factor, $v_\xi(\hat{z}_t)$ is the critic's value estimate, and $\lambda = 0.95$ controls the weighting between immediate and future rewards. This formulation creates a weighted average of n-step returns, where longer horizons receive exponentially decreasing weights.
 
 In my case I dont have z but simply the observation itself. So no latent space.
-
-
-
 
 \subsection{DreamerV2 Actor Loss}
 \label{subsec:actor_loss}
@@ -225,9 +212,9 @@ The actor network in DreamerV2 employs a sophisticated loss function that combin
 
 The combined actor loss function is formulated as:
 \begin{align}
-\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \quad \text{[REINFORCE]} \\
-& -(1-\rho)V^{\lambda}_t \quad \text{[Dynamics Backprop]} \\
-& -\eta \mathcal{H}[a_t|\hat{z}_t] \quad \text{[Entropy Regularization]} \Big]
+	\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \quad \text{[REINFORCE]} \\
+	                                                                  & -(1-\rho)V^{\lambda}_t \quad \text{[Dynamics Backprop]}                                                         \\
+	                                                                  & -\eta \mathcal{H}[a_t|\hat{z}_t] \quad \text{[Entropy Regularization]} \Big]
 \end{align}
 
 The loss function incorporates three distinct components:
@@ -245,7 +232,7 @@ The critic network in DreamerV2 serves as a value function approximator that est
 
 The critic is trained using temporal difference learning with the $\lambda$-targets as regression targets. The loss function is formulated as a squared error between the critic's predictions and the computed $\lambda$-returns:
 \begin{equation}
-\mathcal{L}(\xi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \frac{1}{2} \left(v_\xi(\hat{z}_t) - \text{sg}(V^{\lambda}_t)\right)^2\right]
+	\mathcal{L}(\xi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \frac{1}{2} \left(v_\xi(\hat{z}_t) - \text{sg}(V^{\lambda}_t)\right)^2\right]
 \end{equation}
 
 where $v_\xi(\hat{z}_t)$ represents the critic's value estimate for latent state $\hat{z}_t$, and $\text{sg}(V^{\lambda}_t)$ denotes the $\lambda$-target with stopped gradients. The gradient stopping prevents the critic's learning from interfering with the target computation, maintaining the stability of the temporal difference updates.
@@ -260,24 +247,27 @@ Several key design choices enhance the critic's learning efficiency:
 
 The critic architecture consists of a multi-layer perceptron with ELU activations and approximately 1 million trainable parameters. The network outputs a single scalar value representing the expected return from the input state, enabling efficient batch processing of imagined trajectories during training.
 
-
-
-\subsection{TD Lambda Targets}
-\label{subsec:tdlambdatargets}
-
 % \subsection{TD Lambda Targets}
 % \label{subsec:tdlambdatargets}
 
 % \subsection{TD Lambda Targets}
 % \label{subsec:tdlambdatargets}
-
-
 
 \section{Object-Centric Representations}
 \label{sec:object_centric}
 
 \subsection{Limitations of Pixel-Based Representations}
 \label{subsec:pixel_limitations}
+
+\begin{itemize}
+	\item \textbf{High Dimensionality:} Pixel observations are inherently high-dimensional, leading to increased computational requirements and slower learning. The agent must process large amounts of redundant information, much of which may be irrelevant to the task.
+	\item \textbf{Poor Generalization:} Agents trained on pixel data tend to overfit to specific visual details, such as background colors or textures. Even minor changes in the environment's appearance can significantly degrade performance, as the agent fails to recognize semantically identical states that look different at the pixel level.
+	\item \textbf{Lack of Semantic Understanding:} Pixel-based representations do not explicitly encode objects or their relationships. As a result, agents struggle to reason about entities, interactions, or causal structure in the environment, limiting their ability to plan or transfer knowledge.
+	\item \textbf{Sample Inefficiency:} Learning meaningful features directly from pixels typically requires a vast number of environment interactions. The agent must discover relevant abstractions from scratch, which is especially challenging in sparse-reward or complex environments.
+	\item \textbf{Sensitivity to Noise and Distractors:} Pixel-based agents are vulnerable to visual noise, occlusions, or irrelevant objects. Such distractions can mislead the agent or disrupt the learning process, as there is no mechanism to focus on task-relevant entities.
+\end{itemize}
+
+These limitations motivate the exploration of object-centric representations, which aim to provide more structured, compact, and semantically meaningful state descriptions for reinforcement learning agents.
 
 \subsection{Object-Centric Learning Approaches}
 \label{subsec:oc_approaches}
