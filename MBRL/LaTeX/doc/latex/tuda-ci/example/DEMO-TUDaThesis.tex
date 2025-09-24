@@ -273,13 +273,57 @@ These limitations motivate the exploration of object-centric representations, wh
 \subsection{Object-Centric Learning Approaches}
 \label{subsec:oc_approaches}
 
-In contrast to pixel-based methods, object-centric learning approaches leverage understanding of objects to create an abstract representation of the environment. 
-This mimics human perception, which naturally segments scenes into distinct entities and focuses on their interactions. \cite{nanbo2021learningobjectcentricrepresentationsmultiobject}
+In contrast to pixel-based methods, object-centric learning approaches leverage understanding of objects to create an abstract representation of the environment. This mimics human perception,
+ which naturally segments scenes into distinct entities and focuses on their interactions \cite{nanbo2021learningobjectcentricrepresentationsmultiobject}. Object-centric learning represents a paradigm shift in how reinforcement learning agents process and understand their environments.
 
-Object centric learning \cite{delfosse2024ocatariobjectcentricatari2600} is a model-based RL algorithm.
+Therefore object centricity provides several advantages over pixel based methods.
+
+\textbf{Compositional Understanding:} Object-centric representations naturally excel at treating input features as compositions of distinct entities. Making them understand that certain features
+correspond to the velocity and position of a ball and others to a paddle. This compositionality allows agents to reason about individual objects and their interactions.
+
+\textbf{Improved Generalization:} By focusing on objects rather than pixel patterns, agents can generalize better across visually different but similar scenarios. For example an agent that
+ understands the concept of a "ball" an an abstract obect can use this knowledge in environments where the ball has a different shape or appearance in general. (SOURCE)
+
+\textbf{Enhanced Interpretability:} Object-centric representations provide naturally a better interpretability then pixel based representations since the agent can reason better that it perceives things as objects rather than "random" pixels.
+
+\textbf{Sample Efficiency:} The structured nature of object-centric representations often leads to more sample-efficient learning. By working with compact, meaningful features rather than high-dimensional
+ pixel data, agents can learn policies with fewer rollouts. THis is possible because the object space is already some kind of latent space which is usually the way things work (SOURCE)
+
+A significant development in this field is the introduction of OCAtari (Object-Centric Atari) by Delfosse et al. \cite{delfosse2024ocatariobjectcentricatari2600}. OCAtari extends the widely-used Arcade
+ Learning Environment (ALE) by providing resource-efficient extraction of object-centric states for Atari 2600 games. THis framework fixes a gap, where despite growing interest in object-centric approaches,
+no standardized benchmark existed for evaluating such methods on the popular Atari domain.
+
+(UNTIL HERE)
+
+The OCAtari framework operates by maintaining object-centric states during game execution, providing a list of depicted objects and their properties for each game frame. This approach eliminates the need 
+for separate object discovery methods during training, significantly improving computational efficiency. The framework supports various research directions including object discovery, object representation learning, and object-centric reinforcement learning.
+
+The importance of object-centric approaches in Atari environments is particularly evident when considering the limitations of pixel-based methods in these domains. Delfosse et al. demonstrated that deep 
+RL agents without interpretable object-centric representations can learn misaligned policies even in simple games like Pong, highlighting fundamental issues that post-hoc explanation techniques fail to detect. 
+This misalignment problem underscores the necessity of incorporating object-centric understanding from the ground up rather than attempting to retrofit interpretability onto pixel-based systems.
+
+Furthermore, object-centric representations enable more sophisticated reasoning capabilities that mirror human cognitive processes. As Lake et al. illustrated with the "Frostbite challenge," deep agents 
+trained on traditional ALE environments often lack the ability to create multi-step sub-goals, such as acquiring certain objects while avoiding others. Object-centric approaches provide the structured foundation necessary for such hierarchical reasoning.
+
+The integration of object-centric learning with model-based reinforcement learning presents particularly promising opportunities. While traditional model-based approaches often struggle with the high-dimensional 
+nature of pixel observations, object-centric representations provide a more tractable state space for world model learning. This combination can potentially achieve the sample efficiency benefits of model-based methods while maintaining the interpretability and generalization advantages of object-centric representations.
 
 \subsection{Relational Reasoning in RL}
 \label{subsec:relational_reasoning}
+
+Object-centric representations naturally lend themselves to relational reasoning, where agents must understand not just individual objects but also the relationships and interactions between them. This capability is crucial for complex decision-making in multi-object environments where the optimal policy depends on understanding how different entities influence each other.
+
+Relational reasoning in reinforcement learning encompasses several key aspects:
+
+\textbf{Spatial Relationships:} Understanding the relative positions of objects and how spatial configurations affect optimal actions. For example, in Pong, the relationship between the paddle position and ball trajectory determines the appropriate movement strategy.
+
+\textbf{Temporal Dependencies:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
+
+\textbf{Causal Understanding:} Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
+
+\textbf{Hierarchical Abstractions:} Building higher-level abstractions that group objects or relationships into meaningful categories, enabling more efficient reasoning about complex scenarios.
+
+The integration of relational reasoning with model-based approaches offers significant potential for improving agent performance. By incorporating relational structure into world models, agents can make more accurate predictions about future states and plan more effectively. This integration forms a core component of our proposed approach, where object-centric world models explicitly encode relational information to enhance both prediction accuracy and policy learning.
 
 \section{Current Limitations and Research Gaps}
 \label{sec:limitations}
