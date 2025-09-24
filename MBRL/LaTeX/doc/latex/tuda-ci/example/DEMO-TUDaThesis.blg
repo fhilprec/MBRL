@@ -1,15 +1,15 @@
 [0] Config.pm:307> INFO - This is Biber 2.19
 [0] Config.pm:310> INFO - Logfile is 'DEMO-TUDaThesis.blg'
-[42] biber:340> INFO - === Tue Sep 23, 2025, 17:41:43
-[54] Biber.pm:419> INFO - Reading 'DEMO-TUDaThesis.bcf'
-[85] Biber.pm:979> INFO - Found 1 citekeys in bib section 0
-[91] Biber.pm:4419> INFO - Processing section 0
-[100] Biber.pm:4610> INFO - Looking for bibtex file 'references.bib' for section 0
-[100] bibtex.pm:1713> INFO - LaTeX decoding ...
-[101] bibtex.pm:1519> INFO - Found BibTeX data source 'references.bib'
-[127] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'variable = shifted' with 'variable = non-ignorable'
-[127] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'normalization = NFD' with 'normalization = prenormalized'
-[127] Biber.pm:4239> INFO - Sorting list 'nty/global//global/global' of type 'entry' with template 'nty' and locale 'de-DE'
-[127] Biber.pm:4245> INFO - No sort tailoring available for locale 'de-DE'
-[129] bbl.pm:660> INFO - Writing 'DEMO-TUDaThesis.bbl' with encoding 'UTF-8'
-[129] bbl.pm:763> INFO - Output to DEMO-TUDaThesis.bbl
+[40] biber:340> INFO - === Wed Sep 24, 2025, 14:22:08
+[47] Biber.pm:419> INFO - Reading 'DEMO-TUDaThesis.bcf'
+[76] Biber.pm:979> INFO - Found 2 citekeys in bib section 0
+[82] Biber.pm:4419> INFO - Processing section 0
+[87] Biber.pm:4610> INFO - Looking for bibtex file 'references.bib' for section 0
+[88] bibtex.pm:1713> INFO - LaTeX decoding ...
+[90] bibtex.pm:1519> INFO - Found BibTeX data source 'references.bib'
+[115] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'variable = shifted' with 'variable = non-ignorable'
+[115] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[116] Biber.pm:4239> INFO - Sorting list 'nty/global//global/global' of type 'entry' with template 'nty' and locale 'de-DE'
+[116] Biber.pm:4245> INFO - No sort tailoring available for locale 'de-DE'
+[119] bbl.pm:660> INFO - Writing 'DEMO-TUDaThesis.bbl' with encoding 'UTF-8'
+[120] bbl.pm:763> INFO - Output to DEMO-TUDaThesis.bbl

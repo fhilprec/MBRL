@@ -19,6 +19,58 @@
 
 \refsection{0}
   \datalist[entry]{nty/global//global/global}
+    \entry{delfosse2024ocatariobjectcentricatari2600}{inproceedings}{}
+      \name{author}{5}{}{%
+        {{hash=ef08e6d4cfa3ade80daa1ff4ea06ba81}{%
+           family={Delfosse},
+           familyi={D\bibinitperiod},
+           given={Quentin},
+           giveni={Q\bibinitperiod}}}%
+        {{hash=40b17b00ff3d420d0ce9c3a954553fce}{%
+           family={Blüml},
+           familyi={B\bibinitperiod},
+           given={Jannis},
+           giveni={J\bibinitperiod}}}%
+        {{hash=ff2d8f2679ccd308e23cccf41b99c3d9}{%
+           family={Gregori},
+           familyi={G\bibinitperiod},
+           given={Bjarne},
+           giveni={B\bibinitperiod}}}%
+        {{hash=98c12857e4f18e43b93e28a8cf3060a6}{%
+           family={Sztwiertnia},
+           familyi={S\bibinitperiod},
+           given={Sebastian},
+           giveni={S\bibinitperiod}}}%
+        {{hash=231ca1992b128d48dbc73100fd196d87}{%
+           family={Kersting},
+           familyi={K\bibinitperiod},
+           given={Kristian},
+           giveni={K\bibinitperiod}}}%
+      }
+      \strng{namehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{fullhash}{2b048910d505b6f500bb169bea952505}
+      \strng{bibnamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{authorbibnamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{authornamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{authorfullhash}{2b048910d505b6f500bb169bea952505}
+      \field{sortinit}{D}
+      \field{sortinithash}{6f385f66841fb5e82009dc833c761848}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{eprintclass}{cs.LG}
+      \field{eprinttype}{arXiv}
+      \field{title}{OCAtari: Object-Centric Atari 2600 Reinforcement Learning Environments}
+      \field{year}{2024}
+      \verb{eprint}
+      \verb 2306.08649
+      \endverb
+      \verb{urlraw}
+      \verb https://arxiv.org/abs/2306.08649
+      \endverb
+      \verb{url}
+      \verb https://arxiv.org/abs/2306.08649
+      \endverb
+    \endentry
     \entry{hafner2019dreamer}{inproceedings}{}
       \true{moreauthor}
       \true{morelabelname}
