@@ -95,6 +95,48 @@
       \field{title}{Dream to Control: Learning Behaviors by Latent Imagination}
       \field{year}{2020}
     \endentry
+    \entry{nanbo2021learningobjectcentricrepresentationsmultiobject}{misc}{}
+      \name{author}{3}{}{%
+        {{hash=4ecf5c2bbc9a68e70c7ff1259fd26ace}{%
+           family={Nanbo},
+           familyi={N\bibinitperiod},
+           given={Li},
+           giveni={L\bibinitperiod}}}%
+        {{hash=db7da50e65a34e738d987bc8a39e11e2}{%
+           family={Eastwood},
+           familyi={E\bibinitperiod},
+           given={Cian},
+           giveni={C\bibinitperiod}}}%
+        {{hash=0dbc75bddb6db17c56d33450fe00fe16}{%
+           family={Fisher},
+           familyi={F\bibinitperiod},
+           given={Robert\bibnamedelima B.},
+           giveni={R\bibinitperiod\bibinitdelim B\bibinitperiod}}}%
+      }
+      \strng{namehash}{c9aba5d793365ad9910fa9bac2c326ba}
+      \strng{fullhash}{c9aba5d793365ad9910fa9bac2c326ba}
+      \strng{bibnamehash}{c9aba5d793365ad9910fa9bac2c326ba}
+      \strng{authorbibnamehash}{c9aba5d793365ad9910fa9bac2c326ba}
+      \strng{authornamehash}{c9aba5d793365ad9910fa9bac2c326ba}
+      \strng{authorfullhash}{c9aba5d793365ad9910fa9bac2c326ba}
+      \field{sortinit}{N}
+      \field{sortinithash}{22369a73d5f88983a108b63f07f37084}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{eprintclass}{cs.CV}
+      \field{eprinttype}{arXiv}
+      \field{title}{Learning Object-Centric Representations of Multi-Object Scenes from Multiple Views}
+      \field{year}{2021}
+      \verb{eprint}
+      \verb 2111.07117
+      \endverb
+      \verb{urlraw}
+      \verb https://arxiv.org/abs/2111.07117
+      \endverb
+      \verb{url}
+      \verb https://arxiv.org/abs/2111.07117
+      \endverb
+    \endentry
   \enddatalist
 \endrefsection
 \endinput
