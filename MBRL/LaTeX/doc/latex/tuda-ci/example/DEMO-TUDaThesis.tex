@@ -261,14 +261,12 @@ The critic architecture consists of a multi-layer perceptron with ELU activation
 
 
 \begin{itemize}
-	\item \textbf{High Dimensionality:} Pixel observations are inherently high-dimensional, leading to increased computational requirements and slower learning. The agent must process large amounts of redundant information, much of which may be irrelevant to the task.
-	\item \textbf{Poor Generalization:} Agents trained on pixel data tend to overfit to specific visual details, such as background colors or textures. Even minor changes in the environment's appearance can significantly degrade performance, as the agent fails to recognize semantically identical states that look different at the pixel level.
-	\item \textbf{Lack of Semantic Understanding:} Pixel-based representations do not explicitly encode objects or their relationships. As a result, agents struggle to reason about entities, interactions, or causal structure in the environment, limiting their ability to plan or transfer knowledge.
-	\item \textbf{Sample Inefficiency:} Learning meaningful features directly from pixels typically requires a vast number of environment interactions. The agent must discover relevant abstractions from scratch, which is especially challenging in sparse-reward or complex environments.
-	\item \textbf{Sensitivity to Noise and Distractors:} Pixel-based agents are vulnerable to visual noise, occlusions, or irrelevant objects. Such distractions can mislead the agent or disrupt the learning process, as there is no mechanism to focus on task-relevant entities.
+	\item \textbf{High Dimensionality:} 
+	\item \textbf{Poor Generalization:} 
+	\item \textbf{Lack of Semantic Understanding:} 
+	\item \textbf{Sample Inefficiency:} 
+	\item \textbf{Sensitivity to Noise and Distractors:} 
 \end{itemize}
-
-These limitations motivate the exploration of object-centric representations, which aim to provide more structured, compact, and semantically meaningful state descriptions for reinforcement learning agents.
 
 \subsection{Object-Centric Learning Approaches}
 \label{subsec:oc_approaches}
@@ -293,37 +291,34 @@ A significant development in this field is the introduction of OCAtari (Object-C
  Learning Environment (ALE) by providing resource-efficient extraction of object-centric states for Atari 2600 games. THis framework fixes a gap, where despite growing interest in object-centric approaches,
 no standardized benchmark existed for evaluating such methods on the popular Atari domain.
 
-(UNTIL HERE)
 
-The OCAtari framework operates by maintaining object-centric states during game execution, providing a list of depicted objects and their properties for each game frame. This approach eliminates the need 
-for separate object discovery methods during training, significantly improving computational efficiency. The framework supports various research directions including object discovery, object representation learning, and object-centric reinforcement learning.
 
-The importance of object-centric approaches in Atari environments is particularly evident when considering the limitations of pixel-based methods in these domains. Delfosse et al. demonstrated that deep 
-RL agents without interpretable object-centric representations can learn misaligned policies even in simple games like Pong, highlighting fundamental issues that post-hoc explanation techniques fail to detect. 
-This misalignment problem underscores the necessity of incorporating object-centric understanding from the ground up rather than attempting to retrofit interpretability onto pixel-based systems.
+The OCAtari framework works by two ways of extracting object states. It can either extract the object states directly from the emulator's RAM or by using template matching on the rendered frames. 
+The RAM-based extraction is more efficient and accurate.
+Directly having those extracted object states allows for significantly faster training times and also supports researches in making comparable findings since everyone can use the same object states.
 
-Furthermore, object-centric representations enable more sophisticated reasoning capabilities that mirror human cognitive processes. As Lake et al. illustrated with the "Frostbite challenge," deep agents 
-trained on traditional ALE environments often lack the ability to create multi-step sub-goals, such as acquiring certain objects while avoiding others. Object-centric approaches provide the structured foundation necessary for such hierarchical reasoning.
-
-The integration of object-centric learning with model-based reinforcement learning presents particularly promising opportunities. While traditional model-based approaches often struggle with the high-dimensional 
-nature of pixel observations, object-centric representations provide a more tractable state space for world model learning. This combination can potentially achieve the sample efficiency benefits of model-based methods while maintaining the interpretability and generalization advantages of object-centric representations.
+The importance of object-centric approaches in Atari environments is esspecially present in light of pixel-based methods in these domains. Delfosse et al. demonstrated that deep 
+RL agents without interpretable object-centric representations can learn misaligned policies even in simple games like Pong. \cite{delfosse2024interpretableconceptbottlenecksalign} 
+This misalignment problem strengthens the argument for using object-centric understanding rather than attempting to retrofit interpretability onto pixel-based systems.
 
 \subsection{Relational Reasoning in RL}
 \label{subsec:relational_reasoning}
 
-Object-centric representations naturally lend themselves to relational reasoning, where agents must understand not just individual objects but also the relationships and interactions between them. This capability is crucial for complex decision-making in multi-object environments where the optimal policy depends on understanding how different entities influence each other.
+Object-centric representations naturally lend themselves to relational reasoning, where agents must understand not just individual objects but also
+the relationships and interactions between them. This capability is crucial for complex decision-making in multi-object environments where the
+ optimal policy depends on understanding how different entities influence each other.
 
 Relational reasoning in reinforcement learning encompasses several key aspects:
 
-\textbf{Spatial Relationships:} Understanding the relative positions of objects and how spatial configurations affect optimal actions. For example, in Pong, the relationship between the paddle position and ball trajectory determines the appropriate movement strategy.
+\textbf{Spatial Relationships:} Understanding the relative positions of objects and how spatial configurations affect optimal actions. For example, in Pong, the relationship between the paddle position 
+and ball trajectory determines the appropriate movement strategy.
 
-\textbf{Temporal Dependencies:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
+\textbf{Temporal Relationships:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
 
-\textbf{Causal Understanding:} Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
+\textbf{Causality:} (SOURCE) Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
 
-\textbf{Hierarchical Abstractions:} Building higher-level abstractions that group objects or relationships into meaningful categories, enabling more efficient reasoning about complex scenarios.
-
-The integration of relational reasoning with model-based approaches offers significant potential for improving agent performance. By incorporating relational structure into world models, agents can make more accurate predictions about future states and plan more effectively. This integration forms a core component of our proposed approach, where object-centric world models explicitly encode relational information to enhance both prediction accuracy and policy learning.
+The integration of relational reasoning with model-based approaches offers significant potential for improving agent performance. By incorporating relational structure into world models, agents can make more 
+accurate predictions about future states and plan more effectively. This integration forms a core component of our proposed approach, where object-centric world models explicitly encode relational information to enhance both prediction accuracy and policy learning.
 
 \section{Current Limitations and Research Gaps}
 \label{sec:limitations}
