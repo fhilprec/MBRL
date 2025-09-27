@@ -1,14 +1,14 @@
 # Fdb version 4
-["biber DEMO-TUDaThesis"] 1758971293.83769 "DEMO-TUDaThesis.bcf" "DEMO-TUDaThesis.bbl" "DEMO-TUDaThesis" 1758971474.51778 0
-  "DEMO-TUDaThesis.bcf" 1758971474.41658 108083 20b0d84356c78132051a749d78ad32c6 "pdflatex"
+["biber DEMO-TUDaThesis"] 1758971293.83769 "DEMO-TUDaThesis.bcf" "DEMO-TUDaThesis.bbl" "DEMO-TUDaThesis" 1758980302.38925 0
+  "DEMO-TUDaThesis.bcf" 1758980302.28512 108083 20b0d84356c78132051a749d78ad32c6 "pdflatex"
   "references.bib" 1758795950.09832 1467 4b46190a7f9c467e2b029e9ee1d68527 ""
   (generated)
   "DEMO-TUDaThesis.bbl"
   "DEMO-TUDaThesis.blg"
   (rewritten before read)
-["pdflatex"] 1758971472.55931 "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" "DEMO-TUDaThesis.pdf" "DEMO-TUDaThesis" 1758971474.518 0
+["pdflatex"] 1758980300.40392 "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" "DEMO-TUDaThesis.pdf" "DEMO-TUDaThesis" 1758980302.38947 0
   "/etc/texmf/web2c/texmf.cnf" 1758636827.55604 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" 1758971470.60656 27341 cf2c82a2eedf90895dbb20c48433dd34 ""
+  "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" 1758980298.10474 28069 bb3a0db469e5d2980e8218b66dda188c ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_4jpen6.enc" 1576101225 3036 1ea92f9009c1d80ca35c3367187b071e ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_b5rac7.enc" 1576101225 3075 0696ceafc85b8352a913efb9ba64bc17 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc" 1576101225 2878 ee6c3e6e1872c475b7f5204786cfa185 ""
@@ -254,17 +254,17 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1758638717.05928 5349216 bf3a80e68d946c7acd95ff030fd9bb63 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1758647000 7307535 b9848762292d1db82db462d0ea9ddc6e ""
-  "DEMO-TUDaThesis.aux" 1758971474.40658 52565 59b74761e1e6a1d2509a90f89de37b97 "pdflatex"
+  "DEMO-TUDaThesis.aux" 1758980302.27491 52565 a67fb70d32c2c4be981d64d4fbd6cd57 "pdflatex"
   "DEMO-TUDaThesis.bbl" 1758971294.36581 7273 c9140fc992a3b8264906a3bfceb83dc3 "biber DEMO-TUDaThesis"
-  "DEMO-TUDaThesis.lof" 1758971474.41658 335 68584b8687c074251504eae8500fc100 "pdflatex"
-  "DEMO-TUDaThesis.lot" 1758971474.41658 335 68584b8687c074251504eae8500fc100 "pdflatex"
-  "DEMO-TUDaThesis.out" 1758971473.91658 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
-  "DEMO-TUDaThesis.run.xml" 1758971474.41658 2443 6f92f53b76d02ba7909a4a9bfaefdb17 "pdflatex"
-  "DEMO-TUDaThesis.tex" 1758971470.60656 27341 cf2c82a2eedf90895dbb20c48433dd34 ""
-  "DEMO-TUDaThesis.toc" 1758971474.41658 8000 d1ebbec30fda1331c02d8b0eb5201d10 "pdflatex"
-  "DEMO-TUDaThesis.xmpdata" 1758971474.01658 190 9865e17fe208a62ffe1cefa41d44f110 "pdflatex"
+  "DEMO-TUDaThesis.lof" 1758980302.28512 335 68584b8687c074251504eae8500fc100 "pdflatex"
+  "DEMO-TUDaThesis.lot" 1758980302.28512 335 68584b8687c074251504eae8500fc100 "pdflatex"
+  "DEMO-TUDaThesis.out" 1758980301.77468 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
+  "DEMO-TUDaThesis.run.xml" 1758980302.28512 2443 6f92f53b76d02ba7909a4a9bfaefdb17 "pdflatex"
+  "DEMO-TUDaThesis.tex" 1758980298.10474 28069 bb3a0db469e5d2980e8218b66dda188c ""
+  "DEMO-TUDaThesis.toc" 1758980302.28512 8000 d1ebbec30fda1331c02d8b0eb5201d10 "pdflatex"
+  "DEMO-TUDaThesis.xmpdata" 1758980301.87677 190 9865e17fe208a62ffe1cefa41d44f110 "pdflatex"
   "URspecialopts.sty" 1758642097.07194 6483 920e1f2ffdfd78bee1da6dfa77a32369 ""
-  "pdfa.xmpi" 1758971473.38657 5386 4e82df06bb86904fd3f8b0b1ca046dc7 "pdflatex"
+  "pdfa.xmpi" 1758980301.24419 5386 ae55917392d4a909728fffbb130a4a74 "pdflatex"
   "tuda-a4paper.clo" 1758642096.25983 1684 691d78acd7ef7b0b98c56eb856fd2e2b ""
   "tuda_logo.pdf" 1758642096.03367 535101 e91be11cb03c1d5496698a80d026c7ef ""
   "tudacolors.def" 1758642096.43459 4441 1adb0ecc4475095bd29549d3ead2a986 ""
