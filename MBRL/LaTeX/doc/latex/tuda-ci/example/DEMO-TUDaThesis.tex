@@ -116,46 +116,58 @@
 \chapter{Introduction}
 \label{chap:introduction}
 
-\section{Context}
-\label{sec:context}
+\section{Motivation}
+\label{sec:Motivation}
 
-Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference between Model Based Reinforcement Learning and Model Free Reinforcement Learning. The Latter focuses on the learning of only the Agent which is deployed in the environment (or learns from samples). Thus the agent will have no explicit way of predicting the next state of the environment, although sufficiently large for example neural networks might create some implicit model of the world. Model based Reinforcement learning augments the architecture by a Model that is predicting the next state of the world but also still trains an agent. So there are usually two separate models. That might improve sample efficiency since once the world model is trained it can be used to train the agent without any need of additional sampling in the environment. Another hope of Model based approaches is that they can achiever a better understanding of the environment and thus generelize better to new unseen situations.
+Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards
+for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference 
+between Model Based Reinforcement Learning and Model Free Reinforcement Learning. The Latter focuses on the learning of only the Agent which is deployed in the environment (or learns from samples). Thus the agent
+will have no explicit way of predicting the next state of the environment, although sufficiently large for example neural networks might create some implicit model of the world. Model based Reinforcement learning 
+augments the architecture by a Model that is predicting the next state of the world but also still trains an agent. So there are usually two separate models. That might improve sample efficiency since once the world model
+is trained it can be used to train the agent without any need of additional sampling in the environment. Another hope of Model based approaches is that they can achiever a better understanding of the environment and thus
+generelize better to new unseen situations.
 
-Given that well established separation in Reinforcement Learning there are different approaches that might yield improvements in abstract reasoning for reinforcement learning agents. The approach of Object-Centricity tries to improve RL-Agents by not focusing on for example pixel representations of the environment (given that the environment might be some kind of game like the Atari Benchmark) but rather translating those pixel based representation to abstract relational concepts (e.g. separating a game screen into distinct entities like player character, enemies, and collectibles rather than processing it as an undifferentiated grid of pixels).
+Given that well established separation in Reinforcement Learning there are different approaches that might yield improvements in abstract reasoning for reinforcement learning agents. The approach of Object-Centricity tries to
+improve RL-Agents by not focusing on for example pixel representations of the environment (given that the environment might be some kind of game like the Atari Benchmark) but rather translating those pixel based representation
+to abstract relational concepts (e.g. separating a game screen into distinct entities like player character, enemies, and collectibles rather than processing it as an undifferentiated grid of pixels).
 
-\section{Goal}
-\label{sec:goal}
+\section{Solution}
+\label{sec:Solution}
 
-\textbf{The task of this Thesis can be summarized as follows:}
-Currently there are no attempts to combine model based approaches and Object-Centric ones. Since both have the goal of improving abstract reasoning by developing a more abstract understanding of the world and improving sample efficiency the vision is to use both things to arrive at a more robust solution.
 
-\subsection{Problem}
-\label{subsec:problem}
-
-A common pitfall of Reinforcement Learning is the misalignment problem, which can be summarized to an agent learning a policy, which indeed maximizes its reward but which does not represent what humans would like the agent to learn. This can for example be the agent exploiting some flaw in the environment and therefore avoiding to actually play and therefore learn the game. Moreover model free approaches are usually fairly sample inefficient since the agent has no other way of gaining examples (performing roll outs) then actually playing the game and exploring it.
-
-Lastly generalization of the agents is often a big problems. Changing small and meaningless things in the environment sometimes lead to disastrous drops in performance. For example for Agents performing on pixel representations this might involve changing the background color. For humans this would not make a difference but agents sometimes fail, since they do no have a way to actually understand the game they are playing but rather rely on certain tricks that they learn during training which are not robust to changes.
-
-\subsection{Solution}
-\label{subsec:solution}
+Currently there are no attempts to combine model based approaches and Object-Centric ones. Since both have the goal of improving abstract reasoning by developing a more abstract understanding
+ of the world and improving sample efficiency the vision is to use both things to arrive at a more robust solution.
+A common pitfall of Reinforcement Learning is the misalignment problem, which can be summarized to an agent learning a policy, which indeed maximizes its reward but which does not represent
+ what humans would like the agent to learn. This can for example be the agent exploiting some flaw in the environment and therefore avoiding to actually play and therefore learn the game.
+  Moreover model free approaches are usually fairly sample inefficient since the agent has no other way of gaining examples (performing roll outs) then actually playing the game and exploring it.
+Lastly generalization of the agents is often a big problems. Changing small and meaningless things in the environment sometimes lead to disastrous drops in performance. For example for Agents
+ performing on pixel representations this might involve changing the background color. For humans this would not make a difference but agents sometimes fail, since they do no have a way to 
+ actually understand the game they are playing but rather rely on certain tricks that they learn during training which are not robust to changes.
 
 The proposed solution combines model-based reinforcement learning with object-centered representations to solve the identified problems. This integration offers several potential benefits.
 
-First of all, model-based approaches can significantly improve sampling efficiency by allowing the agent to learn from simulated experiences generated by the world model. In combination with object-centered representations, the world model can make predictions in a more structured and compact state space that focuses on relevant objects and their relationships rather than raw pixels. This should enable more efficient learning with fewer environmental interactions.
+First of all, model-based approaches can significantly improve sampling efficiency by allowing the agent to learn from simulated experiences generated by the world model. In combination with object-centered representations,
+ the world model can make predictions in a more structured and compact state space that focuses on relevant objects and their relationships rather than raw pixels. This should enable more efficient learning with fewer environmental interactions.
 
-Second, an object-centric world model could improve generalization capabilities. By decomposing scenes into objects and their relationships, the agent develops an understanding of the environment that is more robust to superficial changes. The hope is that this structured representation combined with model based approaches enhances generalization abilities even further.
+Second, an object-centric world model could improve generalization capabilities. By decomposing scenes into objects and their relationships, the agent develops an understanding of the environment that is more robust to
+ superficial changes. The hope is that this structured representation combined with model based approaches enhances generalization abilities even further.
 
-Third, the combination could improve interpretability. Object-centered representations make it easier to understand what the agent considers important in the environment and how it reasons about state transitions. This interpretability could help identify and address mismatch issues by providing insight into why an agent makes certain decisions or why it might exploit loopholes in the environment.
+Third, the combination could improve interpretability. Object-centered representations make it easier to understand what the agent considers important in the environment and how it reasons 
+about state transitions. This interpretability could help identify and address mismatch issues by providing insight into why an agent makes certain decisions or why it might exploit loopholes in the environment.
 
-The implementation strategy will focus on integrating object-centered perception modules into established model-based RL frameworks. This will require the development of methods to incorporate object-centered representations into world model predictions.
+The implementation strategy will focus on integrating object-centered perception modules into established model-based RL frameworks. This will require the development of methods to incorporate
+ object-centered representations into world model predictions.
 
-\section{Thesis Structure}
-\label{sec:structure}
-
-This thesis is organized as follows: Chapter~\ref{chap:background} provides the necessary background on reinforcement learning and object-centric representations. Chapter~\ref{chap:methodology} presents the theoretical framework and integration strategy. Chapter~\ref{chap:implementation} details the technical implementation. Chapter~\ref{chap:experiments} presents experimental results and analysis. Chapter~\ref{chap:discussion} discusses the implications and limitations of the approach. Chapter~\ref{chap:conclusion} concludes the thesis and outlines future research directions.
+\section{Related Work}
+\label{sec:rel_work}
+(TODO Write down some points here maybe merge into Introduction basically stating what the research currently says and what is missing -> what we want to do here)
 
 \chapter{Background and Related Work}
 \label{chap:background}
+
+\section{Markow Decision Processes}
+\label{sec:mdps}
+properly introduce MDPs with mathematical notation
 
 \section{Reinforcement Learning Fundamentals}
 \label{sec:rl_fundamentals}
@@ -163,35 +175,23 @@ This thesis is organized as follows: Chapter~\ref{chap:background} provides the 
 \subsection{Model-Free vs. Model-Based Approaches}
 \label{subsec:mf_vs_mb}
 There are two main categories in Reinforcement learning. First of all Model-Free Reinforcement Learning focousses on training an agent without explicitly learning a model of the environment. There is no prediction of future states but purely an agent that takes in observation and directly computes Decisions. Whereas Model Based Reinforcement Learning usually consists of a world model part that tries to make predicitons on how the environment will behave in the future. This can be done using actual predicition of next observations directly or using some kind of latent space and making predictions there.
-
-\subsection{Sample Efficiency Challenges}
+(TODO Math for STATE PREDICTION)
+\subsection{Challenges and opportunities of model based reinforcement learning}
 \label{subsec:sample_efficiency}
 Sample Efficiency so the optimisation of the amount of rollouts that is sampled in the actual environment can have multiple motivations. On the one hand the actual environment can be something in the physical world where there are contraints on the amount of times a physical object like a robot can move or how fast one can generate real samples. On the other hand computing states in the actual environment might me more costly and can therefore lower training speed depending on the complexity of the environment. For example running a game can be more resource intensive than computing a next (latent) state in the internal representation.
 Model based approaches usually vastly improve sample effiency because the data hungry step of training the agent can be done in the worldmodel. Meaning the worldmodel creates artificial rollouts (or parts of them) in which the actor can then do its training. The worldmodel has to of course sample training data in the actual environment but it usually requires way less training steps.
-
-\subsection{Generalization Problems}
-\label{subsec:generalization}
 Moreover Model-Free approaches  sometimes suffer from generalization problems. They overfit on a certain state of the environment. A common thing is the background color of the game if the actor is training on visual input. Thus changing the background which would have zero impact on the performance of a human player can drastically decrease the performance of an agent. Model Based Approaches usually come with some form of abstraction be it latent space or object centric things which usually do not suffer that much from simple changes in the environment. Also due to the error of the Environment Prediction an actor might see more diverse things to begin with.
 
-\section{Model-Based Reinforcement Learning}
+\section{DreamerV2}
 \label{sec:mbrl}
 
-\subsection{World Model Learning}
-\label{subsec:world_models}
+
 There are multiple way to to train a world model. As mentioned above already you can predict latent states or directly predict future observations. There are also multiple different architectures which can do the job. From a simple MLP over LSTMs to Transformers there have been many different approiaches to that same problem. Tes
 
-\subsection{Planning with Learned Models}
-\label{subsec:planning}
-
-\subsection{DreamerV2 Architecture}
-\label{subsec:dreamerv2_arch}
 DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
 
 Explain in general what dreamer does
 what are the components and how do they play together
-
-\subsection{DreamerV2 TD Lambda Targets}
-\label{subsec:td_lambda}
 
 The $\lambda$-target is defined recursively as:
 \begin{equation}
@@ -204,9 +204,6 @@ The $\lambda$-target is defined recursively as:
 where $\hat{r}_t$ represents the predicted reward, $\hat{\gamma}_t$ is the predicted discount factor, $v_\xi(\hat{z}_t)$ is the critic's value estimate, and $\lambda = 0.95$ controls the weighting between immediate and future rewards. This formulation creates a weighted average of n-step returns, where longer horizons receive exponentially decreasing weights.
 
 In my case I dont have z but simply the observation itself. So no latent space.
-
-\subsection{DreamerV2 Actor Loss}
-\label{subsec:actor_loss}
 
 The actor network in DreamerV2 employs a sophisticated loss function that combines multiple gradient estimators to achieve both learning efficiency and convergence stability. The actor aims to maximize the same $\lambda$-return targets used for critic training, incorporating intermediate rewards directly rather than relying solely on terminal value estimates.
 
@@ -224,9 +221,6 @@ The loss function incorporates three distinct components:
 \textbf{Entropy Regularization:} The third term encourages exploration by maximizing the entropy of the action distribution. The entropy coefficient $\eta$ controls the trade-off between exploitation and exploration, with higher values promoting more diverse action selection.
 
 The weighting parameter $\rho$ determines the relative contribution of REINFORCE versus straight-through gradients. For discrete action spaces like Atari, DreamerV2 typically uses $\rho = 1$ (pure REINFORCE) with $\eta = 10^{-3}$, while continuous control tasks benefit from $\rho = 0$ (pure dynamics backpropagation) with $\eta = 10^{-4}$.
-
-\subsection{DreamerV2 Critic Loss}
-\label{subsec:critic_loss}
 
 The critic network in DreamerV2 serves as a value function approximator that estimates the expected discounted sum of future rewards from any given latent state. This component is essential for both the $\lambda$-target computation and providing baseline estimates for the REINFORCE algorithm, making it a cornerstone of the learning process.
 
@@ -322,37 +316,16 @@ and ball trajectory determines the appropriate movement strategy.
 The integration of relational reasoning with model-based approaches offers significant potential for improving agent performance. By incorporating relational structure into world models, agents can make more 
 accurate predictions about future states and plan more effectively. This integration forms a core component of our proposed approach, where object-centric world models explicitly encode relational information to enhance both prediction accuracy and policy learning.
 
-\section{Current Limitations and Research Gaps}
-\label{sec:limitations}
-
 
 
 \chapter{Methodology}
 \label{chap:methodology}
 
-\section{Theoretical Framework}
-\label{sec:framework}
 
-\subsection{Object-Centric World Model Design}
-\label{subsec:oc_world_model}
 
-\subsection{Integration Strategy with Model-Based RL}
-\label{subsec:integration_strategy}
+\section{Object-Centric World Model and integration with Model based RL}
+\label{sec:oc_world_model}
 
-\subsection{Expected Benefits Analysis}
-\label{subsec:benefits_analysis}
-
-\section{Implementation Approach}
-\label{sec:implementation_approach}
-
-\subsection{Environment Selection (Atari Pong)}
-\label{subsec:env_selection}
-
-\subsection{Object-Centric State Representation}
-\label{subsec:state_representation}
-
-\subsection{World Model Architecture Design}
-\label{subsec:architecture_design}
 
 \section{Experimental Design}
 \label{sec:experimental_design}
@@ -363,8 +336,6 @@ accurate predictions about future states and plan more effectively. This integra
 \subsection{Evaluation Metrics}
 \label{subsec:metrics}
 
-\chapter{Implementation}
-\label{chap:implementation}
 
 \section{Environment and Setup}
 \label{sec:environment}

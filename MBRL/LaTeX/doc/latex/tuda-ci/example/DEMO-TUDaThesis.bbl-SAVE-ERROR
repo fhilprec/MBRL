@@ -19,6 +19,59 @@
 
 \refsection{0}
   \datalist[entry]{nty/global//global/global}
+    \entry{delfosse2024interpretableconceptbottlenecksalign}{misc}{}
+      \name{author}{5}{}{%
+        {{hash=ef08e6d4cfa3ade80daa1ff4ea06ba81}{%
+           family={Delfosse},
+           familyi={D\bibinitperiod},
+           given={Quentin},
+           giveni={Q\bibinitperiod}}}%
+        {{hash=98c12857e4f18e43b93e28a8cf3060a6}{%
+           family={Sztwiertnia},
+           familyi={S\bibinitperiod},
+           given={Sebastian},
+           giveni={S\bibinitperiod}}}%
+        {{hash=39da71297cbcaabfa7ad259a28b7729a}{%
+           family={Rothermel},
+           familyi={R\bibinitperiod},
+           given={Mark},
+           giveni={M\bibinitperiod}}}%
+        {{hash=d90057f6b00f7d176bfee53ad9bdc42b}{%
+           family={Stammer},
+           familyi={S\bibinitperiod},
+           given={Wolfgang},
+           giveni={W\bibinitperiod}}}%
+        {{hash=231ca1992b128d48dbc73100fd196d87}{%
+           family={Kersting},
+           familyi={K\bibinitperiod},
+           given={Kristian},
+           giveni={K\bibinitperiod}}}%
+      }
+      \strng{namehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{fullhash}{76158055afaad8f3f117a0c1809a9a8e}
+      \strng{bibnamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{authorbibnamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{authornamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
+      \strng{authorfullhash}{76158055afaad8f3f117a0c1809a9a8e}
+      \field{extraname}{1}
+      \field{sortinit}{D}
+      \field{sortinithash}{6f385f66841fb5e82009dc833c761848}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{eprintclass}{cs.LG}
+      \field{eprinttype}{arXiv}
+      \field{title}{Interpretable Concept Bottlenecks to Align Reinforcement Learning Agents}
+      \field{year}{2024}
+      \verb{eprint}
+      \verb 2401.05821
+      \endverb
+      \verb{urlraw}
+      \verb https://arxiv.org/abs/2401.05821
+      \endverb
+      \verb{url}
+      \verb https://arxiv.org/abs/2401.05821
+      \endverb
+    \endentry
     \entry{delfosse2024ocatariobjectcentricatari2600}{inproceedings}{}
       \name{author}{5}{}{%
         {{hash=ef08e6d4cfa3ade80daa1ff4ea06ba81}{%
@@ -53,6 +106,7 @@
       \strng{authorbibnamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
       \strng{authornamehash}{15a0a4a7a887ccb289b7d411fcbcec75}
       \strng{authorfullhash}{2b048910d505b6f500bb169bea952505}
+      \field{extraname}{2}
       \field{sortinit}{D}
       \field{sortinithash}{6f385f66841fb5e82009dc833c761848}
       \field{labelnamesource}{author}

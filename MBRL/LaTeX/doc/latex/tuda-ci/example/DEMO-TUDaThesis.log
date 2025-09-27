@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.9.23)  25 SEP 2025 15:42
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.9.23)  27 SEP 2025 13:11
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1301,17 +1301,17 @@ Package tocbasic Info: character protrusion at toc deactivated on input line 92.
  (./DEMO-TUDaThesis.toc [3
 
 
-] [4] [5])
+] [4])
 \tf@toc=\write7
 \openout7 = `DEMO-TUDaThesis.toc'.
 
- [6]
+ [5]
 Package tocbasic Info: character protrusion at lof deactivated on input line 93.
  (./DEMO-TUDaThesis.lof)
 \tf@lof=\write8
 \openout8 = `DEMO-TUDaThesis.lof'.
 
- [7
+ [6
 
 ]
 Package tocbasic Info: character protrusion at lot deactivated on input line 94.
@@ -1319,9 +1319,9 @@ Package tocbasic Info: character protrusion at lot deactivated on input line 94.
 \tf@lot=\write9
 \openout9 = `DEMO-TUDaThesis.lot'.
 
- [8
+ [7
 
-] [9
+] [8
 
 ]
 chapter 1.
@@ -1340,92 +1340,91 @@ Class scrreprt Warning: \float@addtolists detected!
 (scrreprt)              a package that still implements the
 (scrreprt)              deprecated \float@addtolist interface.
 
-LaTeX Font Info:    Font shape `T1/XCharter-TLF/b/n' will be
-(Font)              scaled to size 10.95pt on input line 129.
-[10
+[9
 
-]
-LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
-(Font)              `T1/Roboto-LF/bold/n' on input line 132.
-LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
-(Font)              scaled to size 12.0pt on input line 132.
- [11] [12]
+] [10] [11]
 chapter 2.
-[13
+LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
+(Font)              `T1/Roboto-LF/bold/n' on input line 175.
+LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
+(Font)              scaled to size 12.0pt on input line 175.
+[12
 
 ]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
 (Font)              scaled to size 8.0pt on input line 199.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
 (Font)              scaled to size 6.0pt on input line 199.
- [14] [15] [16]
-LaTeX Font Info:    Trying to load font information for TS1+XCharter-TLF on input line 264.
+ [13]
+LaTeX Font Info:    Font shape `T1/XCharter-TLF/b/n' will be
+(Font)              scaled to size 10.95pt on input line 219.
+ [14]
+LaTeX Font Info:    Trying to load font information for TS1+XCharter-TLF on input line 258.
  (/usr/share/texlive/texmf-dist/tex/latex/xcharter/TS1XCharter-TLF.fd
 File: TS1XCharter-TLF.fd 2020/05/25 (msharpe) Font definitions for TS1/XCharter-TLF.
 )
 LaTeX Font Info:    Font shape `TS1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 10.95pt on input line 264.
+(Font)              scaled to size 10.95pt on input line 258.
 Package microtype Info: Character `textbardbl ' is missing
 (microtype)             in font `TS1/XCharter-TLF/m/n/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
 Package microtype Info: Character `textcelsius ' is missing
 (microtype)             in font `TS1/XCharter-TLF/m/n/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
- [17{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch1_co4ru4.enc}] [18] [19]
+ [15{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch1_co4ru4.enc}] [16] [17]
 chapter 3.
-[20
+[18
 
 ]
-chapter 4.
-[21
+Overfull \vbox (148.35754pt too high) has occurred while \output is active []
 
-] [22]
-chapter 5.
-[23
+ [19]
+chapter 4.
+[20
 
 ]
 Overfull \vbox (119.72408pt too high) has occurred while \output is active []
 
- [24]
-chapter 6.
-[25
+ [21]
+chapter 5.
+[22
 
 ]
 Overfull \vbox (22.26932pt too high) has occurred while \output is active []
 
- [26]
-chapter 7.
-[27
+ [23]
+chapter 6.
+[24
 
 ]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/it' will be
-(Font)              scaled to size 10.95pt on input line 540.
-LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 540.
+(Font)              scaled to size 10.95pt on input line 511.
+LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 511.
  (/usr/share/texlive/texmf-dist/tex/latex/roboto/T1RobotoMono-TLF.fd
 File: T1RobotoMono-TLF.fd 2019/12/11 (autoinst) Font definitions for T1/RobotoMono-TLF.
 )
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/m/n' aliased to
-(Font)              `T1/RobotoMono-TLF/regular/n' on input line 540.
+(Font)              `T1/RobotoMono-TLF/regular/n' on input line 511.
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/regular/n' will be
-(Font)              scaled to size 10.95pt on input line 540.
+(Font)              scaled to size 10.95pt on input line 511.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `RobotoMono-TLF' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/sc' will be
-(Font)              scaled to size 10.95pt on input line 540.
+(Font)              scaled to size 10.95pt on input line 511.
 Package microtype Info: Character `029' is missing
 (microtype)             in font `T1/XCharter-TLF/m/sc/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
- [28
+ [25
 
 {/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch_yelf2i.enc}]
 chapter A.
-[29
+[26
 
 ]
 chapter B.
-[30
+[27
 
 ]
 chapter C.
@@ -1449,7 +1448,7 @@ Package tudapub Warning: You did not provide a Label for key discussion.
 (tudapub)                Either you need to recompile your document or add a
 (tudapub)                label using \IMRADlabel.
 
-[31
+[28
 
 ] (./DEMO-TUDaThesis.aux)
  ***********
@@ -1463,18 +1462,18 @@ Package logreq Info: Writing requests to 'DEMO-TUDaThesis.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 42033 strings out of 476056
- 879530 string characters out of 5791604
+ 41980 strings out of 476056
+ 878795 string characters out of 5791604
  1946975 words of memory out of 5000000
- 63110 multiletter control sequences out of 15000+600000
- 689346 words of font info for 251 fonts, out of 8000000 for 9000
+ 63076 multiletter control sequences out of 15000+600000
+ 689455 words of font info for 252 fonts, out of 8000000 for 9000
  61 hyphenation exceptions out of 8191
- 122i,21n,131p,11019b,4341s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 122i,20n,131p,11019b,4341s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/RobotoMono-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Italic.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Roman.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on DEMO-TUDaThesis.pdf (31 pages, 890174 bytes).
+Output written on DEMO-TUDaThesis.pdf (28 pages, 886422 bytes).
 PDF statistics:
- 821 PDF objects out of 1000 (max. 8388607)
- 744 compressed objects within 8 object streams
- 149 named destinations out of 1000 (max. 500000)
- 59722 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 712 PDF objects out of 1000 (max. 8388607)
+ 639 compressed objects within 7 object streams
+ 129 named destinations out of 1000 (max. 500000)
+ 59586 words of extra memory for PDF output out of 61914 (max. 10000000)
 
