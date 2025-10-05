@@ -1,90 +1,51 @@
 \babel@toc {ngerman}{}\relax 
 \babel@toc {ngerman}{}\relax 
 \babel@toc {ngerman}{}\relax 
-\contentsline {chapter}{List of Abbreviations}{8}{chapter*.5}%
-\contentsline {chapter}{\numberline {1}Introduction}{9}{chapter.1}%
-\contentsline {section}{\numberline {1.1}Motivation}{9}{section.1.1}%
-\contentsline {section}{\numberline {1.2}Solution}{10}{section.1.2}%
-\contentsline {section}{\numberline {1.3}Related Work}{11}{section.1.3}%
-\contentsline {chapter}{\numberline {2}Background and Related Work}{12}{chapter.2}%
-\contentsline {section}{\numberline {2.1}Markow Decision Processes}{12}{section.2.1}%
-\contentsline {section}{\numberline {2.2}Reinforcement Learning Fundamentals}{12}{section.2.2}%
-\contentsline {subsection}{\numberline {2.2.1}Model-Free vs. Model-Based Approaches}{12}{subsection.2.2.1}%
-\contentsline {subsection}{\numberline {2.2.2}Challenges and opportunities of model based reinforcement learning}{12}{subsection.2.2.2}%
-\contentsline {section}{\numberline {2.3}DreamerV2}{13}{section.2.3}%
-\contentsline {section}{\numberline {2.4}Object-Centric Representations}{15}{section.2.4}%
-\contentsline {subsection}{\numberline {2.4.1}Limitations of Pixel-Based Representations}{15}{subsection.2.4.1}%
-\contentsline {subsection}{\numberline {2.4.2}Object-Centric Learning Approaches}{16}{subsection.2.4.2}%
-\contentsline {subsection}{\numberline {2.4.3}Relational Reasoning in RL}{17}{subsection.2.4.3}%
-\contentsline {chapter}{\numberline {3}Methodology}{18}{chapter.3}%
-\contentsline {section}{\numberline {3.1}Object-Centric World Model and integration with Model based RL}{19}{section.3.1}%
-\contentsline {section}{\numberline {3.2}Experimental Design}{19}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}Baseline Comparisons}{19}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}Evaluation Metrics}{19}{subsection.3.2.2}%
-\contentsline {section}{\numberline {3.3}Environment and Setup}{19}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}Pong Environment Characteristics}{19}{subsection.3.3.1}%
-\contentsline {subsection}{\numberline {3.3.2}Object-Centric State Description}{19}{subsection.3.3.2}%
-\contentsline {section}{\numberline {3.4}World Model Architecture}{19}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}LSTM-Based World Model (PongLSTM)}{19}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}Alternative Architectures Explored}{19}{subsection.3.4.2}%
-\contentsline {subsection}{\numberline {3.4.3}State Normalization and Stability}{19}{subsection.3.4.3}%
-\contentsline {section}{\numberline {3.5}Actor-Critic Integration}{19}{section.3.5}%
-\contentsline {subsection}{\numberline {3.5.1}DreamerV2-Style Actor-Critic}{19}{subsection.3.5.1}%
-\contentsline {subsection}{\numberline {3.5.2}Policy Learning in Imagined Rollouts}{19}{subsection.3.5.2}%
-\contentsline {subsection}{\numberline {3.5.3}Lambda-Return Computation}{19}{subsection.3.5.3}%
-\contentsline {section}{\numberline {3.6}Training Pipeline}{19}{section.3.6}%
-\contentsline {subsection}{\numberline {3.6.1}Experience Collection}{19}{subsection.3.6.1}%
-\contentsline {subsection}{\numberline {3.6.2}World Model Training}{19}{subsection.3.6.2}%
-\contentsline {subsection}{\numberline {3.6.3}Policy Optimization}{19}{subsection.3.6.3}%
-\contentsline {chapter}{\numberline {4}Experiments and Results}{20}{chapter.4}%
-\contentsline {section}{\numberline {4.1}Experimental Setup}{21}{section.4.1}%
-\contentsline {subsection}{\numberline {4.1.1}Hyperparameters and Configuration}{21}{subsection.4.1.1}%
-\contentsline {subsection}{\numberline {4.1.2}Hardware and Implementation Details}{21}{subsection.4.1.2}%
-\contentsline {subsection}{\numberline {4.1.3}Evaluation Protocol}{21}{subsection.4.1.3}%
-\contentsline {section}{\numberline {4.2}World Model Performance}{21}{section.4.2}%
-\contentsline {subsection}{\numberline {4.2.1}Prediction Accuracy Analysis}{21}{subsection.4.2.1}%
-\contentsline {subsection}{\numberline {4.2.2}Long-Term Rollout Quality}{21}{subsection.4.2.2}%
-\contentsline {subsection}{\numberline {4.2.3}Model Stability Assessment}{21}{subsection.4.2.3}%
-\contentsline {section}{\numberline {4.3}Policy Learning Results}{21}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}Sample Efficiency Comparison}{21}{subsection.4.3.1}%
-\contentsline {subsection}{\numberline {4.3.2}Final Performance Evaluation}{21}{subsection.4.3.2}%
-\contentsline {subsection}{\numberline {4.3.3}Learning Curve Analysis}{21}{subsection.4.3.3}%
-\contentsline {section}{\numberline {4.4}Ablation Studies}{21}{section.4.4}%
-\contentsline {subsection}{\numberline {4.4.1}Impact of Object-Centric Representations}{21}{subsection.4.4.1}%
+\contentsline {chapter}{List of Abbreviations}{7}{chapter*.5}%
+\contentsline {chapter}{\numberline {1}Introduction}{8}{chapter.1}%
+\contentsline {chapter}{\numberline {2}Background and Related Work}{11}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Reinforcement Learning}{11}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Dreamer Architecture}{11}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Object-Centric Reinforcement Learning}{14}{section.2.3}%
+\contentsline {chapter}{\numberline {3}Methodology}{17}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Object-Centric World Model and integration with Model based RL}{18}{section.3.1}%
+\contentsline {section}{\numberline {3.2}World Model Architecture}{18}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}LSTM-Based World Model (PongLSTM)}{18}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}Alternative Architectures Explored}{18}{subsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.2.3}State Normalization and Stability}{18}{subsection.3.2.3}%
+\contentsline {section}{\numberline {3.3}Actor-Critic Integration}{18}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}DreamerV2-Style Actor-Critic}{18}{subsection.3.3.1}%
+\contentsline {subsection}{\numberline {3.3.2}Policy Learning in Imagined Rollouts}{18}{subsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.3.3}Lambda-Return Computation}{18}{subsection.3.3.3}%
+\contentsline {section}{\numberline {3.4}Training Pipeline}{18}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}Experience Collection}{18}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}World Model Training}{18}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.3}Policy Optimization}{18}{subsection.3.4.3}%
+\contentsline {chapter}{\numberline {4}Experiments and Results}{19}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Experimental Setup}{19}{section.4.1}%
+\contentsline {section}{\numberline {4.2}World Model Performance}{19}{section.4.2}%
+\contentsline {subsection}{\numberline {4.2.1}Prediction Accuracy Analysis}{19}{subsection.4.2.1}%
+\contentsline {subsection}{\numberline {4.2.2}Long-Term Rollout Quality}{19}{subsection.4.2.2}%
+\contentsline {subsection}{\numberline {4.2.3}Model Stability Assessment}{20}{subsection.4.2.3}%
+\contentsline {section}{\numberline {4.3}Policy Learning Results}{20}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}Sample Efficiency Comparison}{20}{subsection.4.3.1}%
+\contentsline {subsection}{\numberline {4.3.2}Final Performance Evaluation}{20}{subsection.4.3.2}%
+\contentsline {subsection}{\numberline {4.3.3}Learning Curve Analysis}{20}{subsection.4.3.3}%
+\contentsline {section}{\numberline {4.4}Ablation Studies}{20}{section.4.4}%
+\contentsline {subsection}{\numberline {4.4.1}Impact of Object-Centric Representations}{20}{subsection.4.4.1}%
 \contentsline {subsection}{\numberline {4.4.2}Architecture Component Analysis}{21}{subsection.4.4.2}%
 \contentsline {subsection}{\numberline {4.4.3}Reward Function Design Effects}{21}{subsection.4.4.3}%
-\contentsline {section}{\numberline {4.5}Visualization and Interpretability}{21}{section.4.5}%
-\contentsline {subsection}{\numberline {4.5.1}Real vs. Model Comparison}{21}{subsection.4.5.1}%
-\contentsline {subsection}{\numberline {4.5.2}Policy Behavior Visualization}{21}{subsection.4.5.2}%
+\contentsline {subsection}{\numberline {4.4.4}Real vs. Model Comparison}{21}{subsection.4.4.4}%
+\contentsline {subsection}{\numberline {4.4.5}Policy Behavior Visualization}{21}{subsection.4.4.5}%
 \contentsline {chapter}{\numberline {5}Discussion}{22}{chapter.5}%
-\contentsline {section}{\numberline {5.1}Analysis of Results}{23}{section.5.1}%
-\contentsline {subsection}{\numberline {5.1.1}Strengths of the Proposed Approach}{23}{subsection.5.1.1}%
-\contentsline {subsection}{\numberline {5.1.2}Limitations and Challenges}{23}{subsection.5.1.2}%
-\contentsline {subsection}{\numberline {5.1.3}Comparison with Existing Methods}{23}{subsection.5.1.3}%
-\contentsline {section}{\numberline {5.2}Technical Insights}{23}{section.5.2}%
-\contentsline {subsection}{\numberline {5.2.1}World Model Design Choices}{23}{subsection.5.2.1}%
-\contentsline {subsection}{\numberline {5.2.2}Training Stability Issues}{23}{subsection.5.2.2}%
-\contentsline {subsection}{\numberline {5.2.3}Reward Engineering Importance}{23}{subsection.5.2.3}%
-\contentsline {section}{\numberline {5.3}Implications for Object-Centric RL}{23}{section.5.3}%
-\contentsline {subsection}{\numberline {5.3.1}Benefits of Integration}{23}{subsection.5.3.1}%
-\contentsline {subsection}{\numberline {5.3.2}Generalization Potential}{23}{subsection.5.3.2}%
-\contentsline {subsection}{\numberline {5.3.3}Scalability Considerations}{23}{subsection.5.3.3}%
-\contentsline {section}{\numberline {5.4}Future Research Directions}{23}{section.5.4}%
-\contentsline {subsection}{\numberline {5.4.1}More Complex Environments}{23}{subsection.5.4.1}%
-\contentsline {subsection}{\numberline {5.4.2}Improved Object Discovery}{23}{subsection.5.4.2}%
-\contentsline {subsection}{\numberline {5.4.3}Multi-Object Scenarios}{23}{subsection.5.4.3}%
-\contentsline {chapter}{\numberline {6}Conclusion}{24}{chapter.6}%
-\contentsline {section}{\numberline {6.1}Summary of Contributions}{24}{section.6.1}%
-\contentsline {section}{\numberline {6.2}Key Findings}{24}{section.6.2}%
-\contentsline {section}{\numberline {6.3}Limitations and Future Work}{24}{section.6.3}%
-\contentsline {section}{\numberline {6.4}Final Remarks}{24}{section.6.4}%
-\contentsline {chapter}{\numberline {A}Implementation Details}{26}{appendix.A}%
-\contentsline {section}{\numberline {A.1}Code Structure and Organization}{26}{section.A.1}%
-\contentsline {section}{\numberline {A.2}Hyperparameter Sensitivity Analysis}{26}{section.A.2}%
-\contentsline {section}{\numberline {A.3}Additional Experimental Results}{26}{section.A.3}%
-\contentsline {chapter}{\numberline {B}Technical Specifications}{27}{appendix.B}%
-\contentsline {section}{\numberline {B.1}Hardware Requirements}{27}{section.B.1}%
-\contentsline {section}{\numberline {B.2}Software Dependencies}{27}{section.B.2}%
-\contentsline {section}{\numberline {B.3}Reproducibility Guidelines}{27}{section.B.3}%
-\contentsline {chapter}{\numberline {C}Supplementary Figures and Tables}{28}{appendix.C}%
+\contentsline {chapter}{\numberline {6}Conclusion and Future Work}{23}{chapter.6}%
+\contentsline {chapter}{\numberline {A}Implementation Details}{25}{appendix.A}%
+\contentsline {section}{\numberline {A.1}Code Structure and Organization}{25}{section.A.1}%
+\contentsline {section}{\numberline {A.2}Hyperparameter Sensitivity Analysis}{25}{section.A.2}%
+\contentsline {section}{\numberline {A.3}Additional Experimental Results}{25}{section.A.3}%
+\contentsline {chapter}{\numberline {B}Technical Specifications}{26}{appendix.B}%
+\contentsline {section}{\numberline {B.1}Hardware Requirements}{26}{section.B.1}%
+\contentsline {section}{\numberline {B.2}Software Dependencies}{26}{section.B.2}%
+\contentsline {section}{\numberline {B.3}Reproducibility Guidelines}{26}{section.B.3}%
+\contentsline {chapter}{\numberline {C}Supplementary Figures and Tables}{27}{appendix.C}%
 \providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 

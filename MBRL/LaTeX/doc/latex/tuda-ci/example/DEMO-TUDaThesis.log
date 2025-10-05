@@ -1,10 +1,10 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.9.23)  27 SEP 2025 15:38
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.10.5)  5 OCT 2025 16:08
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
  %&-line parsing enabled.
-**/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex
-(/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex
+**/home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex
+(/home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
 (./tudapub.cls (/usr/share/texlive/texmf-dist/tex/latex/l3kernel/expl3.sty
@@ -505,22 +505,18 @@ Package: inputenc 2021/02/14 v1.3d Input encoding file
 Package: babel 2024/01/07 v24.1 The Babel package
 \babel@savecnt=\count285
 \U@D=\dimen166
-\l@unhyphenated=\language14
+\l@unhyphenated=\language16
  (/usr/share/texlive/texmf-dist/tex/generic/babel/txtbabel.def)
 \bbl@readstream=\read3
 \bbl@dirlevel=\count286
  (/usr/share/texlive/texmf-dist/tex/generic/babel-english/english.ldf
 Language: english 2017/06/06 v3.3r English support from the babel system
-Package babel Info: Hyphen rules for 'british' set to \l@english
-(babel)             (\language0). Reported on input line 82.
-Package babel Info: Hyphen rules for 'UKenglish' set to \l@english
-(babel)             (\language0). Reported on input line 83.
 Package babel Info: Hyphen rules for 'canadian' set to \l@english
 (babel)             (\language0). Reported on input line 102.
-Package babel Info: Hyphen rules for 'australian' set to \l@english
-(babel)             (\language0). Reported on input line 105.
-Package babel Info: Hyphen rules for 'newzealand' set to \l@english
-(babel)             (\language0). Reported on input line 108.
+Package babel Info: Hyphen rules for 'australian' set to \l@ukenglish
+(babel)             (\language6). Reported on input line 105.
+Package babel Info: Hyphen rules for 'newzealand' set to \l@ukenglish
+(babel)             (\language6). Reported on input line 108.
 ) (/usr/share/texlive/texmf-dist/tex/generic/babel-german/ngerman.ldf
 Language: ngerman 2024/01/19 v2.14 German support for babel (post-1996 orthography)
  (/usr/share/texlive/texmf-dist/tex/generic/babel-german/ngermanb.ldf
@@ -611,7 +607,7 @@ File: logreq.def 2010/08/04 v1.0 logreq spec v1.0
 \bibhang=\skip75
 \blx@bcfin=\read4
 \blx@bcfout=\write4
-\blx@langwohyphens=\language15
+\blx@langwohyphens=\language17
 \c@mincomprange=\count337
 \c@maxcomprange=\count338
 \c@mincompwidth=\count339
@@ -1301,17 +1297,17 @@ Package tocbasic Info: character protrusion at toc deactivated on input line 92.
  (./DEMO-TUDaThesis.toc [3
 
 
-] [4])
+])
 \tf@toc=\write7
 \openout7 = `DEMO-TUDaThesis.toc'.
 
- [5]
+ [4]
 Package tocbasic Info: character protrusion at lof deactivated on input line 93.
  (./DEMO-TUDaThesis.lof)
 \tf@lof=\write8
 \openout8 = `DEMO-TUDaThesis.lof'.
 
- [6
+ [5
 
 ]
 Package tocbasic Info: character protrusion at lot deactivated on input line 94.
@@ -1319,9 +1315,9 @@ Package tocbasic Info: character protrusion at lot deactivated on input line 94.
 \tf@lot=\write9
 \openout9 = `DEMO-TUDaThesis.lot'.
 
- [7
+ [6
 
-] [8
+] [7
 
 ]
 chapter 1.
@@ -1340,91 +1336,82 @@ Class scrreprt Warning: \float@addtolists detected!
 (scrreprt)              a package that still implements the
 (scrreprt)              deprecated \float@addtolist interface.
 
-[9
+[8
 
-] [10] [11]
+] [9] [10]
 chapter 2.
-LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
-(Font)              `T1/Roboto-LF/bold/n' on input line 180.
-LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
-(Font)              scaled to size 12.0pt on input line 180.
-[12
+[11
 
 ]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 8.0pt on input line 204.
+(Font)              scaled to size 8.0pt on input line 199.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 6.0pt on input line 204.
- [13]
+(Font)              scaled to size 6.0pt on input line 199.
+ [12]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/b/n' will be
-(Font)              scaled to size 10.95pt on input line 224.
- [14]
-LaTeX Font Info:    Trying to load font information for TS1+XCharter-TLF on input line 263.
+(Font)              scaled to size 10.95pt on input line 219.
+ [13]
+LaTeX Font Info:    Trying to load font information for TS1+XCharter-TLF on input line 257.
  (/usr/share/texlive/texmf-dist/tex/latex/xcharter/TS1XCharter-TLF.fd
 File: TS1XCharter-TLF.fd 2020/05/25 (msharpe) Font definitions for TS1/XCharter-TLF.
 )
 LaTeX Font Info:    Font shape `TS1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 10.95pt on input line 263.
+(Font)              scaled to size 10.95pt on input line 257.
 Package microtype Info: Character `textbardbl ' is missing
 (microtype)             in font `TS1/XCharter-TLF/m/n/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
 Package microtype Info: Character `textcelsius ' is missing
 (microtype)             in font `TS1/XCharter-TLF/m/n/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
- [15{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch1_co4ru4.enc}] [16] [17]
+ [14{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch1_co4ru4.enc}] [15] [16]
 chapter 3.
-[18
+LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
+(Font)              `T1/Roboto-LF/bold/n' on input line 331.
+LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
+(Font)              scaled to size 12.0pt on input line 331.
+[17
 
-]
-Overfull \vbox (148.35754pt too high) has occurred while \output is active []
-
- [19]
+] [18]
 chapter 4.
-[20
+[19
 
-]
-Overfull \vbox (119.72408pt too high) has occurred while \output is active []
-
- [21]
+] [20] [21]
 chapter 5.
 [22
 
 ]
-Overfull \vbox (22.26932pt too high) has occurred while \output is active []
-
- [23]
 chapter 6.
-[24
+[23
 
 ]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/it' will be
-(Font)              scaled to size 10.95pt on input line 516.
-LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 516.
+(Font)              scaled to size 10.95pt on input line 471.
+LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 471.
  (/usr/share/texlive/texmf-dist/tex/latex/roboto/T1RobotoMono-TLF.fd
 File: T1RobotoMono-TLF.fd 2019/12/11 (autoinst) Font definitions for T1/RobotoMono-TLF.
 )
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/m/n' aliased to
-(Font)              `T1/RobotoMono-TLF/regular/n' on input line 516.
+(Font)              `T1/RobotoMono-TLF/regular/n' on input line 471.
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/regular/n' will be
-(Font)              scaled to size 10.95pt on input line 516.
+(Font)              scaled to size 10.95pt on input line 471.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `RobotoMono-TLF' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/sc' will be
-(Font)              scaled to size 10.95pt on input line 516.
+(Font)              scaled to size 10.95pt on input line 471.
 Package microtype Info: Character `029' is missing
 (microtype)             in font `T1/XCharter-TLF/m/sc/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
- [25
+ [24
 
 {/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch_yelf2i.enc}]
 chapter A.
-[26
+[25
 
 ]
 chapter B.
-[27
+[26
 
 ]
 chapter C.
@@ -1448,7 +1435,7 @@ Package tudapub Warning: You did not provide a Label for key discussion.
 (tudapub)                Either you need to recompile your document or add a
 (tudapub)                label using \IMRADlabel.
 
-[28
+[27
 
 ] (./DEMO-TUDaThesis.aux)
  ***********
@@ -1462,18 +1449,18 @@ Package logreq Info: Writing requests to 'DEMO-TUDaThesis.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 41980 strings out of 476056
- 878795 string characters out of 5791604
- 1946975 words of memory out of 5000000
- 63076 multiletter control sequences out of 15000+600000
- 689455 words of font info for 252 fonts, out of 8000000 for 9000
- 61 hyphenation exceptions out of 8191
- 122i,21n,131p,11019b,4341s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 41856 strings out of 476015
+ 877066 string characters out of 5790589
+ 1942975 words of memory out of 5000000
+ 63002 multiletter control sequences out of 15000+600000
+ 689125 words of font info for 250 fonts, out of 8000000 for 9000
+ 83 hyphenation exceptions out of 8191
+ 122i,21n,131p,11018b,4341s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/RobotoMono-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Italic.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Roman.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on DEMO-TUDaThesis.pdf (28 pages, 887301 bytes).
+Output written on DEMO-TUDaThesis.pdf (27 pages, 882108 bytes).
 PDF statistics:
- 712 PDF objects out of 1000 (max. 8388607)
- 639 compressed objects within 7 object streams
- 129 named destinations out of 1000 (max. 500000)
- 59586 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 503 PDF objects out of 1000 (max. 8388607)
+ 433 compressed objects within 5 object streams
+ 89 named destinations out of 1000 (max. 500000)
+ 59274 words of extra memory for PDF output out of 61914 (max. 10000000)
 

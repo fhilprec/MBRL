@@ -121,8 +121,7 @@ RC2: To what extent does integrating object-centric representations with model-b
  and pixel-based model-based approaches?
 RC3: How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
 RC4: What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
-\section{Motivation}
-\label{sec:Motivation}
+
 
 Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards
 for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference 
@@ -136,8 +135,6 @@ Given that well established separation in Reinforcement Learning there are diffe
 improve RL-Agents by not focusing on for example pixel representations of the environment (given that the environment might be some kind of game like the Atari Benchmark) but rather translating those pixel based representation
 to abstract relational concepts (e.g. separating a game screen into distinct entities like player character, enemies, and collectibles rather than processing it as an undifferentiated grid of pixels).
 
-\section{Solution}
-\label{sec:Solution}
 
 
 Currently there are no attempts to combine model based approaches and Object-Centric ones. Since both have the goal of improving abstract reasoning by developing a more abstract understanding
@@ -163,32 +160,30 @@ about state transitions. This interpretability could help identify and address m
 The implementation strategy will focus on integrating object-centered perception modules into established model-based RL frameworks. This will require the development of methods to incorporate
  object-centered representations into world model predictions.
 
-\section{Related Work}
-\label{sec:rel_work}
 (TODO Write down some points here maybe merge into Introduction basically stating what the research currently says and what is missing -> what we want to do here)
 
 \chapter{Background and Related Work}
 \label{chap:background}
 
-\section{Markow Decision Processes}
-\label{sec:mdps}
-properly introduce MDPs with mathematical notation
+\section{Reinforcement Learning}
+\label{sec:reinforcement_learning}
 
-\section{Reinforcement Learning Fundamentals}
-\label{sec:rl_fundamentals}
+Reinforcement Learning (RL) is a machine learning paradigm that involves training agents to make sequential decisions by interacting with an environment. At its core, RL is often formalized using Markov Decision Processes (MDPs), where the environment's dynamics are defined by states, actions, transition probabilities, and reward functions. RL can be broadly categorized into model-free and model-based approaches.
 
-\subsection{Model-Free vs. Model-Based Approaches}
-\label{subsec:mf_vs_mb}
-There are two main categories in Reinforcement learning. First of all Model-Free Reinforcement Learning focousses on training an agent without explicitly learning a model of the environment. There is no prediction of future states but purely an agent that takes in observation and directly computes Decisions. Whereas Model Based Reinforcement Learning usually consists of a world model part that tries to make predicitons on how the environment will behave in the future. This can be done using actual predicition of next observations directly or using some kind of latent space and making predictions there.
-(TODO Math for STATE PREDICTION)
-\subsection{Challenges and opportunities of model based reinforcement learning}
-\label{subsec:sample_efficiency}
-Sample Efficiency so the optimisation of the amount of rollouts that is sampled in the actual environment can have multiple motivations. On the one hand the actual environment can be something in the physical world where there are contraints on the amount of times a physical object like a robot can move or how fast one can generate real samples. On the other hand computing states in the actual environment might me more costly and can therefore lower training speed depending on the complexity of the environment. For example running a game can be more resource intensive than computing a next (latent) state in the internal representation.
-Model based approaches usually vastly improve sample effiency because the data hungry step of training the agent can be done in the worldmodel. Meaning the worldmodel creates artificial rollouts (or parts of them) in which the actor can then do its training. The worldmodel has to of course sample training data in the actual environment but it usually requires way less training steps.
-Moreover Model-Free approaches  sometimes suffer from generalization problems. They overfit on a certain state of the environment. A common thing is the background color of the game if the actor is training on visual input. Thus changing the background which would have zero impact on the performance of a human player can drastically decrease the performance of an agent. Model Based Approaches usually come with some form of abstraction be it latent space or object centric things which usually do not suffer that much from simple changes in the environment. Also due to the error of the Environment Prediction an actor might see more diverse things to begin with.
+In model-free RL, the agent learns a policy directly from interactions with the environment without constructing an explicit model of the world. By contrast, model-based RL incorporates a world model to predict future states or rewards, enabling more sample-efficient training by simulating rollouts in the constructed model. This abstraction allows agents to generalize better and potentially handle unseen situations more effectively.
 
-\section{DreamerV2}
-\label{sec:mbrl}
+\section{Dreamer Architecture}
+\label{sec:dreamer_architecture}
+
+The Dreamer architecture represents a family of model-based RL algorithms, namely DreamerV1, V2, and V3, that focus on combining world models with actor-critic methods for policy and value learning. Dreamer utilizes latent dynamics models to predict environment behavior in a compact latent space, enabling the agent to train policies on imagined rollouts. Notable predecessors like PlaNet introduced the concept of latent space dynamics, which Dreamer extends by incorporating actor-critic frameworks.
+
+DreamerV2 builds on DreamerV1 by improving stability and scalability to discrete action spaces, commonly used in Atari benchmarks. DreamerV3 further generalizes the approach to handle diverse tasks with limited hyperparameter tuning.
+
+
+
+Object-Centric Reinforcement Learning (OCRL) emphasizes representing an environment as a collection of interacting entities, rather than processing the entire environment as raw inputs, such as pixels. This paradigm improves sample efficiency, generalization, and interpretability by focusing on objects and their relationships.
+
+Object-centric model-based RL combines the abstraction of object representations with predictive world models. By leveraging structured object-centric states, agents can reason about dynamic interactions in a more robust and interpretable manner compared to pixel-based representations.
 
 
 There are multiple way to to train a world model. As mentioned above already you can predict latent states or directly predict future observations. There are also multiple different architectures which can do the job. From a simple MLP over LSTMs to Transformers there have been many different approiaches to that same problem. Tes
@@ -252,12 +247,11 @@ The critic architecture consists of a multi-layer perceptron with ELU activation
 % \subsection{TD Lambda Targets}
 % \label{subsec:tdlambdatargets}
 
-\section{Object-Centric Representations}
-\label{sec:object_centric}
 
-\subsection{Limitations of Pixel-Based Representations}
-\label{subsec:pixel_limitations}
 
+\section{Object-Centric Reinforcement Learning}
+\label{sec:object_centric_rl}
+(TODO mention object-centric model-based RL)
 
 \begin{itemize}
 	\item \textbf{High Dimensionality:} 
@@ -267,8 +261,7 @@ The critic architecture consists of a multi-layer perceptron with ELU activation
 	\item \textbf{Sensitivity to Noise and Distractors:} 
 \end{itemize}
 
-\subsection{Object-Centric Learning Approaches}
-\label{subsec:oc_approaches}
+
 
 In contrast to pixel-based methods, object-centric learning approaches leverage understanding of objects to create an abstract representation of the environment. This mimics human perception,
  which naturally segments scenes into distinct entities and focuses on their interactions \cite{nanbo2021learningobjectcentricrepresentationsmultiobject}. Object-centric learning represents a paradigm shift in how reinforcement learning agents process and understand their environments.
@@ -302,8 +295,6 @@ This misalignment problem strengthens the argument for using object-centric unde
 
 (TODO TALK ABOUT JAXATARI)
 
-\subsection{Relational Reasoning in RL}
-\label{subsec:relational_reasoning}
 
 Object-centric representations naturally lend themselves to relational reasoning, where agents must understand not just individual objects but also
 the relationships and interactions between them. This capability is crucial for complex decision-making in multi-object environments where the
@@ -332,24 +323,7 @@ accurate predictions about future states and plan more effectively. This integra
 \label{sec:oc_world_model}
 
 
-\section{Experimental Design}
-\label{sec:experimental_design}
 
-\subsection{Baseline Comparisons}
-\label{subsec:baselines}
-
-\subsection{Evaluation Metrics}
-\label{subsec:metrics}
-
-
-\section{Environment and Setup}
-\label{sec:environment}
-
-\subsection{Pong Environment Characteristics}
-\label{subsec:pong_characteristics}
-
-\subsection{Object-Centric State Description}
-\label{subsec:state_description}
 
 \section{World Model Architecture}
 \label{sec:world_model_arch}
@@ -390,128 +364,109 @@ accurate predictions about future states and plan more effectively. This integra
 \chapter{Experiments and Results}
 \label{chap:experiments}
 
+
+
 \section{Experimental Setup}
 \label{sec:exp_setup}
-
-\subsection{Hyperparameters and Configuration}
-\label{subsec:hyperparameters}
-
-\subsection{Hardware and Implementation Details}
-\label{subsec:hardware}
-
-\subsection{Evaluation Protocol}
-\label{subsec:eval_protocol}
+* Experimental Design: Baseline, Comparisons, Eval Metrics
+* Environment and Setup: Pong Environment Characteristics, Object-Centric State Description 
+* Hyperparameters and Configuration: Model Architectures, Training Regimes
+* Hardware and Implementation Details: Computational Resources, Software Frameworks
+* Evaluation Protocol: Training and Testing Procedures, Statistical Analysis
 
 \section{World Model Performance}
 \label{sec:world_model_perf}
 
 \subsection{Prediction Accuracy Analysis}
 \label{subsec:prediction_accuracy}
+Answer here : (RC1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
 
 \subsection{Long-Term Rollout Quality}
 \label{subsec:rollout_quality}
+Answer here : (RC1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
 
 \subsection{Model Stability Assessment}
 \label{subsec:stability}
+Answer here : (RC1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
 
 \section{Policy Learning Results}
 \label{sec:policy_results}
 
 \subsection{Sample Efficiency Comparison}
 \label{subsec:sample_efficiency_comp}
+Answer here : (RC2) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+
 
 \subsection{Final Performance Evaluation}
 \label{subsec:final_performance}
+Answer here : (RC2) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+
 
 \subsection{Learning Curve Analysis}
 \label{subsec:learning_curves}
+Answer here : (RC2) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+
 
 \section{Ablation Studies}
 \label{sec:ablation_studies}
 
 \subsection{Impact of Object-Centric Representations}
 \label{subsec:oc_impact}
+Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
+
 
 \subsection{Architecture Component Analysis}
 \label{subsec:architecture_analysis}
+Answer here : (RC4) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+
 
 \subsection{Reward Function Design Effects}
 \label{subsec:reward_effects}
+Answer here : (RC4) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
 
-\section{Visualization and Interpretability}
-\label{sec:visualization}
 
 \subsection{Real vs. Model Comparison}
 \label{subsec:real_vs_model}
+Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
+
 
 \subsection{Policy Behavior Visualization}
 \label{subsec:policy_visualization}
+Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
 
 \chapter{Discussion}
 \label{chap:discussion}
+* Challenges during training, what decreases model performance
 
-\section{Analysis of Results}
-\label{sec:results_analysis}
+* Analysis of Results
+	- Strengths of the Proposed Approach
+	- Limitations and Challenges
+	- Comparison with Existing Methods
 
-\subsection{Strengths of the Proposed Approach}
-\label{subsec:strengths}
+* Technical Insights
+	- World Model Design Choices
+	- Training Stability Issues
+	- Reward Engineering Importance
 
-\subsection{Limitations and Challenges}
-\label{subsec:limitations_challenges}
+* Implications for Object-Centric RL
+	- Benefits of Integration
+	- Generalization Potential
+	- Scalability Considerations
 
-\subsection{Comparison with Existing Methods}
-\label{subsec:comparison}
+* Future Research Directions
+	- More Complex Environments
+	- Improved Object Discovery
+	- Multi-Object Scenarios
 
-\section{Technical Insights}
-\label{sec:technical_insights}
-
-\subsection{World Model Design Choices}
-\label{subsec:design_choices}
-
-\subsection{Training Stability Issues}
-\label{subsec:stability_issues}
-
-\subsection{Reward Engineering Importance}
-\label{subsec:reward_engineering}
-
-\section{Implications for Object-Centric RL}
-\label{sec:implications}
-
-\subsection{Benefits of Integration}
-\label{subsec:integration_benefits}
-
-\subsection{Generalization Potential}
-\label{subsec:generalization_potential}
-
-\subsection{Scalability Considerations}
-\label{subsec:scalability}
-
-\section{Future Research Directions}
-\label{sec:future_work}
-
-\subsection{More Complex Environments}
-\label{subsec:complex_environments}
-
-\subsection{Improved Object Discovery}
-\label{subsec:object_discovery}
-
-\subsection{Multi-Object Scenarios}
-\label{subsec:multi_object}
-
-\chapter{Conclusion}
+\chapter{Conclusion and Future Work}
 \label{chap:conclusion}
 
-\section{Summary of Contributions}
-\label{sec:summary_contributions}
-
-\section{Key Findings}
-\label{sec:key_findings}
-
-\section{Limitations and Future Work}
-\label{sec:limitations_future}
-
-\section{Final Remarks}
-\label{sec:final_remarks}
+\begin{itemize}
+	\item Summary of Contributions
+	\item Key Findings
+	\item Limitations and Future Work
+	\item Final Remarks
+\end{itemize}
 
 \printbibliography[title={References}]
 
