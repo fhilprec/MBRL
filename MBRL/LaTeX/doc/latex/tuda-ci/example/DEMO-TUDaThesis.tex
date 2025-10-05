@@ -113,15 +113,12 @@
 	JAX  & Just After eXecution                \\
 \end{tabular}
 
-\chapter{Introduction}
+\chapter{Introduction}	
 \label{chap:introduction}
-RC1: How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition 
-prediction and long-term rollout quality in the Pong environment?
-RC2: To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines
- and pixel-based model-based approaches?
-RC3: How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
-RC4: What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
-
+RQ1: How do Object Centric World Models compare to pixel-based world models regarding prediction accuracy and sample efficiency?
+RQ2: How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
+RQ3: What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+RQ4: Does the Object Centric inductive bias in WMs improve robustness?
 
 Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards
 for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference 
@@ -328,41 +325,55 @@ accurate predictions about future states and plan more effectively. This integra
 \section{World Model Architecture}
 \label{sec:world_model_arch}
 
+
 \subsection{LSTM-Based World Model (PongLSTM)}
 \label{subsec:ponglstm}
+explain LSTM
+explain why is might be good for world models in general instead of models that only take the last state into account
+
 
 \subsection{Alternative Architectures Explored}
 \label{subsec:alternative_architectures}
+Talk about MLP, Transformer, other RNNs
+
 
 \subsection{State Normalization and Stability}
 \label{subsec:normalization}
+why normalization helps in RL in general and why it was used here
 
 \section{Actor-Critic Integration}
 \label{sec:actor_critic}
+Explain how the actor-critic framework is integrated with the object-centric world model. 
+Discuss any modifications made to the standard actor-critic approach to accommodate the 
+object-centric representations.
 
 \subsection{DreamerV2-Style Actor-Critic}
 \label{subsec:dreamer_ac}
+Explain the Dreamer approach and how it differs which is mainly in the latent space
 
 \subsection{Policy Learning in Imagined Rollouts}
 \label{subsec:imagined_rollouts}
+how the policy is learned in imagined rollouts from the world model
 
 \subsection{Lambda-Return Computation}
 \label{subsec:lambda_returns}
+provide the formular here and briefly explain it 
 
 \section{Training Pipeline}
 \label{sec:training_pipeline}
+explain when the worldmodel gets retrained and how sampling works
 
-\subsection{Experience Collection}
-\label{subsec:experience_collection}
-
-\subsection{World Model Training}
+\subsection{World Model Training and experience collection}
 \label{subsec:world_model_training}
+explain how the initial experience for the world model is collected and how it can be updated during later training stages
 
 \subsection{Policy Optimization}
 \label{subsec:policy_optimization}
+explain how the policy is optimized and how often
 
 \chapter{Experiments and Results}
 \label{chap:experiments}
+
 
 
 
@@ -379,32 +390,32 @@ accurate predictions about future states and plan more effectively. This integra
 
 \subsection{Prediction Accuracy Analysis}
 \label{subsec:prediction_accuracy}
-Answer here : (RC1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
+Answer here : (RQ1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
 
 \subsection{Long-Term Rollout Quality}
 \label{subsec:rollout_quality}
-Answer here : (RC1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
+Answer here : (RQ1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
 
 \subsection{Model Stability Assessment}
 \label{subsec:stability}
-Answer here : (RC1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
+Answer here : (RQ1) How does the prediction accuracy of object-centric world models compare to pixel-based world models in terms of state transition prediction and long-term rollout quality in the Pong environment?
 
 \section{Policy Learning Results}
 \label{sec:policy_results}
 
 \subsection{Sample Efficiency Comparison}
 \label{subsec:sample_efficiency_comp}
-Answer here : (RC2) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
 
 
 \subsection{Final Performance Evaluation}
 \label{subsec:final_performance}
-Answer here : (RC2) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
 
 
 \subsection{Learning Curve Analysis}
 \label{subsec:learning_curves}
-Answer here : (RC2) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
 
 
 \section{Ablation Studies}
@@ -412,27 +423,27 @@ Answer here : (RC2) To what extent does integrating object-centric representatio
 
 \subsection{Impact of Object-Centric Representations}
 \label{subsec:oc_impact}
-Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
+Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
 
 
 \subsection{Architecture Component Analysis}
 \label{subsec:architecture_analysis}
-Answer here : (RC4) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
 
 
 \subsection{Reward Function Design Effects}
 \label{subsec:reward_effects}
-Answer here : (RC4) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
 
 
 \subsection{Real vs. Model Comparison}
 \label{subsec:real_vs_model}
-Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
+Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
 
 
 \subsection{Policy Behavior Visualization}
 \label{subsec:policy_visualization}
-Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
+Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
 
 \chapter{Discussion}
 \label{chap:discussion}
@@ -477,26 +488,33 @@ Answer here : (RC3) How effectively can the DreamerV2-style actor-critic framewo
 
 \section{Code Structure and Organization}
 \label{app:code_structure}
+Provide an overview of the project's codebase, including the main modules, their purposes, and how they interact.
 
 \section{Hyperparameter Sensitivity Analysis}
 \label{app:hyperparameter_analysis}
+Discuss the impact of varying key hyperparameters on model performance and training stability.
 
 \section{Additional Experimental Results}
 \label{app:additional_results}
+Include supplementary experimental results that support the main findings, such as extended comparisons or detailed metrics.
 
 \chapter{Technical Specifications}
 \label{app:technical_specs}
 
 \section{Hardware Requirements}
 \label{app:hardware_requirements}
+List the hardware specifications required to reproduce the experiments, including GPU/CPU details and memory requirements.
 
 \section{Software Dependencies}
 \label{app:software_dependencies}
+Detail the software libraries, frameworks, and versions used in the implementation.
 
 \section{Reproducibility Guidelines}
 \label{app:reproducibility}
+Provide step-by-step instructions for reproducing the experiments, including setup, data preparation, and execution.
 
 \chapter{Supplementary Figures and Tables}
+Include additional figures and tables that complement the main text, such as visualizations of training curves or ablation study results.
 \label{app:supplementary}
 
 \end{document}

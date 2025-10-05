@@ -1,14 +1,14 @@
 # Fdb version 4
-["biber DEMO-TUDaThesis"] 1759672898.40331 "DEMO-TUDaThesis.bcf" "DEMO-TUDaThesis.bbl" "DEMO-TUDaThesis" 1759673295.55769 0
-  "DEMO-TUDaThesis.bcf" 1759673295.28267 108083 20b0d84356c78132051a749d78ad32c6 "pdflatex"
+["biber DEMO-TUDaThesis"] 1759680846.1473 "DEMO-TUDaThesis.bcf" "DEMO-TUDaThesis.bbl" "DEMO-TUDaThesis" 1759680976.59882 0
+  "DEMO-TUDaThesis.bcf" 1759680976.39674 108083 20b0d84356c78132051a749d78ad32c6 "pdflatex"
   "references.bib" 1759666011.4238 1467 4b46190a7f9c467e2b029e9ee1d68527 ""
   (generated)
   "DEMO-TUDaThesis.bbl"
   "DEMO-TUDaThesis.blg"
   (rewritten before read)
-["pdflatex"] 1759673289.5226 "/home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" "DEMO-TUDaThesis.pdf" "DEMO-TUDaThesis" 1759673295.55805 0
+["pdflatex"] 1759680972.13929 "/home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" "DEMO-TUDaThesis.pdf" "DEMO-TUDaThesis" 1759680976.59946 0
   "/etc/texmf/web2c/texmf.cnf" 1744803628.72842 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" 1759673282.93058 28554 0386e06c4ec20655dae0e6355d80412d ""
+  "/home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" 1759680967.01084 30008 d921cd9e8cb3c857334391f46fdd5076 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_4jpen6.enc" 1576101225 3036 1ea92f9009c1d80ca35c3367187b071e ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_b5rac7.enc" 1576101225 3075 0696ceafc85b8352a913efb9ba64bc17 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc" 1576101225 2878 ee6c3e6e1872c475b7f5204786cfa185 ""
@@ -254,17 +254,17 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1759668905.4634 5349216 bf3a80e68d946c7acd95ff030fd9bb63 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1759670628 7356361 c90bcea4ac28749e213d9e22e8f28283 ""
-  "DEMO-TUDaThesis.aux" 1759673295.24967 30161 8a65ec278f7ee4aa1ce3e366a9a6c58c "pdflatex"
-  "DEMO-TUDaThesis.bbl" 1759672899.53275 7273 c9140fc992a3b8264906a3bfceb83dc3 "biber DEMO-TUDaThesis"
-  "DEMO-TUDaThesis.lof" 1759673295.28599 335 68584b8687c074251504eae8500fc100 "pdflatex"
-  "DEMO-TUDaThesis.lot" 1759673295.28599 335 68584b8687c074251504eae8500fc100 "pdflatex"
-  "DEMO-TUDaThesis.out" 1759673293.65879 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
-  "DEMO-TUDaThesis.run.xml" 1759673295.28599 2443 6f92f53b76d02ba7909a4a9bfaefdb17 "pdflatex"
-  "DEMO-TUDaThesis.tex" 1759673282.93058 28554 0386e06c4ec20655dae0e6355d80412d ""
-  "DEMO-TUDaThesis.toc" 1759673295.28599 4390 75d8c26043ea8e590f22a9a6425f927b "pdflatex"
-  "DEMO-TUDaThesis.xmpdata" 1759673294.03076 190 9865e17fe208a62ffe1cefa41d44f110 "pdflatex"
+  "DEMO-TUDaThesis.aux" 1759680976.38073 29956 35a14ae62b141a92a7c18d0b21b2eae5 "pdflatex"
+  "DEMO-TUDaThesis.bbl" 1759680847.73962 7273 c9140fc992a3b8264906a3bfceb83dc3 "biber DEMO-TUDaThesis"
+  "DEMO-TUDaThesis.lof" 1759680976.39918 335 68584b8687c074251504eae8500fc100 "pdflatex"
+  "DEMO-TUDaThesis.lot" 1759680976.39918 335 68584b8687c074251504eae8500fc100 "pdflatex"
+  "DEMO-TUDaThesis.out" 1759680975.43209 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
+  "DEMO-TUDaThesis.run.xml" 1759680976.39918 2443 6f92f53b76d02ba7909a4a9bfaefdb17 "pdflatex"
+  "DEMO-TUDaThesis.tex" 1759680967.01084 30008 d921cd9e8cb3c857334391f46fdd5076 ""
+  "DEMO-TUDaThesis.toc" 1759680976.39918 4324 821ec875b3077c7c0c8d1870413bc493 "pdflatex"
+  "DEMO-TUDaThesis.xmpdata" 1759680975.66517 190 9865e17fe208a62ffe1cefa41d44f110 "pdflatex"
   "URspecialopts.sty" 1759666011.4228 6483 920e1f2ffdfd78bee1da6dfa77a32369 ""
-  "pdfa.xmpi" 1759673292.03191 5386 268f31da7cd7980d97f70308fc4a83eb "pdflatex"
+  "pdfa.xmpi" 1759680974.1342 5386 952543b186e47601d74551a9bf91a378 "pdflatex"
   "tuda-a4paper.clo" 1759666011.4238 1684 691d78acd7ef7b0b98c56eb856fd2e2b ""
   "tuda_logo.pdf" 1759666011.4268 535101 e91be11cb03c1d5496698a80d026c7ef ""
   "tudacolors.def" 1759666011.4268 4441 1adb0ecc4475095bd29549d3ead2a986 ""

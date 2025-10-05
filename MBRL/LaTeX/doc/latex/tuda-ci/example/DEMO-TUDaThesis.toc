@@ -8,19 +8,18 @@
 \contentsline {section}{\numberline {2.2}Dreamer Architecture}{11}{section.2.2}%
 \contentsline {section}{\numberline {2.3}Object-Centric Reinforcement Learning}{14}{section.2.3}%
 \contentsline {chapter}{\numberline {3}Methodology}{17}{chapter.3}%
-\contentsline {section}{\numberline {3.1}Object-Centric World Model and integration with Model based RL}{18}{section.3.1}%
-\contentsline {section}{\numberline {3.2}World Model Architecture}{18}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}LSTM-Based World Model (PongLSTM)}{18}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}Alternative Architectures Explored}{18}{subsection.3.2.2}%
-\contentsline {subsection}{\numberline {3.2.3}State Normalization and Stability}{18}{subsection.3.2.3}%
-\contentsline {section}{\numberline {3.3}Actor-Critic Integration}{18}{section.3.3}%
+\contentsline {section}{\numberline {3.1}Object-Centric World Model and integration with Model based RL}{17}{section.3.1}%
+\contentsline {section}{\numberline {3.2}World Model Architecture}{17}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}LSTM-Based World Model (PongLSTM)}{17}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}Alternative Architectures Explored}{17}{subsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.2.3}State Normalization and Stability}{17}{subsection.3.2.3}%
+\contentsline {section}{\numberline {3.3}Actor-Critic Integration}{17}{section.3.3}%
 \contentsline {subsection}{\numberline {3.3.1}DreamerV2-Style Actor-Critic}{18}{subsection.3.3.1}%
 \contentsline {subsection}{\numberline {3.3.2}Policy Learning in Imagined Rollouts}{18}{subsection.3.3.2}%
 \contentsline {subsection}{\numberline {3.3.3}Lambda-Return Computation}{18}{subsection.3.3.3}%
 \contentsline {section}{\numberline {3.4}Training Pipeline}{18}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}Experience Collection}{18}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}World Model Training}{18}{subsection.3.4.2}%
-\contentsline {subsection}{\numberline {3.4.3}Policy Optimization}{18}{subsection.3.4.3}%
+\contentsline {subsection}{\numberline {3.4.1}World Model Training and experience collection}{18}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}Policy Optimization}{18}{subsection.3.4.2}%
 \contentsline {chapter}{\numberline {4}Experiments and Results}{19}{chapter.4}%
 \contentsline {section}{\numberline {4.1}Experimental Setup}{19}{section.4.1}%
 \contentsline {section}{\numberline {4.2}World Model Performance}{19}{section.4.2}%
