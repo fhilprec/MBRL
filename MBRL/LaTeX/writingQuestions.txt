@@ -1,11 +1,6 @@
-Methodology generelle Pipeline, wie von Bild zu action, Einzeln KOmponenten erklären, MAthematisch erklären next state prediciotn
+Wie mache ich jetzt weiter:
 
-
-4 (Implementation) komplett raus und in die 3 rein bei Methodology bis auf 4.1 das eher in die 5 Experiments and Results
-
-WICHTIG!!!! Research Questions in Introduction Motivieren und dann in Experiements nochmal erwähnen (3 4 Stück)
-
-5.4 eher ein Extra
-
-6. Discussion wird eher kurz sein, einfach besondere findings erwähnen ein zwei seiten
-
+Inhaltsverzeichnis steht und auch Punkte was ca rein soll
+-> 1 u 2 schreiben
+-> Actor Critic funktioniert ja noch immer nicht
+-> Experimente machen, welche ich (siehe Dokument unter QUESTION)

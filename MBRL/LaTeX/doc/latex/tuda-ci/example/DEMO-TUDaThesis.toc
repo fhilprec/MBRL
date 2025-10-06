@@ -24,14 +24,14 @@
 \contentsline {section}{\numberline {4.1}Experimental Setup}{19}{section.4.1}%
 \contentsline {section}{\numberline {4.2}World Model Performance}{19}{section.4.2}%
 \contentsline {subsection}{\numberline {4.2.1}Prediction Accuracy Analysis}{19}{subsection.4.2.1}%
-\contentsline {subsection}{\numberline {4.2.2}Long-Term Rollout Quality}{19}{subsection.4.2.2}%
+\contentsline {subsection}{\numberline {4.2.2}Long-Term Rollout Quality}{20}{subsection.4.2.2}%
 \contentsline {subsection}{\numberline {4.2.3}Model Stability Assessment}{20}{subsection.4.2.3}%
 \contentsline {section}{\numberline {4.3}Policy Learning Results}{20}{section.4.3}%
 \contentsline {subsection}{\numberline {4.3.1}Sample Efficiency Comparison}{20}{subsection.4.3.1}%
 \contentsline {subsection}{\numberline {4.3.2}Final Performance Evaluation}{20}{subsection.4.3.2}%
 \contentsline {subsection}{\numberline {4.3.3}Learning Curve Analysis}{20}{subsection.4.3.3}%
-\contentsline {section}{\numberline {4.4}Ablation Studies}{20}{section.4.4}%
-\contentsline {subsection}{\numberline {4.4.1}Impact of Object-Centric Representations}{20}{subsection.4.4.1}%
+\contentsline {section}{\numberline {4.4}Ablation Studies}{21}{section.4.4}%
+\contentsline {subsection}{\numberline {4.4.1}Impact of Object-Centric Representations}{21}{subsection.4.4.1}%
 \contentsline {subsection}{\numberline {4.4.2}Architecture Component Analysis}{21}{subsection.4.4.2}%
 \contentsline {subsection}{\numberline {4.4.3}Reward Function Design Effects}{21}{subsection.4.4.3}%
 \contentsline {subsection}{\numberline {4.4.4}Real vs. Model Comparison}{21}{subsection.4.4.4}%

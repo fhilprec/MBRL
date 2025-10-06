@@ -165,16 +165,29 @@ The implementation strategy will focus on integrating object-centered perception
 \section{Reinforcement Learning}
 \label{sec:reinforcement_learning}
 
-Reinforcement Learning (RL) is a machine learning paradigm that involves training agents to make sequential decisions by interacting with an environment. At its core, RL is often formalized using Markov Decision Processes (MDPs), where the environment's dynamics are defined by states, actions, transition probabilities, and reward functions. RL can be broadly categorized into model-free and model-based approaches.
+Reinforcement Learning (RL) is a machine learning paradigm that involves training agents to make sequential 
+decisions by interacting with an environment. At its core, RL is often formalized using Markov Decision Processes
+ (MDPs), where the environment's dynamics are defined by states, actions, transition probabilities, and reward
+ functions. RL can be broadly categorized into model-free and model-based approaches.
 
-In model-free RL, the agent learns a policy directly from interactions with the environment without constructing an explicit model of the world. By contrast, model-based RL incorporates a world model to predict future states or rewards, enabling more sample-efficient training by simulating rollouts in the constructed model. This abstraction allows agents to generalize better and potentially handle unseen situations more effectively.
+In model-free RL, the agent learns a policy directly from interactions with the environment without
+ constructing an explicit model of the world. By contrast, model-based RL incorporates a world model 
+ to predict future states or rewards, enabling more sample-efficient training by simulating rollouts
+  in the constructed model. This abstraction allows agents to generalize better and potentially handle unseen
+   situations more effectively.
 
 \section{Dreamer Architecture}
 \label{sec:dreamer_architecture}
 
-The Dreamer architecture represents a family of model-based RL algorithms, namely DreamerV1, V2, and V3, that focus on combining world models with actor-critic methods for policy and value learning. Dreamer utilizes latent dynamics models to predict environment behavior in a compact latent space, enabling the agent to train policies on imagined rollouts. Notable predecessors like PlaNet introduced the concept of latent space dynamics, which Dreamer extends by incorporating actor-critic frameworks.
+The Dreamer architecture represents a family of model-based RL algorithms, namely DreamerV1, V2, and V3,
+ that focus on combining world models with actor-critic methods for policy and value learning. Dreamer
+  utilizes latent dynamics models to predict environment behavior in a compact latent space, enabling
+   the agent to train policies on imagined rollouts. Notable predecessors like PlaNet introduced the 
+   concept of latent space dynamics, which Dreamer extends by incorporating actor-critic frameworks.
 
-DreamerV2 builds on DreamerV1 by improving stability and scalability to discrete action spaces, commonly used in Atari benchmarks. DreamerV3 further generalizes the approach to handle diverse tasks with limited hyperparameter tuning.
+DreamerV2 builds on DreamerV1 by improving stability and scalability to discrete action spaces,
+ commonly used in Atari benchmarks. DreamerV3 further generalizes the approach to handle diverse 
+ tasks with limited hyperparameter tuning.
 
 
 
@@ -373,8 +386,11 @@ explain how the policy is optimized and how often
 
 \chapter{Experiments and Results}
 \label{chap:experiments}
-
-
+(QUESTION Soll ich hier Experimente 1,2,3 etc. auflisten und die dann auf die Forschungsfragen mappen
+z.B. Experiment 1 10 Schritte unrollst und real vs model vs oc-model bilder -> vielleicht hier einfach
+mein OC State Rendern und dann irgendeinen Bild Loss wählen, Dafür muss ich aber ein pixel based world model erstmal haben (einfach ein MLP hinzimmern?))
+(Normalen Dreamer zum laufen bringen auch für RQ3 Farbe vom Ball ändern)
+(Ablation Studies: Unterschiedliche Architekturen, Unterschiedliche Reward Funktionen)
 
 
 \section{Experimental Setup}
