@@ -386,37 +386,32 @@ def flatten_obs(
 
 
 def create_dreamerv2_actor(action_dim: int):
-    """Create DreamerV2 Actor network with ~1M parameters and ELU activations."""
-
     class DreamerV2Actor(nn.Module):
         action_dim: int
 
         @nn.compact
         def __call__(self, x):
-
             hidden_size = 64
-
-            x = nn.Dense(
-                hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-            )(x)
+            
+            # Add layer normalization for stability
+            x = nn.LayerNorm()(x)
+            
+            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)))(x)
             x = nn.elu(x)
-
-            x = nn.Dense(
-                hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-            )(x)
+            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)))(x)
             x = nn.elu(x)
-
-            x = nn.Dense(
-                hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-            )(x)
+            x = nn.Dense(hidden_size, kernel_init=orthogonal(np.sqrt(2)))(x)
             x = nn.elu(x)
-
+            
+            # Initialize with small values and neutral bias for better exploration
             logits = nn.Dense(
-                self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+                self.action_dim, 
+                kernel_init=orthogonal(0.01),  # Small initialization
+                bias_init=constant(0.0)        # Neutral bias
             )(x)
-
+            
             return distrax.Categorical(logits=logits)
-
+    
     return DreamerV2Actor(action_dim=action_dim)
 
 
@@ -543,9 +538,8 @@ def generate_imagined_rollouts(
 
             reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
-            print(f"Raw reward before tanh: {reward}")
-            reward = jnp.tanh(reward * 0.1)
-            print(f"Final reward after tanh: {reward}")
+            # No transformation needed - reward function already returns proper range
+            print(f"Raw reward: {reward}")
 
             discount_factor = jnp.array(discount)
 
@@ -653,14 +647,26 @@ def generate_real_rollouts(
 
             next_obs = next_obs.astype(jnp.float32)
 
-            # reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
+            # Use consistent reward function as imagined rollouts
+            # This ensures real and imagined experiences have same reward structure
+            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
             
-
-            old_score =  obs[-5]-obs[-1]
-            new_score =  next_obs[-5]-next_obs[-1]
-
-            reward = new_score - old_score
-            reward = jnp.where(jnp.abs(reward) > 1, 0.0, reward)
+            # Optional: Add scoring bonus (but keep positive-only structure)
+            old_score_diff = obs[-5] - obs[-1]     # Previous player_score - opponent_score  
+            new_score_diff = next_obs[-5] - next_obs[-1]  # Current player_score - opponent_score
+            score_change = new_score_diff - old_score_diff
+            
+            # Add large bonus for scoring (positive only)
+            scoring_bonus = jnp.where(
+                score_change >= 1.0,  # Player scored
+                2.0,  # Large positive bonus
+                0.0   # No penalty for opponent scoring
+            )
+            
+            reward = reward + scoring_bonus
+            
+            # Clip to reasonable positive range
+            reward = jnp.clip(reward, 0.0, 2.1)  # Keep all rewards positive
 
 
             # jax.debug.print("obs[-5] : {} , obs[-1] : {}, next_obs[-5] : {}, next_obs[-1] : {}, reward : {}", obs[-5], obs[-1], next_obs[-5], next_obs[-1], reward)
@@ -694,9 +700,9 @@ def generate_real_rollouts(
         ) = trajectory_data
 
         action_counts = jnp.bincount(actions_seq, length=6)
-        print(
-            f"Action 3 (LEFT): {action_counts[3]}, Action 4 (RIGHTFIRE): {action_counts[4]}"
-        )
+        # print(
+        #     f"Action 3 (LEFT): {action_counts[3]}, Action 4 (RIGHTFIRE): {action_counts[4]}"
+        # )
 
         observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
         rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq])
@@ -746,22 +752,36 @@ def train_dreamerv2_actor_critic(
     if key is None:
         key = jax.random.PRNGKey(42)
 
+    actor_schedule = optax.exponential_decay(
+        init_value=actor_lr,
+        transition_steps=100,
+        decay_rate=0.99,
+        end_value=actor_lr * 0.1
+    )
+    
+    critic_schedule = optax.exponential_decay(
+        init_value=critic_lr,
+        transition_steps=100,
+        decay_rate=0.99,
+        end_value=critic_lr * 0.1
+    )
+    
     actor_tx = optax.chain(
         optax.clip_by_global_norm(max_grad_norm),
-        optax.adam(actor_lr, eps=1e-5),
+        optax.adam(actor_schedule, eps=1e-5),  # Use schedule instead of fixed lr
     )
-
+    
     critic_tx = optax.chain(
         optax.clip_by_global_norm(max_grad_norm),
-        optax.adam(critic_lr, eps=1e-5),
+        optax.adam(critic_schedule, eps=1e-5),  # Use schedule instead of fixed lr
     )
-
+    
     actor_state = TrainState.create(
         apply_fn=actor_network.apply,
         params=actor_params,
         tx=actor_tx,
     )
-
+    
     critic_state = TrainState.create(
         apply_fn=critic_network.apply,
         params=critic_params,
@@ -777,13 +797,10 @@ def train_dreamerv2_actor_critic(
     T, B = rewards.shape[:2]
 
     def compute_trajectory_targets(traj_rewards, traj_values, traj_discounts):
-        """Compute λ-returns for a single trajectory."""
-
         bootstrap = traj_values[-1]
-
         targets = lambda_return_dreamerv2(
             traj_rewards[:-1],
-            traj_values[:-1],
+            traj_values[:-1], 
             traj_discounts[:-1],
             bootstrap,
             lambda_=lambda_,
@@ -791,16 +808,17 @@ def train_dreamerv2_actor_critic(
         )
         return targets
 
+    # In your training loop:
     targets = jax.vmap(compute_trajectory_targets, in_axes=(1, 1, 1), out_axes=1)(
         rewards, values, discounts
     )
-    targets_mean = targets.mean()
-    targets_std = targets.std()
-    targets_normalized = (targets - targets_mean) / (targets_std + 1e-8)
 
-    # print(
-    #     f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    # )
+    # DON'T normalize targets - this destroys the reward signal!
+    # The critic needs to learn the actual value scale, not normalized targets
+    targets_for_training = targets
+    
+    print(f"Raw targets - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}")
+    print(f"Targets range: [{targets.min():.4f}, {targets.max():.4f}]")
 
     print(
         f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
@@ -817,7 +835,7 @@ def train_dreamerv2_actor_critic(
 
     observations_flat = observations[:-1].reshape((T - 1) * B, -1)
     actions_flat = actions[:-1].reshape((T - 1) * B)
-    targets_flat = targets.reshape((T - 1) * B)
+    targets_flat = targets_for_training.reshape((T - 1) * B)
     values_flat = values[:-1].reshape((T - 1) * B)
     old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
 
@@ -836,12 +854,20 @@ def train_dreamerv2_actor_critic(
         return critic_loss, metrics
     
     """
-
     def critic_loss_fn(critic_params, obs, targets):
         dist = critic_network.apply(critic_params, obs)
-        loss = -jnp.mean(dist.log_prob(targets))
-        return loss, {"critic_loss": loss, "critic_mean": dist.mean()}
-
+        
+        # Use the proper DreamerV2 distributional loss
+        log_prob = dist.log_prob(targets)
+        critic_loss = -jnp.mean(log_prob)
+        
+        return critic_loss, {
+            "critic_loss": critic_loss,
+            "predictions_mean": jnp.mean(dist.mean()),
+            "predictions_std": jnp.std(dist.mean()),
+            "targets_mean": jnp.mean(targets),
+            "targets_std": jnp.std(targets),
+        }
     """ def actor_loss(self, seq, target):
     
     
@@ -883,40 +909,43 @@ def train_dreamerv2_actor_critic(
     metrics['actor_ent_scale'] = ent_scale
     return actor_loss, metrics"""
 
-    def actor_loss_fn(
-        actor_params,
-        obs,
-        actions,
-        targets,
-        values,
-        old_log_probs,
-        actor_grad="both",
-        mix_ratio=0.1,
-    ):
+
+    def actor_loss_fn(actor_params, obs, actions, targets, values, old_log_probs):
         pi = actor_network.apply(actor_params, obs)
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
-
-        advantages = targets - values
-        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-
-        reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
-
-        objective =  -reinforce_obj 
-
-        entropy_bonus = entropy_scale * entropy
-        total_objective = objective - entropy_bonus
-
-        actor_loss = jnp.mean(total_objective)
-
-        return actor_loss, {
-            "actor_loss": actor_loss,
-            "objective": jnp.mean(objective),
+        
+        # DreamerV2 uses targets directly as advantages (no baseline subtraction in some variants)
+        # Since targets already include value bootstrapping via lambda returns
+        advantages = jax.lax.stop_gradient(targets)
+        
+        # Less aggressive advantage normalization - only if std is reasonable
+        adv_mean = jnp.mean(advantages)
+        adv_std = jnp.std(advantages) + 1e-8
+        
+        # Only normalize if advantages have meaningful variation
+        advantages = jnp.where(
+            adv_std > 0.1,  # Only normalize if there's meaningful variation
+            (advantages - adv_mean) / adv_std,
+            advantages  # Keep raw advantages if they're too uniform
+        )
+        
+        # REINFORCE-style policy gradient loss
+        policy_loss = -jnp.mean(log_prob * advantages)
+        
+        # Entropy regularization
+        entropy_bonus = entropy_scale * jnp.mean(entropy)
+        
+        total_loss = policy_loss - entropy_bonus
+        
+        return total_loss, {
+            "policy_loss": policy_loss,
             "entropy": jnp.mean(entropy),
-            "advantages_mean": jnp.mean(advantages),
-            "mix_ratio": mix_ratio,
+            "advantages_mean": adv_mean,
+            "advantages_std": adv_std,
+            "targets_mean": jnp.mean(targets),
         }
+    
 
     metrics_history = []
 
@@ -924,12 +953,13 @@ def train_dreamerv2_actor_critic(
 
         key, subkey = jax.random.split(key)
 
+        # Proper data shuffling for better training
         perm = jax.random.permutation(subkey, (T - 1) * B)
-        obs_shuffled = observations_flat#[perm]
-        actions_shuffled = actions_flat#[perm]
-        targets_shuffled = targets_flat#[perm]
-        values_shuffled = values_flat#[perm]
-        old_log_probs_shuffled = old_log_probs_flat#[perm]
+        obs_shuffled = observations_flat[perm]
+        actions_shuffled = actions_flat[perm]
+        targets_shuffled = targets_flat[perm]
+        values_shuffled = values_flat[perm]
+        old_log_probs_shuffled = old_log_probs_flat[perm]
 
         # if epoch == 0:
         #     current_preds_dist = critic_network.apply(
@@ -995,8 +1025,14 @@ def train_dreamerv2_actor_critic(
 
         print(
             f"Epoch {epoch}: Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}, "
-            f"Entropy: {actor_metrics['entropy']:.4f}"
+            f"Entropy: {actor_metrics['entropy']:.4f}, Adv Mean: {actor_metrics['advantages_mean']:.4f}"
         )
+
+        # More detailed training diagnostics
+        if epoch % 1 == 0:  # Print every epoch for debugging
+            print(f"  Targets - Mean: {actor_metrics['targets_mean']:.4f}, Std: {actor_metrics['advantages_std']:.4f}")
+            print(f"  Values - Mean: {jnp.mean(values):.4f}, Std: {jnp.std(values):.4f}")
+            print(f"  Rewards - Mean: {jnp.mean(rewards):.4f}, Non-zero: {jnp.sum(rewards != 0.0)}")
 
         total_loss = actor_loss + critic_loss
         if total_loss < best_loss:
@@ -1116,17 +1152,17 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 128,
-        "num_rollouts": 3000,
-        "policy_epochs": 50,
-        "actor_lr": 3e-4,
-        "critic_lr": 3e-4,
-        "lambda_": 0.95,
-        "entropy_scale": 1e-2,
-        "discount": 0.95,
-        "max_grad_norm": 10.0,
-        "target_kl": 1,
-        "early_stopping_patience": 25,
+        "rollout_length": 60,      # Much shorter rollouts for stability
+        "num_rollouts": 128,       # Smaller batch for stability  
+        "policy_epochs": 20,        # Fewer epochs to prevent overfitting
+        "actor_lr": 3e-5,          # Lower learning rate
+        "critic_lr": 1e-4,         # Lower critic learning rate
+        "lambda_": 0.95,           # Good value
+        "entropy_scale": 3e-3,     # Higher entropy for exploration
+        "discount": 0.99,          # Good for Pong
+        "max_grad_norm": 10.0,     # Lower gradient clipping
+        "target_kl": 0.01,         # Much more conservative
+        "early_stopping_patience": 5,  # Shorter patience
     }
 
     for i in range(training_runs):
@@ -1192,7 +1228,9 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
-        shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
+        # Use different key for each training iteration
+        iteration_key = jax.random.PRNGKey(SEED + i * 1000)
+        shuffled_obs = jax.random.permutation(iteration_key, obs)
 
         print("Generating imagined rollouts...")
         (
@@ -1213,7 +1251,7 @@ def main():
             rollout_length=training_params["rollout_length"],
             normalization_stats=normalization_stats,
             discount=training_params["discount"],
-            key=jax.random.PRNGKey(SEED),
+            key=jax.random.split(iteration_key)[1],
         )
 
         # print(jnp.sum(dones_seq))
@@ -1257,14 +1295,23 @@ def main():
             num_epochs=training_params["policy_epochs"],
             actor_lr=training_params["actor_lr"],
             critic_lr=training_params["critic_lr"],
-            key=jax.random.PRNGKey(2000),
+            key=jax.random.PRNGKey(2000 + i * 100),
             lambda_=training_params["lambda_"],
             entropy_scale=training_params["entropy_scale"],
             target_kl=training_params["target_kl"],
             early_stopping_patience=training_params["early_stopping_patience"],
         )
 
-        print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
+        # Enhanced training monitoring
+        mean_reward = jnp.mean(imagined_rewards)
+        score_rewards = jnp.sum(jnp.abs(imagined_rewards) >= 0.9)  # Count actual scoring events
+        non_zero_rewards = jnp.sum(imagined_rewards != 0.0)
+        
+        print(f"\n=== TRAINING RUN {i+1} SUMMARY ===")
+        print(f"Mean reward: {mean_reward:.4f}")
+        print(f"Scoring events: {score_rewards} / {imagined_rewards.size}")
+        print(f"Non-zero rewards: {non_zero_rewards} / {imagined_rewards.size}")
+        print(f"Reward range: [{jnp.min(imagined_rewards):.3f}, {jnp.max(imagined_rewards):.3f}]")
 
         def save_model_checkpoints(actor_params, critic_params):
             """Save parameters with consistent structure"""
@@ -1274,9 +1321,21 @@ def main():
                 pickle.dump({"params": critic_params}, f)
             print("Saved actor, critic parameters")
 
-        analyze_policy_behavior(actor_network, actor_params, imagined_obs)
+        action_probs = analyze_policy_behavior(actor_network, actor_params, imagined_obs)
+        
+        # Check for balanced exploration
+        min_action_prob = jnp.min(action_probs)
+        max_action_prob = jnp.max(action_probs)
+        exploration_balance = min_action_prob / max_action_prob
+        print(f"Exploration balance: {exploration_balance:.3f} (higher is better)")
 
         save_model_checkpoints(actor_params, critic_params)
+        
+        # # Stop early if we're getting good scoring events and balanced exploration
+        # if score_rewards > 0 and exploration_balance > 0.3:
+        #     print("Good learning progress detected - early stopping criteria met!")
+        #     print(f"Score events: {score_rewards}, Exploration balance: {exploration_balance:.3f}")
+        #     break
 
 
 if __name__ == "__main__":

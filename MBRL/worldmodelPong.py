@@ -722,9 +722,9 @@ def compare_real_vs_model(
 
         action = actions[step_count]
 
-        print(
-            f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
-        )
+        # print(
+        #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
+        # )
 
         next_real_obs = obs[step_count + 1]
 
