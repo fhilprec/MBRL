@@ -2,5 +2,5 @@ Wie mache ich jetzt weiter:
 
 Inhaltsverzeichnis steht und auch Punkte was ca rein soll
 -> 1 u 2 schreiben
--> Actor Critic funktioniert ja noch immer nicht
 -> Experimente machen, welche ich (siehe Dokument unter QUESTION)
+-> Actor Critic funktioniert ja noch immer nicht

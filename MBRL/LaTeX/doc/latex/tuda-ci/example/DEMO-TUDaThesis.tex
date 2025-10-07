@@ -116,9 +116,16 @@
 \chapter{Introduction}	
 \label{chap:introduction}
 RQ1: How do Object Centric World Models compare to pixel-based world models regarding prediction accuracy and sample efficiency?
-RQ2: How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
-RQ3: What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+EXP: Run Dreamer with restronction loss (TODO explain why the comparison is a little unfair when using OC), how many steps until agent wins (20 points in Pong) if that doesnt work when does model curve converge
+RQ2: Can we train an actor critic on top of the simulated object centric world model rollouts 
+EXP: Just show that it works. Effectively done already once actor critic works. Learning Curves vom Actor Critic  vergleichen
 RQ4: Does the Object Centric inductive bias in WMs improve robustness?
+EXP: Dann koenntest du einfach bspw. die Farbe des Balls in JAXAtari anpassen und zeigen, dass normales Dreamer nicht mehr funktioniert, aber dein model schon -> In JAxatari teilweise schon drin
+
+Optional prob. in ablation study:
+RQ3: What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+EXP: Ablation Studies changing World model architectures
+
 
 Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards
 for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference 
@@ -164,6 +171,8 @@ The implementation strategy will focus on integrating object-centered perception
 
 \section{Reinforcement Learning}
 \label{sec:reinforcement_learning}
+
+(TODO  (MDP's, model-free, model-based als Teil davon), "Dreamer Architecture" (vgl. auch dreamerv1, dreamerv2, dreamerv3, evtl. PlaNet), "Object Centric RL" (als Teil davon auch object-centric model-based RL) 
 
 Reinforcement Learning (RL) is a machine learning paradigm that involves training agents to make sequential 
 decisions by interacting with an environment. At its core, RL is often formalized using Markov Decision Processes
@@ -329,11 +338,6 @@ accurate predictions about future states and plan more effectively. This integra
 
 
 
-\section{Object-Centric World Model and integration with Model based RL}
-\label{sec:oc_world_model}
-
-
-
 
 \section{World Model Architecture}
 \label{sec:world_model_arch}
@@ -344,15 +348,16 @@ accurate predictions about future states and plan more effectively. This integra
 explain LSTM
 explain why is might be good for world models in general instead of models that only take the last state into account
 
-
 \subsection{Alternative Architectures Explored}
 \label{subsec:alternative_architectures}
 Talk about MLP, Transformer, other RNNs
-
+(TODO) erwähnen dass ich sie ausprobiert habe und warum ich sie nicht genommen habe
+(Was ich nicht probiert habe in Future work oder related work)
 
 \subsection{State Normalization and Stability}
 \label{subsec:normalization}
 why normalization helps in RL in general and why it was used here
+(TODO im Background erwähnen dass es Normalisierung in RL gibt und kurz reinschreiben dass ich das gemacht habe)
 
 \section{Actor-Critic Integration}
 \label{sec:actor_critic}
@@ -378,11 +383,13 @@ explain when the worldmodel gets retrained and how sampling works
 
 \subsection{World Model Training and experience collection}
 \label{subsec:world_model_training}
+(TODO Pseudo CODE mit Abbildung)
 explain how the initial experience for the world model is collected and how it can be updated during later training stages
 
 \subsection{Policy Optimization}
 \label{subsec:policy_optimization}
 explain how the policy is optimized and how often
+
 
 \chapter{Experiments and Results}
 \label{chap:experiments}
