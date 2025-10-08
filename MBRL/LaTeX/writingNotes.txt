@@ -1,0 +1,107 @@
+Wie mache ich jetzt weiter:
+
+Inhaltsverzeichnis steht und auch Punkte was ca rein soll
+-> 1 u 2 schreiben
+-> Experimente machen, welche ich (siehe Dokument unter QUESTION)
+-> Actor Critic funktioniert ja noch immer nicht
+
+RQ1: How do Object Centric World Models compare to pixel-based world models
+regarding prediction accuracy and sample efficiency? EXP: Run Dreamer with
+restronction loss (TODO explain why the comparison is a little unfair when
+using OC), how many steps until agent wins (20 points in Pong) if that doesnt
+work when does model curve converge RQ2: Can we train an actor critic on top of
+the simulated object centric world model rollouts EXP: Just show that it works.
+Effectively done already once actor critic works. Learning Curves vom Actor
+Critic vergleichen RQ4: Does the Object Centric inductive bias in WMs improve
+robustness? EXP: Dann koenntest du einfach bspw. die Farbe des Balls in
+JAXAtari anpassen und zeigen, dass normales Dreamer nicht mehr funktioniert,
+aber dein model schon -> In JAxatari teilweise schon drin
+
+Optional prob. in ablation study: RQ3: What is the impact of different world
+model architectures (LSTM-based vs. alternatives) on the overall performance of
+object-centric model-based RL in structured environments? EXP: Ablation Studies
+changing World model architectures
+
+
+
+
+
+TEXT GRAVEYARD:
+Reinforcement Learning as one of the three flavors in Machine Learning among
+Supervised and Unsupervised Learning follows the approach of having an agent
+performs actions in an environment and receiving rewards for certain actions.
+So unlike Supervised Learning for example there is no ground truth from the
+which the agent can learn from. Among numerous distinctions within
+Reinforcement Learning there is the difference between Model Based
+Reinforcement Learning and Model Free Reinforcement Learning. The Latter
+focuses on the learning of only the Agent which is deployed in the environment
+(or learns from samples). Thus the agent will have no explicit way of
+predicting the next state of the environment, although sufficiently large for
+example neural networks might create some implicit model of the world. Model
+based Reinforcement learning augments the architecture by a Model that is
+predicting the next state of the world but also still trains an agent. So there
+are usually two separate models. That might improve sample efficiency since
+once the world model is trained it can be used to train the agent without any
+need of additional sampling in the environment. Another hope of Model based
+approaches is that they can achiever a better understanding of the environment
+and thus generelize better to new unseen situations.
+
+Given that well established separation in Reinforcement Learning there are
+different approaches that might yield improvements in abstract reasoning for
+reinforcement learning agents. The approach of Object-Centricity tries to
+improve RL-Agents by not focusing on for example pixel representations of the
+environment (given that the environment might be some kind of game like the
+Atari Benchmark) but rather translating those pixel based representation to
+abstract relational concepts (e.g. separating a game screen into distinct
+entities like player character, enemies, and collectibles rather than
+processing it as an undifferentiated grid of pixels).
+
+Currently there are no attempts to combine model based approaches and
+Object-Centric ones. Since both have the goal of improving abstract reasoning
+by developing a more abstract understanding of the world and improving sample
+efficiency the vision is to use both things to arrive at a more robust
+solution. A common pitfall of Reinforcement Learning is the misalignment
+problem, which can be summarized to an agent learning a policy, which indeed
+maximizes its reward but which does not represent what humans would like the
+agent to learn. This can for example be the agent exploiting some flaw in the
+environment and therefore avoiding to actually play and therefore learn the
+game. Moreover model free approaches are usually fairly sample inefficient
+since the agent has no other way of gaining examples (performing roll outs)
+then actually playing the game and exploring it. Lastly generalization of the
+agents is often a big problems. Changing small and meaningless things in the
+environment sometimes lead to disastrous drops in performance. For example for
+Agents performing on pixel representations this might involve changing the
+background color. For humans this would not make a difference but agents
+sometimes fail, since they do no have a way to actually understand the game
+they are playing but rather rely on certain tricks that they learn during
+training which are not robust to changes.
+
+The proposed solution combines model-based reinforcement learning with
+object-centered representations to solve the identified problems. This
+integration offers several potential benefits.
+
+First of all, model-based approaches can significantly improve sampling
+efficiency by allowing the agent to learn from simulated experiences generated
+by the world model. In combination with object-centered representations, the
+world model can make predictions in a more structured and compact state space
+that focuses on relevant objects and their relationships rather than raw
+pixels. This should enable more efficient learning with fewer environmental
+interactions.
+
+Second, an object-centric world model could improve generalization
+capabilities. By decomposing scenes into objects and their relationships, the
+agent develops an understanding of the environment that is more robust to
+superficial changes. The hope is that this structured representation combined
+with model based approaches enhances generalization abilities even further.
+
+Third, the combination could improve interpretability. Object-centered
+representations make it easier to understand what the agent considers important
+in the environment and how it reasons about state transitions. This
+interpretability could help identify and address mismatch issues by providing
+insight into why an agent makes certain decisions or why it might exploit
+loopholes in the environment.
+
+The implementation strategy will focus on integrating object-centered
+perception modules into established model-based RL frameworks. This will
+require the development of methods to incorporate object-centered
+representations into world model predictions.
