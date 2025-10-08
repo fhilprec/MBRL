@@ -113,58 +113,53 @@
 	JAX  & Just After eXecution                \\
 \end{tabular}
 
-\chapter{Introduction}	
+\chapter{Introduction}
 \label{chap:introduction}
-RQ1: How do Object Centric World Models compare to pixel-based world models regarding prediction accuracy and sample efficiency?
-EXP: Run Dreamer with restronction loss (TODO explain why the comparison is a little unfair when using OC), how many steps until agent wins (20 points in Pong) if that doesnt work when does model curve converge
-RQ2: Can we train an actor critic on top of the simulated object centric world model rollouts 
-EXP: Just show that it works. Effectively done already once actor critic works. Learning Curves vom Actor Critic  vergleichen
-RQ4: Does the Object Centric inductive bias in WMs improve robustness?
-EXP: Dann koenntest du einfach bspw. die Farbe des Balls in JAXAtari anpassen und zeigen, dass normales Dreamer nicht mehr funktioniert, aber dein model schon -> In JAxatari teilweise schon drin
 
-Optional prob. in ablation study:
-RQ3: What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
-EXP: Ablation Studies changing World model architectures
+Reinforcement Learning as one of the three flavors in Machine Learning among Supervised
+and Unsupervised Learning follows the approach of having an agent
+performs actions in an environment and receiving rewards
+for certain actions. So unlike Supervised Learning for example there is no ground
+truth from the which the agent can learn from. Among numerous distinctions
+within Reinforcement Learning there is the difference
+between Model Based Reinforcement Learning and Model Free Reinforcement Learning.
+The Latter focuses on the learning of only the Agent which is deployed in
+the environment (or learns from samples). Thus the agent
+will have no explicit way of predicting the next state of the environment, although
+sufficiently large for example neural networks might create some implicit
+model of the world. Model based Reinforcement learning
+augments the architecture by a Model that is predicting the next state of the world
+but also still trains an agent. Although model free approaches usually are less complex
+since they only have to learn one model, the agent they also have significant disadvantages.
 
+Model Free Learning approaches often struggle with sample efficiency and generalization to new tasks. 
+Small changes in the environment can lead to significant drops in performance.
+Moreover, agents can learn misaligned policies that exploit loopholes in the environment rather than achieving 
+the intended goals. These challenges highlight the need for more structured and interpretable learning methods. So Object Centricity and Model Based approaches
+both have the goal of improving abstract reasoning by developing a more abstract understanding of the world and improving sample efficiency.
+1.3 Research Questions and Objectives
+This thesis aims to investigate the potential benefits
+of integrating object-centric learning into model-based reinforcement learning frameworks to address these challenges by harvesting the
+strengths of both paradigms. This thesis is therefore guided by the following research questions:
+\begin{enumerate}
+	\item How do object-centric world models compare to pixel-based world models regarding prediction accuracy and sample efficiency?
+	\item Can an actor-critic framework be effectively trained on simulated rollouts from object-centric world models?
+	\item What is the impact of different world model architectures (such as LSTM-based versus alternative designs) on the overall performance of object-centric model-based reinforcement learning in structured environments?
+	\item Does the object-centric inductive bias in world models improve robustness to changes in the environment?
+\end{enumerate}
 
-Reinforcement Learning as one of the three categories in Machine Learning among Supervised and Unsupervised Learning follows the approach of having an agent performs actions in an environment and receiving rewards
-for certain actions. So unlike Supervised Learning for example there is no ground truth from the which the agent can learn from. Among numerous distinctions within Reinforcement Learning there is the difference 
-between Model Based Reinforcement Learning and Model Free Reinforcement Learning. The Latter focuses on the learning of only the Agent which is deployed in the environment (or learns from samples). Thus the agent
-will have no explicit way of predicting the next state of the environment, although sufficiently large for example neural networks might create some implicit model of the world. Model based Reinforcement learning 
-augments the architecture by a Model that is predicting the next state of the world but also still trains an agent. So there are usually two separate models. That might improve sample efficiency since once the world model
-is trained it can be used to train the agent without any need of additional sampling in the environment. Another hope of Model based approaches is that they can achiever a better understanding of the environment and thus
-generelize better to new unseen situations.
+Within this thesis we propose to develop a world model that is running on top of object centric states provided by the JAXAtari framework. This world model will be based on an LSTM architecture
+and will be trained to predict the next state of the environment given the current state and action.
+An actor-critic framework based on the DreamerV2 architecture will be integrated with the world model to learn policies from imagined rollouts.
+The training pipeline will involve alternating between updating the world model and optimizing the policy based on simulated experiences.
+The performance of the proposed approach will be evaluated in the Pong environment from the Atari benchmark suite, comparing it against pixel-based baselines and assessing its sample efficiency and robustness.
 
-Given that well established separation in Reinforcement Learning there are different approaches that might yield improvements in abstract reasoning for reinforcement learning agents. The approach of Object-Centricity tries to
-improve RL-Agents by not focusing on for example pixel representations of the environment (given that the environment might be some kind of game like the Atari Benchmark) but rather translating those pixel based representation
-to abstract relational concepts (e.g. separating a game screen into distinct entities like player character, enemies, and collectibles rather than processing it as an undifferentiated grid of pixels).
-
-
-
-Currently there are no attempts to combine model based approaches and Object-Centric ones. Since both have the goal of improving abstract reasoning by developing a more abstract understanding
- of the world and improving sample efficiency the vision is to use both things to arrive at a more robust solution.
-A common pitfall of Reinforcement Learning is the misalignment problem, which can be summarized to an agent learning a policy, which indeed maximizes its reward but which does not represent
- what humans would like the agent to learn. This can for example be the agent exploiting some flaw in the environment and therefore avoiding to actually play and therefore learn the game.
-  Moreover model free approaches are usually fairly sample inefficient since the agent has no other way of gaining examples (performing roll outs) then actually playing the game and exploring it.
-Lastly generalization of the agents is often a big problems. Changing small and meaningless things in the environment sometimes lead to disastrous drops in performance. For example for Agents
- performing on pixel representations this might involve changing the background color. For humans this would not make a difference but agents sometimes fail, since they do no have a way to 
- actually understand the game they are playing but rather rely on certain tricks that they learn during training which are not robust to changes.
-
-The proposed solution combines model-based reinforcement learning with object-centered representations to solve the identified problems. This integration offers several potential benefits.
-
-First of all, model-based approaches can significantly improve sampling efficiency by allowing the agent to learn from simulated experiences generated by the world model. In combination with object-centered representations,
- the world model can make predictions in a more structured and compact state space that focuses on relevant objects and their relationships rather than raw pixels. This should enable more efficient learning with fewer environmental interactions.
-
-Second, an object-centric world model could improve generalization capabilities. By decomposing scenes into objects and their relationships, the agent develops an understanding of the environment that is more robust to
- superficial changes. The hope is that this structured representation combined with model based approaches enhances generalization abilities even further.
-
-Third, the combination could improve interpretability. Object-centered representations make it easier to understand what the agent considers important in the environment and how it reasons 
-about state transitions. This interpretability could help identify and address mismatch issues by providing insight into why an agent makes certain decisions or why it might exploit loopholes in the environment.
-
-The implementation strategy will focus on integrating object-centered perception modules into established model-based RL frameworks. This will require the development of methods to incorporate
- object-centered representations into world model predictions.
-
-(TODO Write down some points here maybe merge into Introduction basically stating what the research currently says and what is missing -> what we want to do here)
+The remainder of this thesis is structured as follows:
+Chapter 2 provides background information on reinforcement learning, model-based approaches, and object-centric representations.
+Chapter 3 details the methodology, including the world model architecture, actor-critic integration, and training pipeline.
+Chapter 4 presents the experimental setup, results, and analysis.
+Chapter 5 discusses the findings, challenges, and implications of the results.
+Finally, Chapter 6 concludes the thesis and outlines directions for future work.
 
 \chapter{Background and Related Work}
 \label{chap:background}
@@ -172,45 +167,59 @@ The implementation strategy will focus on integrating object-centered perception
 \section{Reinforcement Learning}
 \label{sec:reinforcement_learning}
 
-(TODO  (MDP's, model-free, model-based als Teil davon), "Dreamer Architecture" (vgl. auch dreamerv1, dreamerv2, dreamerv3, evtl. PlaNet), "Object Centric RL" (als Teil davon auch object-centric model-based RL) 
+(TODO  (MDP's, model-free, model-based als Teil davon), "Dreamer Architecture" (vgl. auch dreamerv1, dreamerv2, dreamerv3, evtl. PlaNet), "Object Centric RL" (als Teil davon auch object-centric model-based RL)
 
-Reinforcement Learning (RL) is a machine learning paradigm that involves training agents to make sequential 
-decisions by interacting with an environment. At its core, RL is often formalized using Markov Decision Processes
- (MDPs), where the environment's dynamics are defined by states, actions, transition probabilities, and reward
- functions. RL can be broadly categorized into model-free and model-based approaches.
+Reinforcement Learning (RL) is a machine learning paradigm that involves
+training agents to make sequential decisions by interacting with an
+environment. At its core, RL is often formalized using Markov Decision
+Processes (MDPs), where the environment's dynamics are defined by states,
+actions, transition probabilities, and reward functions. RL can be broadly
+categorized into model-free and model-based approaches.
 
-In model-free RL, the agent learns a policy directly from interactions with the environment without
- constructing an explicit model of the world. By contrast, model-based RL incorporates a world model 
- to predict future states or rewards, enabling more sample-efficient training by simulating rollouts
-  in the constructed model. This abstraction allows agents to generalize better and potentially handle unseen
-   situations more effectively.
+In model-free RL, the agent learns a policy directly from interactions with the
+environment without constructing an explicit model of the world. By contrast,
+model-based RL incorporates a world model to predict future states or rewards,
+enabling more sample-efficient training by simulating rollouts in the
+constructed model. This abstraction allows agents to generalize better and
+potentially handle unseen situations more effectively.
 
 \section{Dreamer Architecture}
 \label{sec:dreamer_architecture}
 
-The Dreamer architecture represents a family of model-based RL algorithms, namely DreamerV1, V2, and V3,
- that focus on combining world models with actor-critic methods for policy and value learning. Dreamer
-  utilizes latent dynamics models to predict environment behavior in a compact latent space, enabling
-   the agent to train policies on imagined rollouts. Notable predecessors like PlaNet introduced the 
-   concept of latent space dynamics, which Dreamer extends by incorporating actor-critic frameworks.
+The Dreamer architecture represents a family of model-based RL algorithms,
+namely DreamerV1, V2, and V3, that focus on combining world models with
+actor-critic methods for policy and value learning. Dreamer utilizes latent
+dynamics models to predict environment behavior in a compact latent space,
+enabling the agent to train policies on imagined rollouts. Notable predecessors
+like PlaNet introduced the concept of latent space dynamics, which Dreamer
+extends by incorporating actor-critic frameworks.
 
-DreamerV2 builds on DreamerV1 by improving stability and scalability to discrete action spaces,
- commonly used in Atari benchmarks. DreamerV3 further generalizes the approach to handle diverse 
- tasks with limited hyperparameter tuning.
+DreamerV2 builds on DreamerV1 by improving stability and scalability to
+discrete action spaces, commonly used in Atari benchmarks. DreamerV3 further
+generalizes the approach to handle diverse tasks with limited hyperparameter
+tuning.
 
+Object-Centric Reinforcement Learning (OCRL) emphasizes representing an
+environment as a collection of interacting entities, rather than processing the
+entire environment as raw inputs, such as pixels. This paradigm improves sample
+efficiency, generalization, and interpretability by focusing on objects and
+their relationships.
 
+Object-centric model-based RL combines the abstraction of object
+representations with predictive world models. By leveraging structured
+object-centric states, agents can reason about dynamic interactions in a more
+robust and interpretable manner compared to pixel-based representations.
 
-Object-Centric Reinforcement Learning (OCRL) emphasizes representing an environment as a collection of interacting entities, rather than processing the entire environment as raw inputs, such as pixels. This paradigm improves sample efficiency, generalization, and interpretability by focusing on objects and their relationships.
-
-Object-centric model-based RL combines the abstraction of object representations with predictive world models. By leveraging structured object-centric states, agents can reason about dynamic interactions in a more robust and interpretable manner compared to pixel-based representations.
-
-
-There are multiple way to to train a world model. As mentioned above already you can predict latent states or directly predict future observations. There are also multiple different architectures which can do the job. From a simple MLP over LSTMs to Transformers there have been many different approiaches to that same problem. Tes
+There are multiple way to to train a world model. As mentioned above already
+you can predict latent states or directly predict future observations. There
+are also multiple different architectures which can do the job. From a simple
+MLP over LSTMs to Transformers there have been many different approiaches to
+that same problem. Tes
 
 DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
 
-Explain in general what dreamer does
-what are the components and how do they play together
+Explain in general what dreamer does what are the components and how do they
+play together
 
 The $\lambda$-target is defined recursively as:
 \begin{equation}
@@ -220,11 +229,19 @@ The $\lambda$-target is defined recursively as:
 	\end{cases}
 \end{equation}
 
-where $\hat{r}_t$ represents the predicted reward, $\hat{\gamma}_t$ is the predicted discount factor, $v_\xi(\hat{z}_t)$ is the critic's value estimate, and $\lambda = 0.95$ controls the weighting between immediate and future rewards. This formulation creates a weighted average of n-step returns, where longer horizons receive exponentially decreasing weights.
+where $\hat{r}_t$ represents the predicted reward, $\hat{\gamma}_t$ is the
+predicted discount factor, $v_\xi(\hat{z}_t)$ is the critic's value estimate,
+and $\lambda = 0.95$ controls the weighting between immediate and future
+rewards. This formulation creates a weighted average of n-step returns, where
+longer horizons receive exponentially decreasing weights.
 
 In my case I dont have z but simply the observation itself. So no latent space.
 
-The actor network in DreamerV2 employs a sophisticated loss function that combines multiple gradient estimators to achieve both learning efficiency and convergence stability. The actor aims to maximize the same $\lambda$-return targets used for critic training, incorporating intermediate rewards directly rather than relying solely on terminal value estimates.
+The actor network in DreamerV2 employs a sophisticated loss function that
+combines multiple gradient estimators to achieve both learning efficiency and
+convergence stability. The actor aims to maximize the same $\lambda$-return
+targets used for critic training, incorporating intermediate rewards directly
+rather than relying solely on terminal value estimates.
 
 The combined actor loss function is formulated as:
 \begin{align}
@@ -239,16 +256,31 @@ The loss function incorporates three distinct components:
 
 \textbf{Entropy Regularization:} The third term encourages exploration by maximizing the entropy of the action distribution. The entropy coefficient $\eta$ controls the trade-off between exploitation and exploration, with higher values promoting more diverse action selection.
 
-The weighting parameter $\rho$ determines the relative contribution of REINFORCE versus straight-through gradients. For discrete action spaces like Atari, DreamerV2 typically uses $\rho = 1$ (pure REINFORCE) with $\eta = 10^{-3}$, while continuous control tasks benefit from $\rho = 0$ (pure dynamics backpropagation) with $\eta = 10^{-4}$.
+The weighting parameter $\rho$ determines the relative contribution of
+REINFORCE versus straight-through gradients. For discrete action spaces like
+Atari, DreamerV2 typically uses $\rho = 1$ (pure REINFORCE) with $\eta =
+	10^{-3}$, while continuous control tasks benefit from $\rho = 0$ (pure dynamics
+backpropagation) with $\eta = 10^{-4}$.
 
-The critic network in DreamerV2 serves as a value function approximator that estimates the expected discounted sum of future rewards from any given latent state. This component is essential for both the $\lambda$-target computation and providing baseline estimates for the REINFORCE algorithm, making it a cornerstone of the learning process.
+The critic network in DreamerV2 serves as a value function approximator that
+estimates the expected discounted sum of future rewards from any given latent
+state. This component is essential for both the $\lambda$-target computation
+and providing baseline estimates for the REINFORCE algorithm, making it a
+cornerstone of the learning process.
 
-The critic is trained using temporal difference learning with the $\lambda$-targets as regression targets. The loss function is formulated as a squared error between the critic's predictions and the computed $\lambda$-returns:
+The critic is trained using temporal difference learning with the
+$\lambda$-targets as regression targets. The loss function is formulated as a
+squared error between the critic's predictions and the computed
+$\lambda$-returns:
 \begin{equation}
 	\mathcal{L}(\xi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \frac{1}{2} \left(v_\xi(\hat{z}_t) - \text{sg}(V^{\lambda}_t)\right)^2\right]
 \end{equation}
 
-where $v_\xi(\hat{z}_t)$ represents the critic's value estimate for latent state $\hat{z}_t$, and $\text{sg}(V^{\lambda}_t)$ denotes the $\lambda$-target with stopped gradients. The gradient stopping prevents the critic's learning from interfering with the target computation, maintaining the stability of the temporal difference updates.
+where $v_\xi(\hat{z}_t)$ represents the critic's value estimate for latent
+state $\hat{z}_t$, and $\text{sg}(V^{\lambda}_t)$ denotes the $\lambda$-target
+with stopped gradients. The gradient stopping prevents the critic's learning
+from interfering with the target computation, maintaining the stability of the
+temporal difference updates.
 
 Several key design choices enhance the critic's learning efficiency:
 
@@ -258,90 +290,106 @@ Several key design choices enhance the critic's learning efficiency:
 
 \textbf{Compact State Representation:} Unlike traditional value functions that operate on high-dimensional observations, the DreamerV2 critic leverages the compact latent states $\hat{z}_t$ learned by the world model. This representation provides several advantages: reduced computational complexity, better generalization across similar states, and improved learning efficiency due to the structured nature of the latent space.
 
-The critic architecture consists of a multi-layer perceptron with ELU activations and approximately 1 million trainable parameters. The network outputs a single scalar value representing the expected return from the input state, enabling efficient batch processing of imagined trajectories during training.
+The critic architecture consists of a multi-layer perceptron with ELU
+activations and approximately 1 million trainable parameters. The network
+outputs a single scalar value representing the expected return from the input
+state, enabling efficient batch processing of imagined trajectories during
+training.
 
 % \subsection{TD Lambda Targets}
 % \label{subsec:tdlambdatargets}
 
 % \subsection{TD Lambda Targets}
 % \label{subsec:tdlambdatargets}
-
-
 
 \section{Object-Centric Reinforcement Learning}
 \label{sec:object_centric_rl}
 (TODO mention object-centric model-based RL)
 
 \begin{itemize}
-	\item \textbf{High Dimensionality:} 
-	\item \textbf{Poor Generalization:} 
-	\item \textbf{Lack of Semantic Understanding:} 
-	\item \textbf{Sample Inefficiency:} 
-	\item \textbf{Sensitivity to Noise and Distractors:} 
+	\item \textbf{High Dimensionality:}
+	\item \textbf{Poor Generalization:}
+	\item \textbf{Lack of Semantic Understanding:}
+	\item \textbf{Sample Inefficiency:}
+	\item \textbf{Sensitivity to Noise and Distractors:}
 \end{itemize}
 
+In contrast to pixel-based methods, object-centric learning approaches leverage
+understanding of objects to create an abstract representation of the
+environment. This mimics human perception, which naturally segments scenes into
+distinct entities and focuses on their interactions
+\cite{nanbo2021learningobjectcentricrepresentationsmultiobject}. Object-centric
+learning represents a paradigm shift in how reinforcement learning agents
+process and understand their environments.
 
-
-In contrast to pixel-based methods, object-centric learning approaches leverage understanding of objects to create an abstract representation of the environment. This mimics human perception,
- which naturally segments scenes into distinct entities and focuses on their interactions \cite{nanbo2021learningobjectcentricrepresentationsmultiobject}. Object-centric learning represents a paradigm shift in how reinforcement learning agents process and understand their environments.
-
-Therefore object centricity provides several advantages over pixel based methods.
+Therefore object centricity provides several advantages over pixel based
+methods.
 
 \textbf{Compositional Understanding:} Object-centric representations naturally excel at treating input features as compositions of distinct entities. Making them understand that certain features
 correspond to the velocity and position of a ball and others to a paddle. This compositionality allows agents to reason about individual objects and their interactions.
 
-\textbf{Improved Generalization:} By focusing on objects rather than pixel patterns, agents can generalize better across visually different but similar scenarios. For example an agent that
- understands the concept of a "ball" an an abstract obect can use this knowledge in environments where the ball has a different shape or appearance in general. (SOURCE)
+\textbf{Improved Generalization:} By focusing on objects rather than pixel patterns, agents can generalize better across visually different but similar scenarios. For example agents that
+understands the concept of a "ball" an an abstract obect can use this knowledge in environments where the ball has a different shape or appearance in general. (SOURCE)
 
 \textbf{Enhanced Interpretability:} Object-centric representations provide naturally a better interpretability then pixel based representations since the agent can reason better that it perceives things as objects rather than "random" pixels.
 
 \textbf{Sample Efficiency:} The structured nature of object-centric representations often leads to more sample-efficient learning. By working with compact, meaningful features rather than high-dimensional
- pixel data, agents can learn policies with fewer rollouts. THis is possible because the object space is already some kind of latent space which is usually the way things work (SOURCE)
+pixel data, agents can learn policies with fewer rollouts. THis is possible because the object space is already some kind of latent space which is usually the way things work (SOURCE)
 
-A significant development in this field is the introduction of OCAtari (Object-Centric Atari) by Delfosse et al. \cite{delfosse2024ocatariobjectcentricatari2600}. OCAtari extends the widely-used Arcade
- Learning Environment (ALE) by providing resource-efficient extraction of object-centric states for Atari 2600 games. THis framework fixes a gap, where despite growing interest in object-centric approaches,
-no standardized benchmark existed for evaluating such methods on the popular Atari domain.
+A significant development in this field is the introduction of OCAtari
+(Object-Centric Atari) by Delfosse et al.
+\cite{delfosse2024ocatariobjectcentricatari2600}. OCAtari extends the
+widely-used Arcade Learning Environment (ALE) by providing resource-efficient
+extraction of object-centric states for Atari 2600 games. THis framework fixes
+a gap, where despite growing interest in object-centric approaches, no
+standardized benchmark existed for evaluating such methods on the popular Atari
+domain.
 
+The OCAtari framework works by two ways of extracting object states. It can
+either extract the object states directly from the emulator's RAM or by using
+template matching on the rendered frames. The RAM-based extraction is more
+efficient and accurate. Directly having those extracted object states allows
+for significantly faster training times and also supports researches in making
+comparable findings since everyone can use the same object states.
 
-
-The OCAtari framework works by two ways of extracting object states. It can either extract the object states directly from the emulator's RAM or by using template matching on the rendered frames. 
-The RAM-based extraction is more efficient and accurate.
-Directly having those extracted object states allows for significantly faster training times and also supports researches in making comparable findings since everyone can use the same object states.
-
-The importance of object-centric approaches in Atari environments is esspecially present in light of pixel-based methods in these domains. Delfosse et al. demonstrated that deep 
-RL agents without interpretable object-centric representations can learn misaligned policies even in simple games like Pong. \cite{delfosse2024interpretableconceptbottlenecksalign} 
-This misalignment problem strengthens the argument for using object-centric understanding rather than attempting to retrofit interpretability onto pixel-based systems.
+The importance of object-centric approaches in Atari environments is
+esspecially present in light of pixel-based methods in these domains. Delfosse
+et al. demonstrated that deep RL agents without interpretable object-centric
+representations can learn misaligned policies even in simple games like Pong.
+\cite{delfosse2024interpretableconceptbottlenecksalign} This misalignment
+problem strengthens the argument for using object-centric understanding rather
+than attempting to retrofit interpretability onto pixel-based systems.
 
 (TODO TALK ABOUT JAXATARI)
 
-
-Object-centric representations naturally lend themselves to relational reasoning, where agents must understand not just individual objects but also
-the relationships and interactions between them. This capability is crucial for complex decision-making in multi-object environments where the
- optimal policy depends on understanding how different entities influence each other.
+Object-centric representations naturally lend themselves to relational
+reasoning, where agents must understand not just individual objects but also
+the relationships and interactions between them. This capability is crucial for
+complex decision-making in multi-object environments where the optimal policy
+depends on understanding how different entities influence each other.
 
 Relational reasoning in reinforcement learning encompasses several key aspects:
 
-\textbf{Spatial Relationships:} Understanding the relative positions of objects and how spatial configurations affect optimal actions. For example, in Pong, the relationship between the paddle position 
+\textbf{Spatial Relationships:} Understanding the relative positions of objects and how spatial configurations affect optimal actions. For example, in Pong, the relationship between the paddle position
 and ball trajectory determines the appropriate movement strategy.
 
 \textbf{Temporal Relationships:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
 
 \textbf{Causality:} (SOURCE) Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
 
-The integration of relational reasoning with model-based approaches offers significant potential for improving agent performance. By incorporating relational structure into world models, agents can make more 
-accurate predictions about future states and plan more effectively. This integration forms a core component of our proposed approach, where object-centric world models explicitly encode relational information to enhance both prediction accuracy and policy learning.
-
-
+The integration of relational reasoning with model-based approaches offers
+significant potential for improving agent performance. By incorporating
+relational structure into world models, agents can make more accurate
+predictions about future states and plan more effectively. This integration
+forms a core component of our proposed approach, where object-centric world
+models explicitly encode relational information to enhance both prediction
+accuracy and policy learning.
 
 \chapter{Methodology}
 \label{chap:methodology}
 
-
-
-
 \section{World Model Architecture}
 \label{sec:world_model_arch}
-
 
 \subsection{LSTM-Based World Model (PongLSTM)}
 \label{subsec:ponglstm}
@@ -361,8 +409,8 @@ why normalization helps in RL in general and why it was used here
 
 \section{Actor-Critic Integration}
 \label{sec:actor_critic}
-Explain how the actor-critic framework is integrated with the object-centric world model. 
-Discuss any modifications made to the standard actor-critic approach to accommodate the 
+Explain how the actor-critic framework is integrated with the object-centric world model.
+Discuss any modifications made to the standard actor-critic approach to accommodate the
 object-centric representations.
 
 \subsection{DreamerV2-Style Actor-Critic}
@@ -375,7 +423,7 @@ how the policy is learned in imagined rollouts from the world model
 
 \subsection{Lambda-Return Computation}
 \label{subsec:lambda_returns}
-provide the formular here and briefly explain it 
+provide the formular here and briefly explain it
 
 \section{Training Pipeline}
 \label{sec:training_pipeline}
@@ -390,7 +438,6 @@ explain how the initial experience for the world model is collected and how it c
 \label{subsec:policy_optimization}
 explain how the policy is optimized and how often
 
-
 \chapter{Experiments and Results}
 \label{chap:experiments}
 (QUESTION Soll ich hier Experimente 1,2,3 etc. auflisten und die dann auf die Forschungsfragen mappen
@@ -399,11 +446,10 @@ mein OC State Rendern und dann irgendeinen Bild Loss wählen, Dafür muss ich ab
 (Normalen Dreamer zum laufen bringen auch für RQ3 Farbe vom Ball ändern)
 (Ablation Studies: Unterschiedliche Architekturen, Unterschiedliche Reward Funktionen)
 
-
 \section{Experimental Setup}
 \label{sec:exp_setup}
 * Experimental Design: Baseline, Comparisons, Eval Metrics
-* Environment and Setup: Pong Environment Characteristics, Object-Centric State Description 
+* Environment and Setup: Pong Environment Characteristics, Object-Centric State Description
 * Hyperparameters and Configuration: Model Architectures, Training Regimes
 * Hardware and Implementation Details: Computational Resources, Software Frameworks
 * Evaluation Protocol: Training and Testing Procedures, Statistical Analysis
@@ -430,16 +476,13 @@ Answer here : (RQ1) How does the prediction accuracy of object-centric world mod
 \label{subsec:sample_efficiency_comp}
 Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
 
-
 \subsection{Final Performance Evaluation}
 \label{subsec:final_performance}
 Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
 
-
 \subsection{Learning Curve Analysis}
 \label{subsec:learning_curves}
 Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
-
 
 \section{Ablation Studies}
 \label{sec:ablation_studies}
@@ -448,21 +491,17 @@ Answer here : (RQ1) To what extent does integrating object-centric representatio
 \label{subsec:oc_impact}
 Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
 
-
 \subsection{Architecture Component Analysis}
 \label{subsec:architecture_analysis}
 Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
-
 
 \subsection{Reward Function Design Effects}
 \label{subsec:reward_effects}
 Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
 
-
 \subsection{Real vs. Model Comparison}
 \label{subsec:real_vs_model}
 Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framework learn optimal policies when trained on imagined rollouts from object-centric world models?
-
 
 \subsection{Policy Behavior Visualization}
 \label{subsec:policy_visualization}
@@ -473,24 +512,24 @@ Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framewo
 * Challenges during training, what decreases model performance
 
 * Analysis of Results
-	- Strengths of the Proposed Approach
-	- Limitations and Challenges
-	- Comparison with Existing Methods
+- Strengths of the Proposed Approach
+- Limitations and Challenges
+- Comparison with Existing Methods
 
 * Technical Insights
-	- World Model Design Choices
-	- Training Stability Issues
-	- Reward Engineering Importance
+- World Model Design Choices
+- Training Stability Issues
+- Reward Engineering Importance
 
 * Implications for Object-Centric RL
-	- Benefits of Integration
-	- Generalization Potential
-	- Scalability Considerations
+- Benefits of Integration
+- Generalization Potential
+- Scalability Considerations
 
 * Future Research Directions
-	- More Complex Environments
-	- Improved Object Discovery
-	- Multi-Object Scenarios
+- More Complex Environments
+- Improved Object Discovery
+- Multi-Object Scenarios
 
 \chapter{Conclusion and Future Work}
 \label{chap:conclusion}
@@ -537,7 +576,8 @@ Detail the software libraries, frameworks, and versions used in the implementati
 Provide step-by-step instructions for reproducing the experiments, including setup, data preparation, and execution.
 
 \chapter{Supplementary Figures and Tables}
-Include additional figures and tables that complement the main text, such as visualizations of training curves or ablation study results.
+Include additional figures and tables that complement the main text, such as
+visualizations of training curves or ablation study results.
 \label{app:supplementary}
 
 \end{document}
