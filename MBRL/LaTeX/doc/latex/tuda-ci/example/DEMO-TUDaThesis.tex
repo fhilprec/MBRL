@@ -116,58 +116,73 @@
 \chapter{Introduction}
 \label{chap:introduction}
 
-Reinforcement Learning as one of the three flavors in Machine Learning among Supervised
-and Unsupervised Learning follows the approach of having an agent
-performs actions in an environment and receiving rewards
-for certain actions. So unlike Supervised Learning for example there is no ground
-truth from the which the agent can learn from. Among numerous distinctions
-within Reinforcement Learning there is the difference
-between Model Based Reinforcement Learning and Model Free Reinforcement Learning.
-The Latter focuses on the learning of only the Agent which is deployed in
-the environment (or learns from samples). Thus the agent
-will have no explicit way of predicting the next state of the environment, although
-sufficiently large for example neural networks might create some implicit
-model of the world. Model based Reinforcement learning
-augments the architecture by a Model that is predicting the next state of the world
-but also still trains an agent. Although model free approaches usually are less complex
-since they only have to learn one model, the agent they also have significant disadvantages.
+Reinforcement Learning as one of the three flavors in Machine Learning among
+Supervised and Unsupervised Learning follows the approach of having an agent
+performs actions in an environment and receiving rewards for certain actions.
+So unlike Supervised Learning for example there is no ground truth from the
+which the agent can learn from. Among numerous distinctions within
+Reinforcement Learning there is the difference between Model Based
+Reinforcement Learning and Model Free Reinforcement Learning. The Latter
+focuses on the learning of only the Agent which is deployed in the environment
+(or learns from samples). Thus the agent will have no explicit way of
+predicting the next state of the environment, although sufficiently large for
+example neural networks might create some implicit model of the world. Model
+based Reinforcement learning augments the architecture by a Model that is
+predicting the next state of the world but also still trains an agent. Although
+model free approaches usually are less complex since they only have to learn
+one model, the agent they also have significant disadvantages.
 
-Model Free Learning approaches often struggle with sample efficiency and generalization to new tasks. 
-Small changes in the environment can lead to significant drops in performance.
-Moreover, agents can learn misaligned policies that exploit loopholes in the environment rather than achieving 
-the intended goals. These challenges highlight the need for more structured and interpretable learning methods. So Object Centricity and Model Based approaches
-both have the goal of improving abstract reasoning by developing a more abstract understanding of the world and improving sample efficiency.
-1.3 Research Questions and Objectives
-This thesis aims to investigate the potential benefits
-of integrating object-centric learning into model-based reinforcement learning frameworks to address these challenges by harvesting the
-strengths of both paradigms. This thesis is therefore guided by the following research questions:
+Model Free Learning approaches often struggle with sample efficiency and
+generalization to new tasks. Small changes in the environment can lead to
+significant drops in performance. Moreover, agents can learn misaligned
+policies that exploit loopholes in the environment rather than achieving the
+intended goals. These challenges highlight the need for more structured and
+interpretable learning methods. So Object Centricity and Model Based approaches
+both have the goal of improving abstract reasoning by developing a more
+abstract understanding of the world and improving sample efficiency. 1.3
+Research Questions and Objectives This thesis aims to investigate the potential
+benefits of integrating object-centric learning into model-based reinforcement
+learning frameworks to address these challenges by harvesting the strengths of
+both paradigms. This thesis is therefore guided by the following research
+questions:
 \begin{enumerate}
-	\item How do object-centric world models compare to pixel-based world models regarding prediction accuracy and sample efficiency?
-	\item Can an actor-critic framework be effectively trained on simulated rollouts from object-centric world models?
-	\item What is the impact of different world model architectures (such as LSTM-based versus alternative designs) on the overall performance of object-centric model-based reinforcement learning in structured environments?
-	\item Does the object-centric inductive bias in world models improve robustness to changes in the environment?
+	\item How do object-centric world models compare to pixel-based world models
+	      regarding prediction accuracy and sample efficiency?
+	\item Can an actor-critic framework be effectively trained on simulated rollouts from
+	      object-centric world models?
+	\item What is the impact of different world model architectures (such as LSTM-based
+	      versus alternative designs) on the overall performance of object-centric
+	      model-based reinforcement learning in structured environments?
+	\item Does the object-centric inductive bias in world models improve robustness to
+	      changes in the environment?
 \end{enumerate}
 
-Within this thesis we propose to develop a world model that is running on top of object centric states provided by the JAXAtari framework. This world model will be based on an LSTM architecture
-and will be trained to predict the next state of the environment given the current state and action.
-An actor-critic framework based on the DreamerV2 architecture will be integrated with the world model to learn policies from imagined rollouts.
-The training pipeline will involve alternating between updating the world model and optimizing the policy based on simulated experiences.
-The performance of the proposed approach will be evaluated in the Pong environment from the Atari benchmark suite, comparing it against pixel-based baselines and assessing its sample efficiency and robustness.
+Within this thesis we propose to develop a world model that is running on top
+of object centric states provided by the JAXAtari framework. This world model
+will be based on an LSTM architecture and will be trained to predict the next
+state of the environment given the current state and action. An actor-critic
+framework based on the DreamerV2 architecture will be integrated with the world
+model to learn policies from imagined rollouts. The training pipeline will
+involve alternating between updating the world model and optimizing the policy
+based on simulated experiences. The performance of the proposed approach will
+be evaluated in the Pong environment from the Atari benchmark suite, comparing
+it against pixel-based baselines and assessing its sample efficiency and
+robustness.
 
-The remainder of this thesis is structured as follows:
-Chapter 2 provides background information on reinforcement learning, model-based approaches, and object-centric representations.
-Chapter 3 details the methodology, including the world model architecture, actor-critic integration, and training pipeline.
-Chapter 4 presents the experimental setup, results, and analysis.
-Chapter 5 discusses the findings, challenges, and implications of the results.
-Finally, Chapter 6 concludes the thesis and outlines directions for future work.
+The remainder of this thesis is structured as follows: Chapter 2 provides
+background information on reinforcement learning, model-based approaches, and
+object-centric representations. Chapter 3 details the methodology, including
+the world model architecture, actor-critic integration, and training pipeline.
+Chapter 4 presents the experimental setup, results, and analysis. Chapter 5
+discusses the findings, challenges, and implications of the results. Finally,
+Chapter 6 concludes the thesis and outlines directions for future work.
 
 \chapter{Background and Related Work}
 \label{chap:background}
-
+This chapter aims to give an overview into the relevant mathematical background and related work
+in the fields of Reinforcement Learning, Model-Based Reinforcement Learning and Object-Centric Learning.
 \section{Reinforcement Learning}
 \label{sec:reinforcement_learning}
-
-(TODO  (MDP's, model-free, model-based als Teil davon), "Dreamer Architecture" (vgl. auch dreamerv1, dreamerv2, dreamerv3, evtl. PlaNet), "Object Centric RL" (als Teil davon auch object-centric model-based RL)
 
 Reinforcement Learning (RL) is a machine learning paradigm that involves
 training agents to make sequential decisions by interacting with an
@@ -175,6 +190,87 @@ environment. At its core, RL is often formalized using Markov Decision
 Processes (MDPs), where the environment's dynamics are defined by states,
 actions, transition probabilities, and reward functions. RL can be broadly
 categorized into model-free and model-based approaches.
+
+Reinforcement Learning (RL) is a machine learning subcategory that focuses on
+training aganets that make decision in an environment. An environment can be a
+game, a robotic control task or any other sequential decision making problem.
+To give that a more structured formulation the definition of a Markov Decision
+Process (MDP) is used. This term comes from the field of operations research
+and was named after the Russian mathematician Andrey Markov in relation to his
+work on stochastic processes. An MDP is as a tuple $\mathcal{M} = (\mathcal{S},
+	\mathcal{A}, P, R, \gamma)$, where:
+
+\begin{itemize}
+	\item $\mathcal{S}$ is the state space
+	\item $\mathcal{A}$ is the action space
+	\item $P(s'|s,a)$ is the transition probability function defining the probability of transitioning to state $s'$ given current state $s$ and action $a$
+	\item $R(s,a,s')$ is the reward function specifying the immediate reward received after taking action $a$ in state $s$ and transitioning to state $s'$
+	\item $\gamma \in [0,1]$ is the discount factor that determines the importance of future rewards. This is also often used to prove convergence of certain algorithms.
+\end{itemize}
+
+Markov Chains assume the Markov property, which states that the future state
+depends only on the current state and action, not on the entire history of past
+states and actions. This memoryless property is what enabled many
+computationally viable algorithms to be developed in the first place since
+every probability computed is only conditioned on the current state and action
+so a finite set of values instead of a potentially infinite set of past states
+and actions.
+
+Given that we now defined what the environment actually means lets look at the
+goal of the agent. The agent's goal is to learn an optimal policy $\pi^*(s)$
+that maximizes the expected cumulative discounted reward, known as the return:
+\begin{equation}
+	G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}
+\end{equation}
+
+The value function $V^\pi(s)$ represents the expected return when starting from
+state $s$ and following policy $\pi$:
+\begin{equation}
+	V^\pi(s) = \mathbb{E}_\pi[G_t | S_t = s]
+\end{equation}
+
+Similarly, the action-value function $Q^\pi(s,a)$ represents the expected
+return when starting from state $s$, taking action $a$, and then following
+policy $\pi$.
+
+Model-free reinforcement learning approaches learn optimal policies directly
+from experience without explicitly modeling the environment dynamics. These
+methods estimate value functions or policies through trial-and-error
+interactions with the environment, making them broadly applicable but
+potentially sample-inefficient.
+
+Popular model-free algorithms include temporal difference methods like
+Q-Learning and SARSA, as well as policy gradient methods such as REINFORCE,
+Actor-Critic, and Proximal Policy Optimization (PPO). These approaches have
+demonstrated remarkable success in complex domains, particularly when combined
+with deep neural networks in Deep Reinforcement Learning.
+
+However, model-free methods face several limitations: they typically require
+extensive environmental interaction to learn effective policies, struggle with
+sample efficiency in sparse reward environments, and provide limited
+interpretability regarding learned behaviors.
+
+Model-based reinforcement learning addresses some limitations of model-free
+approaches by learning an explicit model of the environment dynamics. This
+world model enables agents to simulate future trajectories, plan optimal
+actions, and learn from imagined experiences rather than relying solely on real
+environmental interactions.
+
+The world model typically learns to predict next states and rewards given
+current states and actions:
+\begin{align}
+	\hat{s}_{t+1} & = f_\theta(s_t, a_t)        \\
+	\hat{r}_{t+1} & = g_\phi(s_t, a_t, s_{t+1})
+\end{align}
+
+where $f_\theta$ and $g_\phi$ represent parameterized functions (often neural
+networks) that approximate the true environment dynamics.
+
+Model-based approaches offer several advantages: improved sample efficiency
+through simulation, better generalization to new tasks, and enhanced
+interpretability through explicit world understanding. However, they also
+introduce challenges related to model accuracy, planning complexity, and the
+potential for model bias to affect learned policies.
 
 In model-free RL, the agent learns a policy directly from interactions with the
 environment without constructing an explicit model of the world. By contrast,

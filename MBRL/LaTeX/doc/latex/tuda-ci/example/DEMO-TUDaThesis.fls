@@ -520,11 +520,6 @@ INPUT ./DEMO-TUDaThesis.lot
 INPUT ./DEMO-TUDaThesis.lot
 INPUT DEMO-TUDaThesis.lot
 OUTPUT DEMO-TUDaThesis.lot
-INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Roman-tlf-t1.tfm
-INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Roman-tlf-t1.tfm
-INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Bold-tlf-t1.tfm
-INPUT /usr/share/texlive/texmf-dist/fonts/vf/public/xcharter/XCharter-Bold-tlf-t1.vf
-INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Bold-tlf-t1--base.tfm
 INPUT /usr/share/texlive/texmf-dist/tex/latex/xcharter/TS1XCharter-TLF.fd
 INPUT /usr/share/texlive/texmf-dist/tex/latex/xcharter/TS1XCharter-TLF.fd
 INPUT /usr/share/texlive/texmf-dist/tex/latex/xcharter/TS1XCharter-TLF.fd
@@ -532,6 +527,11 @@ INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter1-Roman-ts
 INPUT /usr/share/texlive/texmf-dist/fonts/vf/public/xcharter/XCharter1-Roman-ts1.vf
 INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter1-Roman-ts1--base.tfm
 INPUT /usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch1_co4ru4.enc
+INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Roman-tlf-t1.tfm
+INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Roman-tlf-t1.tfm
+INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Bold-tlf-t1.tfm
+INPUT /usr/share/texlive/texmf-dist/fonts/vf/public/xcharter/XCharter-Bold-tlf-t1.vf
+INPUT /usr/share/texlive/texmf-dist/fonts/tfm/public/xcharter/XCharter-Bold-tlf-t1--base.tfm
 INPUT /usr/share/texlive/texmf-dist/fonts/tfm/google/roboto/Roboto-Bold-lf-t1.tfm
 INPUT /usr/share/texlive/texmf-dist/fonts/vf/google/roboto/Roboto-Bold-lf-t1.vf
 INPUT /usr/share/texlive/texmf-dist/fonts/tfm/google/roboto/Roboto-Bold-lf-t1--base.tfm
