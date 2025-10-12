@@ -229,9 +229,11 @@ state $s$ and following policy $\pi$:
 	V^\pi(s) = \mathbb{E}_\pi[G_t | S_t = s]
 \end{equation}
 
-Similarly, the action-value function $Q^\pi(s,a)$ represents the expected
-return when starting from state $s$, taking action $a$, and then following
-policy $\pi$.
+In a simillar manner, $Q^\pi(s,a)$ represents the expected return when starting
+from state $s$, taking action $a$, and then following policy $\pi$. Making the
+action value function a function of both state and action. This can sometimes
+be more useful since it directly tells you the value of taking a certain action
+as well.
 
 Model-free reinforcement learning approaches learn optimal policies directly
 from experience without explicitly modeling the environment dynamics. These
@@ -239,61 +241,158 @@ methods estimate value functions or policies through trial-and-error
 interactions with the environment, making them broadly applicable but
 potentially sample-inefficient.
 
+As mentioned in the introduction, model-free rely on learning an agent directly
+by interacting with the environment and receiving feedback in the form of
+rewards. This trial-and-error process allows the agent to improve its policy
+over time. By omitting a world model the complexity of the overall system is
+reduced but the the agent is usually quite sample inefficient (TODO SOURCE).
+Also, the lack of a model can make it difficult for the agent to plan ahead or
+consider the long-term consequences of its actions. On top of that world models
+can improve generalization to new tasks and make the agent more robust. (TODO
+SOURCE) Moreover they provide limited interpretability with regards to their
+learned policy.
+
 Popular model-free algorithms include temporal difference methods like
 Q-Learning and SARSA, as well as policy gradient methods such as REINFORCE,
-Actor-Critic, and Proximal Policy Optimization (PPO). These approaches have
-demonstrated remarkable success in complex domains, particularly when combined
-with deep neural networks in Deep Reinforcement Learning.
-
-However, model-free methods face several limitations: they typically require
-extensive environmental interaction to learn effective policies, struggle with
-sample efficiency in sparse reward environments, and provide limited
-interpretability regarding learned behaviors.
+Actor-Critic, and Proximal Policy Optimization (PPO).
 
 Model-based reinforcement learning addresses some limitations of model-free
-approaches by learning an explicit model of the environment dynamics. This
-world model enables agents to simulate future trajectories, plan optimal
-actions, and learn from imagined experiences rather than relying solely on real
-environmental interactions.
+approaches by learning an explicit model of the environment dynamics.
 
 The world model typically learns to predict next states and rewards given
 current states and actions:
+
 \begin{align}
 	\hat{s}_{t+1} & = f_\theta(s_t, a_t)        \\
 	\hat{r}_{t+1} & = g_\phi(s_t, a_t, s_{t+1})
 \end{align}
 
 where $f_\theta$ and $g_\phi$ represent parameterized functions (often neural
-networks) that approximate the true environment dynamics.
+networks) that approximate the true environment dynamics. Sometimes the reward
+prediction can be omitted if the reward can somehow be directly read out from
+the game itself which is common in Atari games for example assuming there
+exists an object centric approach that encompasses the score.
 
-Model-based approaches offer several advantages: improved sample efficiency
-through simulation, better generalization to new tasks, and enhanced
-interpretability through explicit world understanding. However, they also
-introduce challenges related to model accuracy, planning complexity, and the
-potential for model bias to affect learned policies.
+Model-based methods potentially have much better sample efficiency since it
+takes less sampling in the environment to learn reasonable state transitions
+than it takes to train a reinforcement learning. After the Model has been
+properly trained the agent can learn entirely within the worldmodel making
+additional sampling unnecessary. Although depending on game complexity the
+initial sampling which is usually done by a random policy might not see diverse
+enough states. This is for most Atari Games not an Issue but for more complex
+environments it can be important to retrain the worldmodel with new experience
+that is sampled by the now trained (within the model) trained agent in the real
+environment. (TODO SOURCE) Moreover there are approaches that use explicit
+planning strategies that hugely benefit interpretability. Using the worldmodel
+the Agent can make guesses what might happen in the future and explicitly
+reason why it decides for a certain action. (TODO SOURCE)
 
-In model-free RL, the agent learns a policy directly from interactions with the
-environment without constructing an explicit model of the world. By contrast,
-model-based RL incorporates a world model to predict future states or rewards,
-enabling more sample-efficient training by simulating rollouts in the
-constructed model. This abstraction allows agents to generalize better and
-potentially handle unseen situations more effectively.
+But training a well designed and stable model can create several challenges for
+example the world model can introduce a bias into the agent which doesnt hold
+in the true environment. The agent can learn to exploit errors in the
+worldmodel to artificially boost its score but then performing much worse
+during inference. (TODO SOURCE)
 
 \section{Dreamer Architecture}
 \label{sec:dreamer_architecture}
 
-The Dreamer architecture represents a family of model-based RL algorithms,
-namely DreamerV1, V2, and V3, that focus on combining world models with
-actor-critic methods for policy and value learning. Dreamer utilizes latent
-dynamics models to predict environment behavior in a compact latent space,
-enabling the agent to train policies on imagined rollouts. Notable predecessors
-like PlaNet introduced the concept of latent space dynamics, which Dreamer
-extends by incorporating actor-critic frameworks.
+The Dreamer architecture is a family of model-based RL algorithms (DreamerV1,
+V2, V3) that use a world model together with actor-critic methods. The main
+idea is to learn a compact latent space where the agent can imagine rollouts
+and train its policy without always interacting with the real environment.
+Dreamer builds on ideas from PlaNet, which first used latent dynamics, but
+Dreamer adds actor-critic learning and works better for Atari games.
 
-DreamerV2 builds on DreamerV1 by improving stability and scalability to
-discrete action spaces, commonly used in Atari benchmarks. DreamerV3 further
-generalizes the approach to handle diverse tasks with limited hyperparameter
-tuning.
+DreamerV2 improves DreamerV1 by making it more stable and able to handle
+discrete actions, which is important for Atari. DreamerV3 tries to make the
+method work for many different tasks without changing hyperparameters.
+
+There are different ways to train a world model. You can predict future
+observations directly or predict latent states. Also, there are many possible
+architectures for the world model, like MLPs, LSTMs, or Transformers.
+
+DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
+
+In general, Dreamer works by learning a world model, then using it to imagine
+future states, and then training the actor and critic on these imagined
+rollouts. The world model predicts what will happen next, the actor tries to
+choose good actions, and the critic estimates how good a state is.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\textwidth]{images/DreamerFlow.png}
+	\caption{Overview of the DreamerV2 training pipeline. The world model learns to predict future states and rewards, enabling the actor-critic framework to optimize policies using imagined rollouts.}
+	\label{fig:dreamer_flow}
+\end{figure}
+
+The $\lambda$-target is defined recursively as:
+\begin{equation}
+	V^{\lambda}_t = \hat{r}_t + \hat{\gamma}_t \cdot \begin{cases}
+		(1 - \lambda)v_\xi(\hat{z}_{t+1}) + \lambda V^{\lambda}_{t+1} & \text{if } t < H \\
+		v_\xi(\hat{z}_H)                                              & \text{if } t = H
+	\end{cases}
+\end{equation}
+
+Here, $\hat{r}_t$ is the predicted reward, $\hat{\gamma}_t$ is the predicted
+discount, $v_\xi(\hat{z}_t)$ is the critic value, and $\lambda$ (usually 0.95)
+controls how much you care about future rewards. This formula mixes short and
+long-term returns.
+
+In my case I don't have $z$ but just the observation itself, so no latent
+space.
+
+The actor in DreamerV2 uses a loss that mixes different gradient estimators to
+make learning stable. The actor tries to maximize the same $\lambda$-returns as
+the critic, using both REINFORCE and backpropagation through the model.
+
+The actor loss is:
+\begin{align}
+	\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \\
+	                                                                  & -(1-\rho)V^{\lambda}_t                                                                 \\
+	                                                                  & -\eta \mathcal{H}[a_t|\hat{z}_t] \Big]
+\end{align}
+
+The loss has three parts:
+
+\textbf{REINFORCE:} Maximizes the log-probability of actions, weighted by the advantage (difference between lambda-return and critic). The stop-gradient (sg) is used to not mess up the critic.
+
+\textbf{Dynamics Backprop:} Backpropagates through the model for more direct gradients.
+
+\textbf{Entropy Regularization:} Encourages exploration by making the action distribution more random. $\eta$ controls how much exploration.
+
+$\rho$ decides how much REINFORCE vs. backprop you use. For Atari, usually $\rho=1$ (just REINFORCE), $\eta=10^{-3}$.
+
+The critic in DreamerV2 estimates the expected return from a latent state. It
+is needed for both the lambda-targets and as a baseline for REINFORCE.
+
+The critic is trained with TD learning using the lambda-targets:
+\begin{equation}
+	\mathcal{L}(\xi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \frac{1}{2} \left(v_\xi(\hat{z}_t) - \text{sg}(V^{\lambda}_t)\right)^2\right]
+\end{equation}
+
+Here, $v_\xi(\hat{z}_t)$ is the critic's value, and $\text{sg}(V^{\lambda}_t)$
+is the lambda-target with stopped gradients. This helps keep learning stable.
+
+Some tricks are used to make the critic better:
+
+\textbf{Target Network:} Like in DQN, a delayed copy of the critic is used for targets, updated every 100 steps.
+
+\textbf{Trajectory Weighting:} Loss terms are weighted by predicted discounts, so episode ends are handled properly.
+
+\textbf{Latent States:} The critic works on compact latent states, not raw observations, which makes learning faster and more stable.
+
+The critic is usually a small MLP with ELU activations and about 1 million
+parameters, outputting a single value for each state.
+
+% \subsection{TD Lambda Targets}
+% \label{subsec:tdlambdatargets}
+
+% \subsection{TD Lambda Targets}
+% \label{subsec:tdlambdatargets}
+
+\section{Object-Centric Reinforcement Learning}
+\label{sec:object_centric_rl}
+(TODO mention object-centric model-based RL)
 
 Object-Centric Reinforcement Learning (OCRL) emphasizes representing an
 environment as a collection of interacting entities, rather than processing the
@@ -305,102 +404,6 @@ Object-centric model-based RL combines the abstraction of object
 representations with predictive world models. By leveraging structured
 object-centric states, agents can reason about dynamic interactions in a more
 robust and interpretable manner compared to pixel-based representations.
-
-There are multiple way to to train a world model. As mentioned above already
-you can predict latent states or directly predict future observations. There
-are also multiple different architectures which can do the job. From a simple
-MLP over LSTMs to Transformers there have been many different approiaches to
-that same problem. Tes
-
-DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
-
-Explain in general what dreamer does what are the components and how do they
-play together
-
-The $\lambda$-target is defined recursively as:
-\begin{equation}
-	V^{\lambda}_t = \hat{r}_t + \hat{\gamma}_t \cdot \begin{cases}
-		(1 - \lambda)v_\xi(\hat{z}_{t+1}) + \lambda V^{\lambda}_{t+1} & \text{if } t < H \\
-		v_\xi(\hat{z}_H)                                              & \text{if } t = H
-	\end{cases}
-\end{equation}
-
-where $\hat{r}_t$ represents the predicted reward, $\hat{\gamma}_t$ is the
-predicted discount factor, $v_\xi(\hat{z}_t)$ is the critic's value estimate,
-and $\lambda = 0.95$ controls the weighting between immediate and future
-rewards. This formulation creates a weighted average of n-step returns, where
-longer horizons receive exponentially decreasing weights.
-
-In my case I dont have z but simply the observation itself. So no latent space.
-
-The actor network in DreamerV2 employs a sophisticated loss function that
-combines multiple gradient estimators to achieve both learning efficiency and
-convergence stability. The actor aims to maximize the same $\lambda$-return
-targets used for critic training, incorporating intermediate rewards directly
-rather than relying solely on terminal value estimates.
-
-The combined actor loss function is formulated as:
-\begin{align}
-	\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \quad \text{[REINFORCE]} \\
-	                                                                  & -(1-\rho)V^{\lambda}_t \quad \text{[Dynamics Backprop]}                                                         \\
-	                                                                  & -\eta \mathcal{H}[a_t|\hat{z}_t] \quad \text{[Entropy Regularization]} \Big]
-\end{align}
-
-The loss function incorporates three distinct components:
-
-\textbf{REINFORCE Gradients:}  REINFORCE algorithm, which maximizes the log-probability of actions weighted by their advantage values. The advantage is computed to be the difference between the lambda-return and the critic's estimate, with gradients stopped around the targets (denoted by sg stop gradient) to prevent interference with critic learning
-
-\textbf{Entropy Regularization:} The third term encourages exploration by maximizing the entropy of the action distribution. The entropy coefficient $\eta$ controls the trade-off between exploitation and exploration, with higher values promoting more diverse action selection.
-
-The weighting parameter $\rho$ determines the relative contribution of
-REINFORCE versus straight-through gradients. For discrete action spaces like
-Atari, DreamerV2 typically uses $\rho = 1$ (pure REINFORCE) with $\eta =
-	10^{-3}$, while continuous control tasks benefit from $\rho = 0$ (pure dynamics
-backpropagation) with $\eta = 10^{-4}$.
-
-The critic network in DreamerV2 serves as a value function approximator that
-estimates the expected discounted sum of future rewards from any given latent
-state. This component is essential for both the $\lambda$-target computation
-and providing baseline estimates for the REINFORCE algorithm, making it a
-cornerstone of the learning process.
-
-The critic is trained using temporal difference learning with the
-$\lambda$-targets as regression targets. The loss function is formulated as a
-squared error between the critic's predictions and the computed
-$\lambda$-returns:
-\begin{equation}
-	\mathcal{L}(\xi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \frac{1}{2} \left(v_\xi(\hat{z}_t) - \text{sg}(V^{\lambda}_t)\right)^2\right]
-\end{equation}
-
-where $v_\xi(\hat{z}_t)$ represents the critic's value estimate for latent
-state $\hat{z}_t$, and $\text{sg}(V^{\lambda}_t)$ denotes the $\lambda$-target
-with stopped gradients. The gradient stopping prevents the critic's learning
-from interfering with the target computation, maintaining the stability of the
-temporal difference updates.
-
-Several key design choices enhance the critic's learning efficiency:
-
-\textbf{Target Network Stabilization:} Following the approach used in Deep Q-Networks, DreamerV2 employs a target network that provides stable targets for critic learning. The target network is a delayed copy of the critic parameters, updated every 100 gradient steps. This approach prevents the rapid changes in the critic from destabilizing the learning targets.
-
-\textbf{Trajectory Weighting:} The loss terms are weighted by cumulative predicted discount factors to account for episode termination probabilities. This weighting ensures that states likely to lead to episode endings receive appropriate emphasis during training.
-
-\textbf{Compact State Representation:} Unlike traditional value functions that operate on high-dimensional observations, the DreamerV2 critic leverages the compact latent states $\hat{z}_t$ learned by the world model. This representation provides several advantages: reduced computational complexity, better generalization across similar states, and improved learning efficiency due to the structured nature of the latent space.
-
-The critic architecture consists of a multi-layer perceptron with ELU
-activations and approximately 1 million trainable parameters. The network
-outputs a single scalar value representing the expected return from the input
-state, enabling efficient batch processing of imagined trajectories during
-training.
-
-% \subsection{TD Lambda Targets}
-% \label{subsec:tdlambdatargets}
-
-% \subsection{TD Lambda Targets}
-% \label{subsec:tdlambdatargets}
-
-\section{Object-Centric Reinforcement Learning}
-\label{sec:object_centric_rl}
-(TODO mention object-centric model-based RL)
 
 \begin{itemize}
 	\item \textbf{High Dimensionality:}
