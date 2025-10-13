@@ -122,7 +122,7 @@ performs actions in an environment and receiving rewards for certain actions.
 So unlike Supervised Learning for example there is no ground truth from the
 which the agent can learn from. Among numerous distinctions within
 Reinforcement Learning there is the difference between Model Based
-Reinforcement Learning and Model Free Reinforcement Learning. The Latter
+Reinforcement Learning and Model Free Reinforcement Learning. The latter
 focuses on the learning of only the Agent which is deployed in the environment
 (or learns from samples). Thus the agent will have no explicit way of
 predicting the next state of the environment, although sufficiently large for
@@ -139,12 +139,11 @@ policies that exploit loopholes in the environment rather than achieving the
 intended goals. These challenges highlight the need for more structured and
 interpretable learning methods. So Object Centricity and Model Based approaches
 both have the goal of improving abstract reasoning by developing a more
-abstract understanding of the world and improving sample efficiency. 1.3
-Research Questions and Objectives This thesis aims to investigate the potential
-benefits of integrating object-centric learning into model-based reinforcement
-learning frameworks to address these challenges by harvesting the strengths of
-both paradigms. This thesis is therefore guided by the following research
-questions:
+abstract understanding of the world and improving sample efficiency. This
+thesis aims to investigate the potential benefits of integrating object-centric
+learning into model-based reinforcement learning frameworks to address these
+challenges by harvesting the strengths of both paradigms. This thesis is
+therefore guided by the following research questions:
 \begin{enumerate}
 	\item How do object-centric world models compare to pixel-based world models
 	      regarding prediction accuracy and sample efficiency?
@@ -184,21 +183,14 @@ in the fields of Reinforcement Learning, Model-Based Reinforcement Learning and 
 \section{Reinforcement Learning}
 \label{sec:reinforcement_learning}
 
-Reinforcement Learning (RL) is a machine learning paradigm that involves
-training agents to make sequential decisions by interacting with an
-environment. At its core, RL is often formalized using Markov Decision
-Processes (MDPs), where the environment's dynamics are defined by states,
-actions, transition probabilities, and reward functions. RL can be broadly
-categorized into model-free and model-based approaches.
-
 Reinforcement Learning (RL) is a machine learning subcategory that focuses on
-training aganets that make decision in an environment. An environment can be a
+training agents that make decision in an environment. An environment can be a
 game, a robotic control task or any other sequential decision making problem.
 To give that a more structured formulation the definition of a Markov Decision
 Process (MDP) is used. This term comes from the field of operations research
 and was named after the Russian mathematician Andrey Markov in relation to his
-work on stochastic processes. An MDP is as a tuple $\mathcal{M} = (\mathcal{S},
-	\mathcal{A}, P, R, \gamma)$, where:
+work on stochastic processes. An MDP is defined as a tuple $\mathcal{M} =
+	(\mathcal{S}, \mathcal{A}, P, R, \gamma)$, where:
 
 \begin{itemize}
 	\item $\mathcal{S}$ is the state space
@@ -216,7 +208,7 @@ every probability computed is only conditioned on the current state and action
 so a finite set of values instead of a potentially infinite set of past states
 and actions.
 
-Given that we now defined what the environment actually means lets look at the
+Given that we now defined what the environment actually means let us examine at the
 goal of the agent. The agent's goal is to learn an optimal policy $\pi^*(s)$
 that maximizes the expected cumulative discounted reward, known as the return:
 \begin{equation}
@@ -229,7 +221,7 @@ state $s$ and following policy $\pi$:
 	V^\pi(s) = \mathbb{E}_\pi[G_t | S_t = s]
 \end{equation}
 
-In a simillar manner, $Q^\pi(s,a)$ represents the expected return when starting
+In a similar manner, $Q^\pi(s,a)$ represents the expected return when starting
 from state $s$, taking action $a$, and then following policy $\pi$. Making the
 action value function a function of both state and action. This can sometimes
 be more useful since it directly tells you the value of taking a certain action
@@ -245,12 +237,12 @@ As mentioned in the introduction, model-free rely on learning an agent directly
 by interacting with the environment and receiving feedback in the form of
 rewards. This trial-and-error process allows the agent to improve its policy
 over time. By omitting a world model the complexity of the overall system is
-reduced but the the agent is usually quite sample inefficient (TODO SOURCE).
-Also, the lack of a model can make it difficult for the agent to plan ahead or
-consider the long-term consequences of its actions. On top of that world models
-can improve generalization to new tasks and make the agent more robust. (TODO
-SOURCE) Moreover they provide limited interpretability with regards to their
-learned policy.
+reduced but the the agent is usually quite sample inefficient
+\cite{mnih2015human}. Also, the lack of a model can make it difficult for the
+agent to plan ahead or consider the long-term consequences of its actions. On
+top of that world models can improve generalization to new tasks and make the
+agent more robust \cite{ha2018world}. Moreover they provide limited
+interpretability with regards to their learned policy.
 
 Popular model-free algorithms include temporal difference methods like
 Q-Learning and SARSA, as well as policy gradient methods such as REINFORCE,
@@ -282,16 +274,17 @@ initial sampling which is usually done by a random policy might not see diverse
 enough states. This is for most Atari Games not an Issue but for more complex
 environments it can be important to retrain the worldmodel with new experience
 that is sampled by the now trained (within the model) trained agent in the real
-environment. (TODO SOURCE) Moreover there are approaches that use explicit
-planning strategies that hugely benefit interpretability. Using the worldmodel
-the Agent can make guesses what might happen in the future and explicitly
-reason why it decides for a certain action. (TODO SOURCE)
+environment \cite{hafner2019dreamer}. Moreover there are approaches that use
+explicit planning strategies that hugely benefit interpretability. Using the
+worldmodel the Agent can make guesses what might happen in the future and
+explicitly reason why it decides for a certain action
+\cite{schrittwieser2020mastering}.
 
 But training a well designed and stable model can create several challenges for
 example the world model can introduce a bias into the agent which doesnt hold
 in the true environment. The agent can learn to exploit errors in the
 worldmodel to artificially boost its score but then performing much worse
-during inference. (TODO SOURCE)
+during inference \cite{lambert2020objective}.
 
 \section{Dreamer Architecture}
 \label{sec:dreamer_architecture}
@@ -305,18 +298,15 @@ Dreamer adds actor-critic learning and works better for Atari games.
 
 DreamerV2 improves DreamerV1 by making it more stable and able to handle
 discrete actions, which is important for Atari. DreamerV3 tries to make the
-method work for many different tasks without changing hyperparameters.
-
-There are different ways to train a world model. You can predict future
-observations directly or predict latent states. Also, there are many possible
-architectures for the world model, like MLPs, LSTMs, or Transformers.
-
-DreamerV2 \cite{hafner2019dreamer} is a model-based RL algorithm.
-
-In general, Dreamer works by learning a world model, then using it to imagine
-future states, and then training the actor and critic on these imagined
-rollouts. The world model predicts what will happen next, the actor tries to
-choose good actions, and the critic estimates how good a state is.
+method work for many different tasks without changing hyperparameters. There
+are different ways to train a world model. You can predict future observations
+directly or predict latent states. Also, there are many possible architectures
+for the world model, like MLPs, LSTMs, or Transformers.DreamerV2
+\cite{hafner2019dreamer} is a model-based RL algorithm. In general, Dreamer
+works by learning a world model, then using it to imagine future states, and
+then training the actor and critic on these imagined rollouts. The world model
+predicts what will happen next, the actor tries to choose good actions, and the
+critic estimates how good a state is.
 
 \begin{figure}[ht]
 	\centering
@@ -337,9 +327,6 @@ Here, $\hat{r}_t$ is the predicted reward, $\hat{\gamma}_t$ is the predicted
 discount, $v_\xi(\hat{z}_t)$ is the critic value, and $\lambda$ (usually 0.95)
 controls how much you care about future rewards. This formula mixes short and
 long-term returns.
-
-In my case I don't have $z$ but just the observation itself, so no latent
-space.
 
 The actor in DreamerV2 uses a loss that mixes different gradient estimators to
 make learning stable. The actor tries to maximize the same $\lambda$-returns as
@@ -382,64 +369,61 @@ Some tricks are used to make the critic better:
 \textbf{Latent States:} The critic works on compact latent states, not raw observations, which makes learning faster and more stable.
 
 The critic is usually a small MLP with ELU activations and about 1 million
-parameters, outputting a single value for each state.
+parameters, outputting a single value for each state. 
 
-% \subsection{TD Lambda Targets}
-% \label{subsec:tdlambdatargets}
-
-% \subsection{TD Lambda Targets}
-% \label{subsec:tdlambdatargets}
+Given the advantages of model-based RL and the effectiveness of the Dreamer architecture we now come to the question of how to best
+represent the state of the environment.
 
 \section{Object-Centric Reinforcement Learning}
 \label{sec:object_centric_rl}
-(TODO mention object-centric model-based RL)
 
-Object-Centric Reinforcement Learning (OCRL) emphasizes representing an
-environment as a collection of interacting entities, rather than processing the
-entire environment as raw inputs, such as pixels. This paradigm improves sample
-efficiency, generalization, and interpretability by focusing on objects and
-their relationships.
+Object-Centric Reinforcement Learning (OCRL) is a collection of methods that do
+not make predictions on the raw pixel input but rather try to first create an
+abstract representation of the environment which has some semantic
+understanding of the objects within it. There are methods that use the pixel
+input to create objects from it \cite{locatello2020object,greff2019multi} but
+also approaches where the objects states are extracted from RAM
+\cite{delfosse2024ocatariobjectcentricatari2600} or given directly by the
+environment itself like in JAXAtari
 
-Object-centric model-based RL combines the abstraction of object
-representations with predictive world models. By leveraging structured
-object-centric states, agents can reason about dynamic interactions in a more
-robust and interpretable manner compared to pixel-based representations.
+Object-centric model-based RL combine the abstraction of object representations
+with state prediction. By using structured object-centric states, agents can
+reason about state transitions in a more robust and interpretable way compared
+to pixel-based representations. Pixel based representation can thus suffer from
+several issues namely:
 
 \begin{itemize}
-	\item \textbf{High Dimensionality:}
-	\item \textbf{Poor Generalization:}
-	\item \textbf{Lack of Semantic Understanding:}
-	\item \textbf{Sample Inefficiency:}
-	\item \textbf{Sensitivity to Noise and Distractors:}
+	\item \textbf{High Dimensionality:} Pixel based inputs are by nature more prone to having more dimensions, making them harder to process and requiring more computational resources.
+	\item \textbf{Poor Generalization:} Agents trained on pixel data may struggle to generalize across different environments or object appearances, as they rely heavily on specific visual features and are very prone to slight changes that would not affect human performances but greatly affects the agent \cite{zhang2018dissection,cobbe2019quantifying}.
+	\item \textbf{Lack of Semantic Understanding:} Pixel representations do not inherently capture the relationships between objects, limiting the agent's ability to reason about their interactions.
+	\item \textbf{Sample Inefficiency:} Learning from high-dimensional pixel data often requires more samples to achieve comparable performance to object-centric approaches \cite{kaiser2019model}.
+	\item \textbf{Sensitivity to Noise and Distractors:} Pixel-based methods sometimes focus on irrelevant visual details of the environment which get abstracted away when using object-centric approaches.
 \end{itemize}
 
-In contrast to pixel-based methods, object-centric learning approaches leverage
-understanding of objects to create an abstract representation of the
-environment. This mimics human perception, which naturally segments scenes into
-distinct entities and focuses on their interactions
-\cite{nanbo2021learningobjectcentricrepresentationsmultiobject}. Object-centric
-learning represents a paradigm shift in how reinforcement learning agents
-process and understand their environments.
+This object extraction mimics human perception, which naturally segments scenes
+into distinct entities and focuses on their interactions
+\cite{nanbo2021}.
 
 Therefore object centricity provides several advantages over pixel based
 methods.
 
-\textbf{Compositional Understanding:} Object-centric representations naturally excel at treating input features as compositions of distinct entities. Making them understand that certain features
-correspond to the velocity and position of a ball and others to a paddle. This compositionality allows agents to reason about individual objects and their interactions.
+\textbf{Compositional Understanding:} Object-centric representations naturally excel at treating input features as compositions of distinct entities.
+This compositionality allows agents to reason about individual objects and their interactions by for example allowing the agent
+to make connections between velocity and the position of a ball to a paddle.
 
 \textbf{Improved Generalization:} By focusing on objects rather than pixel patterns, agents can generalize better across visually different but similar scenarios. For example agents that
-understands the concept of a "ball" an an abstract obect can use this knowledge in environments where the ball has a different shape or appearance in general. (SOURCE)
+understands the concept of a "ball" an an abstract object can use this knowledge in environments where the ball has a different shape or appearance in general \cite{locatello2020object}.
 
-\textbf{Enhanced Interpretability:} Object-centric representations provide naturally a better interpretability then pixel based representations since the agent can reason better that it perceives things as objects rather than "random" pixels.
+\textbf{Enhanced Interpretability:} Object-centric representations provide naturally a better interpretability than pixel based representations since the agent can reason better that it perceives things as objects rather than "random" pixels.
 
 \textbf{Sample Efficiency:} The structured nature of object-centric representations often leads to more sample-efficient learning. By working with compact, meaningful features rather than high-dimensional
-pixel data, agents can learn policies with fewer rollouts. THis is possible because the object space is already some kind of latent space which is usually the way things work (SOURCE)
+pixel data, agents can learn policies with fewer rollouts. This is possible because the object space is already some kind of latent space which is usually the way things work \cite{hafner2019learning}.
 
 A significant development in this field is the introduction of OCAtari
 (Object-Centric Atari) by Delfosse et al.
 \cite{delfosse2024ocatariobjectcentricatari2600}. OCAtari extends the
 widely-used Arcade Learning Environment (ALE) by providing resource-efficient
-extraction of object-centric states for Atari 2600 games. THis framework fixes
+extraction of object-centric states for Atari 2600 games. This framework fixes
 a gap, where despite growing interest in object-centric approaches, no
 standardized benchmark existed for evaluating such methods on the popular Atari
 domain.
@@ -451,15 +435,22 @@ efficient and accurate. Directly having those extracted object states allows
 for significantly faster training times and also supports researches in making
 comparable findings since everyone can use the same object states.
 
-The importance of object-centric approaches in Atari environments is
-esspecially present in light of pixel-based methods in these domains. Delfosse
-et al. demonstrated that deep RL agents without interpretable object-centric
+The importance of object-centric approaches in Atari environments is especially
+present in light of pixel-based methods in these domains. Delfosse et al.
+demonstrated that deep RL agents without interpretable object-centric
 representations can learn misaligned policies even in simple games like Pong.
 \cite{delfosse2024interpretableconceptbottlenecksalign} This misalignment
 problem strengthens the argument for using object-centric understanding rather
 than attempting to retrofit interpretability onto pixel-based systems.
 
-(TODO TALK ABOUT JAXATARI)
+Building upon OCAtari, JAXAtari \cite{jaxatari2024} provides a JAX-based
+implementation that offers additional performance benefits through just-in-time
+compilation and vectorized environments. JAXAtari maintains compatibility with
+the object-centric state extraction capabilities of OCAtari while providing
+enhanced computational efficiency for large-scale experiments. This framework
+is particularly relevant for our work as it enables efficient training of world
+models on object-centric representations while maintaining the standardized
+benchmarking capabilities essential for reproducible research.
 
 Object-centric representations naturally lend themselves to relational
 reasoning, where agents must understand not just individual objects but also
@@ -474,7 +465,7 @@ and ball trajectory determines the appropriate movement strategy.
 
 \textbf{Temporal Relationships:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
 
-\textbf{Causality:} (SOURCE) Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
+\textbf{Causality:} \cite{zambaldi2018deep,battaglia2018relational} Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
 
 The integration of relational reasoning with model-based approaches offers
 significant potential for improving agent performance. By incorporating
