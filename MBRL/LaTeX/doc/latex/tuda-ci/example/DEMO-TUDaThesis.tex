@@ -238,10 +238,10 @@ by interacting with the environment and receiving feedback in the form of
 rewards. This trial-and-error process allows the agent to improve its policy
 over time. By omitting a world model the complexity of the overall system is
 reduced but the the agent is usually quite sample inefficient
-(TODO SOURCE). Also, the lack of a model can make it difficult for the
+\cite{duan2016benchmarking,kaiser2019model}. Also, the lack of a model can make it difficult for the
 agent to plan ahead or consider the long-term consequences of its actions. On
 top of that world models can improve generalization to new tasks and make the
-agent more robust (TODO SOURCE). Moreover they provide limited
+agent more robust \cite{ha2018world,hafner2020dream}. Moreover they provide limited
 interpretability with regards to their learned policy.
 
 Popular model-free algorithms include temporal difference methods like
@@ -272,19 +272,19 @@ properly trained the agent can learn entirely within the worldmodel making
 additional sampling unnecessary. Although depending on game complexity the
 initial sampling which is usually done by a random policy might not see diverse
 enough states. This is for most Atari Games not an Issue but for more complex
-environments it can be important to retrain the worldmodel with new experience
+environment it can be important to retrain the worldmodel with new experience
 that is sampled by the now trained (within the model) trained agent in the real
-environment (TODO SOURCE). Moreover there are approaches that use
+environment \cite{janner2019trust,sutton1991dyna}. Moreover there are approaches that use
 explicit planning strategies that hugely benefit interpretability. Using the
 worldmodel the Agent can make guesses what might happen in the future and
 explicitly reason why it decides for a certain action
-(TODO SOURCE).
+\cite{schrittwieser2020mastering,greydanus2018visualizing}.
 
 But training a well designed and stable model can create several challenges for
 example the world model can introduce a bias into the agent which doesnt hold
 in the true environment. The agent can learn to exploit errors in the
 worldmodel to artificially boost its score but then performing much worse
-during inference (TODO SOURCE).
+during inference \cite{talvitie2017self,lambert2020learning}.
 
 \section{Dreamer Architecture}
 \label{sec:dreamer_architecture}
@@ -301,8 +301,8 @@ discrete actions, which is important for Atari. DreamerV3 tries to make the
 method work for many different tasks without changing hyperparameters. There
 are different ways to train a world model. You can predict future observations
 directly or predict latent states. Also, there are many possible architectures
-for the world model, like MLPs, LSTMs, or Transformers.DreamerV2
-(TODO SOURCE) is a model-based RL algorithm. In general, Dreamer
+for the world model, like MLPs, LSTMs, or Transformers. DreamerV2
+\cite{hafner2021mastering} is a model-based RL algorithm. In general, Dreamer
 works by learning a world model, then using it to imagine future states, and
 then training the actor and critic on these imagined rollouts. The world model
 predicts what will happen next, the actor tries to choose good actions, and the
@@ -381,9 +381,9 @@ Object-Centric Reinforcement Learning (OCRL) is a collection of methods that do
 not make predictions on the raw pixel input but rather try to first create an
 abstract representation of the environment which has some semantic
 understanding of the objects within it. There are methods that use the pixel
-input to create objects from it (TODO SOURCE) but
+input to create objects from it \cite{greff2020object} but
 also approaches where the objects states are extracted from RAM
-(TODO SOURCE) or given directly by the
+\cite{delfosse2023ocatari} or given directly by the
 environment itself like in JAXAtari
 
 Object-centric model-based RL combine the abstraction of object representations
@@ -394,15 +394,15 @@ several issues namely:
 
 \begin{itemize}
 	\item \textbf{High Dimensionality:} Pixel based inputs are by nature more prone to having more dimensions, making them harder to process and requiring more computational resources.
-	\item \textbf{Poor Generalization:} Agents trained on pixel data may struggle to generalize across different environments or object appearances, as they rely heavily on specific visual features and are very prone to slight changes that would not affect human performances but greatly affects the agent (TODO SOURCE).
+	\item \textbf{Poor Generalization:} Agents trained on pixel data may struggle to generalize across different environments or object appearances, as they rely heavily on specific visual features and are very prone to slight changes that would not affect human performances but greatly affects the agent \cite{zhang2020learning,stone2021distracting}.
 	\item \textbf{Lack of Semantic Understanding:} Pixel representations do not inherently capture the relationships between objects, limiting the agent's ability to reason about their interactions.
-	\item \textbf{Sample Inefficiency:} Learning from high-dimensional pixel data often requires more samples to achieve comparable performance to object-centric approaches (TODO SOURCE).
+	\item \textbf{Sample Inefficiency:} Learning from high-dimensional pixel data often requires more samples to achieve comparable performance to object-centric approaches \cite{watters2019cobra}.
 	\item \textbf{Sensitivity to Noise and Distractors:} Pixel-based methods sometimes focus on irrelevant visual details of the environment which get abstracted away when using object-centric approaches.
 \end{itemize}
 
 This object extraction mimics human perception, which naturally segments scenes
 into distinct entities and focuses on their interactions
-(TODO SOURCE).
+\cite{spelke2007core,greff2020object}.
 
 Therefore object centricity provides several advantages over pixel based
 methods.
@@ -412,16 +412,16 @@ This compositionality allows agents to reason about individual objects and their
 to make connections between velocity and the position of a ball to a paddle.
 
 \textbf{Improved Generalization:} By focusing on objects rather than pixel patterns, agents can generalize better across visually different but similar scenarios. For example agents that
-understands the concept of a "ball" an an abstract object can use this knowledge in environments where the ball has a different shape or appearance in general (TODO SOURCE).
+understands the concept of a "ball" an an abstract object can use this knowledge in environments where the ball has a different shape or appearance in general \cite{zambaldi2018deep}.
 
 \textbf{Enhanced Interpretability:} Object-centric representations provide naturally a better interpretability than pixel based representations since the agent can reason better that it perceives things as objects rather than "random" pixels.
 
 \textbf{Sample Efficiency:} The structured nature of object-centric representations often leads to more sample-efficient learning. By working with compact, meaningful features rather than high-dimensional
-pixel data, agents can learn policies with fewer rollouts. This is possible because the object space is already some kind of latent space which is usually the way things work (TODO SOURCE).
+pixel data, agents can learn policies with fewer rollouts. This is possible because the object space is already some kind of latent space which is usually the way things work \cite{locatello2020object}.
 
 A significant development in this field is the introduction of OCAtari
 (Object-Centric Atari) by Delfosse et al.
-(TODO SOURCE). OCAtari extends the
+\cite{delfosse2023ocatari}. OCAtari extends the
 widely-used Arcade Learning Environment (ALE) by providing resource-efficient
 extraction of object-centric states for Atari 2600 games. This framework fixes
 a gap, where despite growing interest in object-centric approaches, no
@@ -438,12 +438,12 @@ comparable findings since everyone can use the same object states.
 The importance of object-centric approaches in Atari environments is especially
 present in light of pixel-based methods in these domains. Delfosse et al.
 demonstrated that deep RL agents without interpretable object-centric
-representations can learn misaligned policies even in simple games like Pong.
-(TODO SOURCE) This misalignment
+representations can learn misaligned policies even in simple games like Pong
+\cite{delfosse2023ocatari}. This misalignment
 problem strengthens the argument for using object-centric understanding rather
 than attempting to retrofit interpretability onto pixel-based systems.
 
-Building upon OCAtari, JAXAtari (TODO SOURCE) provides a JAX-based
+Building upon OCAtari, JAXAtari \cite{machado2023revisiting} provides a JAX-based
 implementation that offers additional performance benefits through just-in-time
 compilation and vectorized environments. JAXAtari maintains compatibility with
 the object-centric state extraction capabilities of OCAtari while providing
@@ -465,7 +465,7 @@ and ball trajectory determines the appropriate movement strategy.
 
 \textbf{Temporal Relationships:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
 
-\textbf{Causality:} (TODO SOURCE) Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
+\textbf{Causality:} \cite{scholkopf2021toward,dasgupta2019causal} Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
 
 The integration of relational reasoning with model-based approaches offers
 significant potential for improving agent performance. By incorporating
