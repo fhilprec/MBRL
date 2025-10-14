@@ -549,77 +549,6 @@
       \verb https://arxiv.org/abs/2010.02193
       \endverb
     \endentry
-    \entry{greff2020object}{inproceedings}{}
-      \name{author}{9}{}{%
-        {{hash=c7690d8de5e14a38203ad5706d6dd4eb}{%
-           family={Greff},
-           familyi={G\bibinitperiod},
-           given={Klaus},
-           giveni={K\bibinitperiod}}}%
-        {{hash=6e24a43ac2ad23436bfa47ce75ecaa60}{%
-           family={Kaufman},
-           familyi={K\bibinitperiod},
-           given={Raphael\bibnamedelima Lopez},
-           giveni={R\bibinitperiod\bibinitdelim L\bibinitperiod}}}%
-        {{hash=ed3422323d4d745829dc0da2431e94ca}{%
-           family={Kabra},
-           familyi={K\bibinitperiod},
-           given={Rishabh},
-           giveni={R\bibinitperiod}}}%
-        {{hash=adaa530c9af9b336d467b2a151746fe3}{%
-           family={Watters},
-           familyi={W\bibinitperiod},
-           given={Nick},
-           giveni={N\bibinitperiod}}}%
-        {{hash=bed3c36b15c569abc7ecfc502f591029}{%
-           family={Burgess},
-           familyi={B\bibinitperiod},
-           given={Chris},
-           giveni={C\bibinitperiod}}}%
-        {{hash=d2e2b4eabdefa7f39ac95e0c2b6d7026}{%
-           family={Zoran},
-           familyi={Z\bibinitperiod},
-           given={Daniel},
-           giveni={D\bibinitperiod}}}%
-        {{hash=4ca99bbd5d79fc2a098b19d509dfd618}{%
-           family={Matthey},
-           familyi={M\bibinitperiod},
-           given={Loic},
-           giveni={L\bibinitperiod}}}%
-        {{hash=9ac5fb35edeb23736953b00e66bef926}{%
-           family={Botvinick},
-           familyi={B\bibinitperiod},
-           given={Matthew},
-           giveni={M\bibinitperiod}}}%
-        {{hash=ab8697e1baff9a8e44cb823b3c9d1013}{%
-           family={Lerchner},
-           familyi={L\bibinitperiod},
-           given={Alexander},
-           giveni={A\bibinitperiod}}}%
-      }
-      \strng{namehash}{5b4cfdecf82267438a7397771dee748f}
-      \strng{fullhash}{8bbdc5f68273518d03e0d514b1c55e5d}
-      \strng{bibnamehash}{5b4cfdecf82267438a7397771dee748f}
-      \strng{authorbibnamehash}{5b4cfdecf82267438a7397771dee748f}
-      \strng{authornamehash}{5b4cfdecf82267438a7397771dee748f}
-      \strng{authorfullhash}{8bbdc5f68273518d03e0d514b1c55e5d}
-      \field{sortinit}{8}
-      \field{sortinithash}{a231b008ebf0ecbe0b4d96dcc159445f}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{booktitle}{Advances in Neural Information Processing Systems}
-      \field{title}{Object-centric learning with slot attention}
-      \field{volume}{33}
-      \field{year}{2020}
-      \field{pages}{11525\bibrangedash 11538}
-      \range{pages}{14}
-      \verb{urlraw}
-      \verb https://arxiv.org/abs/2006.15055
-      \endverb
-      \verb{url}
-      \verb https://arxiv.org/abs/2006.15055
-      \endverb
-    \endentry
     \entry{delfosse2023ocatari}{article}{}
       \name{author}{4}{}{%
         {{hash=ef08e6d4cfa3ade80daa1ff4ea06ba81}{%
@@ -796,40 +725,6 @@
       \verb{url}
       \verb https://arxiv.org/abs/1905.09275
       \endverb
-    \endentry
-    \entry{spelke2007core}{article}{}
-      \name{author}{2}{}{%
-        {{hash=b5dc622909b3084e4448e04be4a1fd3e}{%
-           family={Spelke},
-           familyi={S\bibinitperiod},
-           given={Elizabeth\bibnamedelima S},
-           giveni={E\bibinitperiod\bibinitdelim S\bibinitperiod}}}%
-        {{hash=4d6ad556e40120edf6638b6ec26fbbcb}{%
-           family={Kinzler},
-           familyi={K\bibinitperiod},
-           given={Katherine\bibnamedelima D},
-           giveni={K\bibinitperiod\bibinitdelim D\bibinitperiod}}}%
-      }
-      \list{publisher}{1}{%
-        {Wiley Online Library}%
-      }
-      \strng{namehash}{ad1b79b534737d1a958c88967dee1da6}
-      \strng{fullhash}{ad1b79b534737d1a958c88967dee1da6}
-      \strng{bibnamehash}{ad1b79b534737d1a958c88967dee1da6}
-      \strng{authorbibnamehash}{ad1b79b534737d1a958c88967dee1da6}
-      \strng{authornamehash}{ad1b79b534737d1a958c88967dee1da6}
-      \strng{authorfullhash}{ad1b79b534737d1a958c88967dee1da6}
-      \field{sortinit}{1}
-      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
-      \field{labelnamesource}{author}
-      \field{labeltitlesource}{title}
-      \field{journaltitle}{Developmental Science}
-      \field{number}{1}
-      \field{title}{Core knowledge}
-      \field{volume}{10}
-      \field{year}{2007}
-      \field{pages}{89\bibrangedash 96}
-      \range{pages}{8}
     \endentry
     \entry{zambaldi2018deep}{inproceedings}{}
       \true{moreauthor}
@@ -1159,6 +1054,7 @@
       \endverb
     \endentry
   \enddatalist
+  \missing{greff2020object}
 \endrefsection
 \endinput
 

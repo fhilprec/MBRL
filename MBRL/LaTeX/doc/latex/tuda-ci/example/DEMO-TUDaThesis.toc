@@ -37,13 +37,13 @@
 \contentsline {subsection}{\numberline {4.4.5}Policy Behavior Visualization}{23}{subsection.4.4.5}%
 \contentsline {chapter}{\numberline {5}Discussion}{24}{chapter.5}%
 \contentsline {chapter}{\numberline {6}Conclusion and Future Work}{25}{chapter.6}%
-\contentsline {chapter}{\numberline {A}Implementation Details}{29}{appendix.A}%
-\contentsline {section}{\numberline {A.1}Code Structure and Organization}{29}{section.A.1}%
-\contentsline {section}{\numberline {A.2}Hyperparameter Sensitivity Analysis}{29}{section.A.2}%
-\contentsline {section}{\numberline {A.3}Additional Experimental Results}{29}{section.A.3}%
-\contentsline {chapter}{\numberline {B}Technical Specifications}{30}{appendix.B}%
-\contentsline {section}{\numberline {B.1}Hardware Requirements}{30}{section.B.1}%
-\contentsline {section}{\numberline {B.2}Software Dependencies}{30}{section.B.2}%
-\contentsline {section}{\numberline {B.3}Reproducibility Guidelines}{30}{section.B.3}%
-\contentsline {chapter}{\numberline {C}Supplementary Figures and Tables}{31}{appendix.C}%
+\contentsline {chapter}{\numberline {A}Implementation Details}{28}{appendix.A}%
+\contentsline {section}{\numberline {A.1}Code Structure and Organization}{28}{section.A.1}%
+\contentsline {section}{\numberline {A.2}Hyperparameter Sensitivity Analysis}{28}{section.A.2}%
+\contentsline {section}{\numberline {A.3}Additional Experimental Results}{28}{section.A.3}%
+\contentsline {chapter}{\numberline {B}Technical Specifications}{29}{appendix.B}%
+\contentsline {section}{\numberline {B.1}Hardware Requirements}{29}{section.B.1}%
+\contentsline {section}{\numberline {B.2}Software Dependencies}{29}{section.B.2}%
+\contentsline {section}{\numberline {B.3}Reproducibility Guidelines}{29}{section.B.3}%
+\contentsline {chapter}{\numberline {C}Supplementary Figures and Tables}{30}{appendix.C}%
 \providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 

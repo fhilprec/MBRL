@@ -2377,15 +2377,13 @@
     <bcf:citekey order="10" intorder="1">zhang2020learning</bcf:citekey>
     <bcf:citekey order="10" intorder="2">stone2021distracting</bcf:citekey>
     <bcf:citekey order="11" intorder="1">watters2019cobra</bcf:citekey>
-    <bcf:citekey order="12" intorder="1">spelke2007core</bcf:citekey>
-    <bcf:citekey order="12" intorder="2">greff2020object</bcf:citekey>
-    <bcf:citekey order="13" intorder="1">zambaldi2018deep</bcf:citekey>
-    <bcf:citekey order="14" intorder="1">locatello2020object</bcf:citekey>
+    <bcf:citekey order="12" intorder="1">zambaldi2018deep</bcf:citekey>
+    <bcf:citekey order="13" intorder="1">locatello2020object</bcf:citekey>
+    <bcf:citekey order="14" intorder="1">delfosse2023ocatari</bcf:citekey>
     <bcf:citekey order="15" intorder="1">delfosse2023ocatari</bcf:citekey>
-    <bcf:citekey order="16" intorder="1">delfosse2023ocatari</bcf:citekey>
-    <bcf:citekey order="17" intorder="1">machado2023revisiting</bcf:citekey>
-    <bcf:citekey order="18" intorder="1">scholkopf2021toward</bcf:citekey>
-    <bcf:citekey order="18" intorder="2">dasgupta2019causal</bcf:citekey>
+    <bcf:citekey order="16" intorder="1">machado2023revisiting</bcf:citekey>
+    <bcf:citekey order="17" intorder="1">scholkopf2021toward</bcf:citekey>
+    <bcf:citekey order="17" intorder="2">dasgupta2019causal</bcf:citekey>
   </bcf:section>
   <!-- SORTING TEMPLATES -->
   <bcf:sortingtemplate name="none">

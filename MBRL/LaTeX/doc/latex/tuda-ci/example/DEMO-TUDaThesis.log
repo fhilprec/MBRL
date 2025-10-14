@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.9.23)  14 OCT 2025 15:07
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.9.23)  14 OCT 2025 15:13
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1132,7 +1132,15 @@ Package biblatex Info: Automatic encoding selection.
 
 Package biblatex Info: Trying to load bibliographic data...
 Package biblatex Info: ... file 'DEMO-TUDaThesis.bbl' found.
- (./DEMO-TUDaThesis.bbl)
+ (./DEMO-TUDaThesis.bbl
+
+Package biblatex Warning: The following entry could not be found
+(biblatex)                in the database:
+(biblatex)                greff2020object
+(biblatex)                Please verify the spelling and rerun
+(biblatex)                LaTeX afterwards.
+
+)
 Package biblatex Info: Reference section=0 on input line 68.
 Package biblatex Info: Reference segment=0 on input line 68.
  (/usr/share/texlive/texmf-dist/tex/latex/translations/translations-basic-dictionary-german.trsl
@@ -1373,12 +1381,16 @@ LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
 (Font)              scaled to size 6.0pt on input line 326.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/b/n' will be
 (Font)              scaled to size 10.95pt on input line 349.
- [14] [15] [16] [17] [18]
+ [14]
+
+LaTeX Warning: Citation 'greff2020object' on page 15 undefined on input line 390.
+
+[15] [16] [17] [18]
 chapter 3.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
-(Font)              `T1/Roboto-LF/bold/n' on input line 488.
+(Font)              `T1/Roboto-LF/bold/n' on input line 485.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
-(Font)              scaled to size 12.0pt on input line 488.
+(Font)              scaled to size 12.0pt on input line 485.
 [19
 
 ] [20]
@@ -1395,38 +1407,38 @@ chapter 6.
 
 ]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/it' will be
-(Font)              scaled to size 10.95pt on input line 638.
+(Font)              scaled to size 10.95pt on input line 635.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/sc' will be
-(Font)              scaled to size 10.95pt on input line 638.
+(Font)              scaled to size 10.95pt on input line 635.
 Package microtype Info: Character `029' is missing
 (microtype)             in font `T1/XCharter-TLF/m/sc/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
-LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 638.
+LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 635.
  (/usr/share/texlive/texmf-dist/tex/latex/roboto/T1RobotoMono-TLF.fd
 File: T1RobotoMono-TLF.fd 2019/12/11 (autoinst) Font definitions for T1/RobotoMono-TLF.
 )
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/m/n' aliased to
-(Font)              `T1/RobotoMono-TLF/regular/n' on input line 638.
+(Font)              `T1/RobotoMono-TLF/regular/n' on input line 635.
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/regular/n' will be
-(Font)              scaled to size 10.95pt on input line 638.
+(Font)              scaled to size 10.95pt on input line 635.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `RobotoMono-TLF' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 
-Overfull \hbox (19.19218pt too wide) in paragraph at lines 638--638
+Overfull \hbox (19.19218pt too wide) in paragraph at lines 635--635
 []\T1/XCharter-TLF/m/n/10.95 (-20) David Ha und Jür-gen Schmid-hu-ber. ^^R  World mo-dels^^P. In: \T1/XCharter-TLF/m/it/10.95 (-20) ar-Xiv pre-print ar-Xiv:1803.10122
  []
 
 [26
 
-{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch_yelf2i.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc}] [27] [28]
+{/usr/share/texlive/texmf-dist/fonts/enc/dvips/xcharter/xch_yelf2i.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc}] [27]
 chapter A.
-[29
+[28
 
 ]
 chapter B.
-[30
+[29
 
 ]
 chapter C.
@@ -1450,7 +1462,7 @@ Package tudapub Warning: You did not provide a Label for key discussion.
 (tudapub)                Either you need to recompile your document or add a
 (tudapub)                label using \IMRADlabel.
 
-[31
+[30
 
 ] (./DEMO-TUDaThesis.aux)
  ***********
@@ -1464,18 +1476,18 @@ Package logreq Info: Writing requests to 'DEMO-TUDaThesis.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 42032 strings out of 476056
- 882349 string characters out of 5791604
- 1943975 words of memory out of 5000000
- 63077 multiletter control sequences out of 15000+600000
- 696658 words of font info for 293 fonts, out of 8000000 for 9000
+ 42021 strings out of 476056
+ 881948 string characters out of 5791604
+ 1942975 words of memory out of 5000000
+ 63072 multiletter control sequences out of 15000+600000
+ 696273 words of font info for 291 fonts, out of 8000000 for 9000
  61 hyphenation exceptions out of 8191
  122i,21n,131p,11019b,4341s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/RobotoMono-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Italic.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Roman.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on DEMO-TUDaThesis.pdf (31 pages, 1007228 bytes).
+Output written on DEMO-TUDaThesis.pdf (30 pages, 1006672 bytes).
 PDF statistics:
- 597 PDF objects out of 1000 (max. 8388607)
- 520 compressed objects within 6 object streams
- 118 named destinations out of 1000 (max. 500000)
+ 585 PDF objects out of 1000 (max. 8388607)
+ 509 compressed objects within 6 object streams
+ 115 named destinations out of 1000 (max. 500000)
  61311 words of extra memory for PDF output out of 61914 (max. 10000000)
 
