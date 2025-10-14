@@ -172,7 +172,7 @@
     </bcf:option>
     <bcf:option type="singlevalued">
       <bcf:key>sortingtemplatename</bcf:key>
-      <bcf:value>nty</bcf:value>
+      <bcf:value>none</bcf:value>
     </bcf:option>
     <bcf:option type="singlevalued">
       <bcf:key>sortsets</bcf:key>
@@ -2361,66 +2361,46 @@
     <bcf:datasource type="file" datatype="bibtex" glob="false">references.bib</bcf:datasource>
   </bcf:bibdata>
   <bcf:section number="0">
-    <bcf:citekey order="1" intorder="1">duan2016benchmarking</bcf:citekey>
-    <bcf:citekey order="1" intorder="2">kaiser2019model</bcf:citekey>
-    <bcf:citekey order="2" intorder="1">ha2018world</bcf:citekey>
-    <bcf:citekey order="2" intorder="2">hafner2020dream</bcf:citekey>
-    <bcf:citekey order="3" intorder="1">janner2019trust</bcf:citekey>
-    <bcf:citekey order="3" intorder="2">sutton1991dyna</bcf:citekey>
-    <bcf:citekey order="4" intorder="1">schrittwieser2020mastering</bcf:citekey>
-    <bcf:citekey order="4" intorder="2">greydanus2018visualizing</bcf:citekey>
-    <bcf:citekey order="5" intorder="1">talvitie2017self</bcf:citekey>
-    <bcf:citekey order="5" intorder="2">lambert2020learning</bcf:citekey>
-    <bcf:citekey order="6" intorder="1">hafner2021mastering</bcf:citekey>
-    <bcf:citekey order="7" intorder="1">greff2020object</bcf:citekey>
-    <bcf:citekey order="8" intorder="1">delfosse2023ocatari</bcf:citekey>
-    <bcf:citekey order="9" intorder="1">zhang2020learning</bcf:citekey>
-    <bcf:citekey order="9" intorder="2">stone2021distracting</bcf:citekey>
-    <bcf:citekey order="10" intorder="1">watters2019cobra</bcf:citekey>
-    <bcf:citekey order="11" intorder="1">spelke2007core</bcf:citekey>
-    <bcf:citekey order="11" intorder="2">greff2020object</bcf:citekey>
-    <bcf:citekey order="12" intorder="1">zambaldi2018deep</bcf:citekey>
-    <bcf:citekey order="13" intorder="1">locatello2020object</bcf:citekey>
-    <bcf:citekey order="14" intorder="1">delfosse2023ocatari</bcf:citekey>
+    <bcf:citekey order="2" intorder="1">duan2016benchmarking</bcf:citekey>
+    <bcf:citekey order="2" intorder="2">kaiser2019model</bcf:citekey>
+    <bcf:citekey order="3" intorder="1">ha2018world</bcf:citekey>
+    <bcf:citekey order="3" intorder="2">hafner2020dream</bcf:citekey>
+    <bcf:citekey order="4" intorder="1">janner2019trust</bcf:citekey>
+    <bcf:citekey order="4" intorder="2">sutton1991dyna</bcf:citekey>
+    <bcf:citekey order="5" intorder="1">schrittwieser2020mastering</bcf:citekey>
+    <bcf:citekey order="5" intorder="2">greydanus2018visualizing</bcf:citekey>
+    <bcf:citekey order="6" intorder="1">talvitie2017self</bcf:citekey>
+    <bcf:citekey order="6" intorder="2">lambert2020learning</bcf:citekey>
+    <bcf:citekey order="7" intorder="1">hafner2021mastering</bcf:citekey>
+    <bcf:citekey order="8" intorder="1">greff2020object</bcf:citekey>
+    <bcf:citekey order="9" intorder="1">delfosse2023ocatari</bcf:citekey>
+    <bcf:citekey order="10" intorder="1">zhang2020learning</bcf:citekey>
+    <bcf:citekey order="10" intorder="2">stone2021distracting</bcf:citekey>
+    <bcf:citekey order="11" intorder="1">watters2019cobra</bcf:citekey>
+    <bcf:citekey order="12" intorder="1">spelke2007core</bcf:citekey>
+    <bcf:citekey order="12" intorder="2">greff2020object</bcf:citekey>
+    <bcf:citekey order="13" intorder="1">zambaldi2018deep</bcf:citekey>
+    <bcf:citekey order="14" intorder="1">locatello2020object</bcf:citekey>
     <bcf:citekey order="15" intorder="1">delfosse2023ocatari</bcf:citekey>
-    <bcf:citekey order="16" intorder="1">machado2023revisiting</bcf:citekey>
-    <bcf:citekey order="17" intorder="1">scholkopf2021toward</bcf:citekey>
-    <bcf:citekey order="17" intorder="2">dasgupta2019causal</bcf:citekey>
+    <bcf:citekey order="16" intorder="1">delfosse2023ocatari</bcf:citekey>
+    <bcf:citekey order="17" intorder="1">machado2023revisiting</bcf:citekey>
+    <bcf:citekey order="18" intorder="1">scholkopf2021toward</bcf:citekey>
+    <bcf:citekey order="18" intorder="2">dasgupta2019causal</bcf:citekey>
   </bcf:section>
   <!-- SORTING TEMPLATES -->
-  <bcf:sortingtemplate name="nty">
+  <bcf:sortingtemplate name="none">
     <bcf:sort order="1">
-      <bcf:sortitem order="1">presort</bcf:sortitem>
+      <bcf:sortitem order="1">citeorder</bcf:sortitem>
     </bcf:sort>
-    <bcf:sort order="2" final="1">
-      <bcf:sortitem order="1">sortkey</bcf:sortitem>
-    </bcf:sort>
-    <bcf:sort order="3">
-      <bcf:sortitem order="1">sortname</bcf:sortitem>
-      <bcf:sortitem order="2">author</bcf:sortitem>
-      <bcf:sortitem order="3">editor</bcf:sortitem>
-      <bcf:sortitem order="4">translator</bcf:sortitem>
-      <bcf:sortitem order="5">sorttitle</bcf:sortitem>
-      <bcf:sortitem order="6">title</bcf:sortitem>
-    </bcf:sort>
-    <bcf:sort order="4">
-      <bcf:sortitem order="1">sorttitle</bcf:sortitem>
-      <bcf:sortitem order="2">title</bcf:sortitem>
-    </bcf:sort>
-    <bcf:sort order="5">
-      <bcf:sortitem order="1">sortyear</bcf:sortitem>
-      <bcf:sortitem order="2">year</bcf:sortitem>
-    </bcf:sort>
-    <bcf:sort order="6">
-      <bcf:sortitem order="1">volume</bcf:sortitem>
-      <bcf:sortitem literal="1" order="2">0</bcf:sortitem>
+    <bcf:sort order="2">
+      <bcf:sortitem order="1">intciteorder</bcf:sortitem>
     </bcf:sort>
   </bcf:sortingtemplate>
   <!-- DATALISTS -->
   <bcf:datalist section="0"
-                name="nty/global//global/global"
+                name="none/global//global/global"
                 type="entry"
-                sortingtemplatename="nty"
+                sortingtemplatename="none"
                 sortingnamekeytemplatename="global"
                 labelprefix=""
                 uniquenametemplatename="global"

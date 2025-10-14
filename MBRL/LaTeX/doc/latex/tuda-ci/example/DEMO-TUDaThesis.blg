@@ -1,0 +1,17 @@
+[0] Config.pm:307> INFO - This is Biber 2.19
+[0] Config.pm:310> INFO - Logfile is 'DEMO-TUDaThesis.blg'
+[50] biber:340> INFO - === Tue Oct 14, 2025, 15:07:28
+[60] Biber.pm:419> INFO - Reading 'DEMO-TUDaThesis.bcf'
+[90] Biber.pm:979> INFO - Found 22 citekeys in bib section 0
+[97] Biber.pm:4419> INFO - Processing section 0
+[103] Biber.pm:4610> INFO - Looking for bibtex file 'references.bib' for section 0
+[104] bibtex.pm:1713> INFO - LaTeX decoding ...
+[113] bibtex.pm:1519> INFO - Found BibTeX data source 'references.bib'
+[259] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[259] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'variable = shifted' with 'variable = non-ignorable'
+[259] Biber.pm:4239> INFO - Sorting list 'none/global//global/global' of type 'entry' with template 'none' and locale 'de-DE'
+[259] Biber.pm:4245> INFO - No sort tailoring available for locale 'de-DE'
+[268] bbl.pm:660> INFO - Writing 'DEMO-TUDaThesis.bbl' with encoding 'UTF-8'
+[275] bbl.pm:763> INFO - Output to DEMO-TUDaThesis.bbl
+[276] Biber.pm:131> WARN - BibTeX subsystem: /tmp/biber_tmp_vqxg/33e59b5ca9ec342068223d604c3f8d55_24807.utf8, line 2, warning: 9 characters of junk seen at toplevel
+[276] Biber.pm:133> INFO - WARNINGS: 1

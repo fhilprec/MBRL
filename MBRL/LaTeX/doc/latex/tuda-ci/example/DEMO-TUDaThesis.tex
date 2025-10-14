@@ -33,7 +33,7 @@
 %%%%%%%%%%%%%%%%%%%
 % Bibliography
 %%%%%%%%%%%%%%%%%%%
-\usepackage{biblatex}
+\usepackage[style=numeric,sorting=none,backend=biber]{biblatex}
 \addbibresource{references.bib}
 
 
@@ -76,7 +76,7 @@
 \subtitle{Master's Thesis: Summer Semester 2025}
 \author[Y. Name]{Your Full Name}
 \studentID{1234567}
-\reviewer{Jannis Blüml}
+\reviewer{Jannis Blüml, Raban Emunds}
 
 \department{Department of Computer Science}
 \institute{Institute of Computer Science}
@@ -208,9 +208,10 @@ every probability computed is only conditioned on the current state and action
 so a finite set of values instead of a potentially infinite set of past states
 and actions.
 
-Given that we now defined what the environment actually means let us examine at the
-goal of the agent. The agent's goal is to learn an optimal policy $\pi^*(s)$
-that maximizes the expected cumulative discounted reward, known as the return:
+Given that we now defined what the environment actually means let us examine at
+the goal of the agent. The agent's goal is to learn an optimal policy
+$\pi^*(s)$ that maximizes the expected cumulative discounted reward, known as
+the return:
 \begin{equation}
 	G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}
 \end{equation}
@@ -238,11 +239,12 @@ by interacting with the environment and receiving feedback in the form of
 rewards. This trial-and-error process allows the agent to improve its policy
 over time. By omitting a world model the complexity of the overall system is
 reduced but the the agent is usually quite sample inefficient
-\cite{duan2016benchmarking,kaiser2019model}. Also, the lack of a model can make it difficult for the
-agent to plan ahead or consider the long-term consequences of its actions. On
-top of that world models can improve generalization to new tasks and make the
-agent more robust \cite{ha2018world,hafner2020dream}. Moreover they provide limited
-interpretability with regards to their learned policy.
+\cite{duan2016benchmarking,kaiser2019model}. Also, the lack of a model can make
+it difficult for the agent to plan ahead or consider the long-term consequences
+of its actions. On top of that world models can improve generalization to new
+tasks and make the agent more robust \cite{ha2018world,hafner2020dream}.
+Moreover they provide limited interpretability with regards to their learned
+policy.
 
 Popular model-free algorithms include temporal difference methods like
 Q-Learning and SARSA, as well as policy gradient methods such as REINFORCE,
@@ -274,10 +276,10 @@ initial sampling which is usually done by a random policy might not see diverse
 enough states. This is for most Atari Games not an Issue but for more complex
 environment it can be important to retrain the worldmodel with new experience
 that is sampled by the now trained (within the model) trained agent in the real
-environment \cite{janner2019trust,sutton1991dyna}. Moreover there are approaches that use
-explicit planning strategies that hugely benefit interpretability. Using the
-worldmodel the Agent can make guesses what might happen in the future and
-explicitly reason why it decides for a certain action
+environment \cite{janner2019trust,sutton1991dyna}. Moreover there are
+approaches that use explicit planning strategies that hugely benefit
+interpretability. Using the worldmodel the Agent can make guesses what might
+happen in the future and explicitly reason why it decides for a certain action
 \cite{schrittwieser2020mastering,greydanus2018visualizing}.
 
 But training a well designed and stable model can create several challenges for
@@ -296,24 +298,27 @@ and train its policy without always interacting with the real environment.
 Dreamer builds on ideas from PlaNet, which first used latent dynamics, but
 Dreamer adds actor-critic learning and works better for Atari games.
 
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\textwidth]{images/DreamerFlow.png}
+	\caption{Overview of the DreamerV2 training pipeline. The world model learns to predict future states and rewards, enabling the actor-critic framework to optimize policies using imagined rollouts. Taken from Hafner et al.~\cite{hafner2021mastering}, Fig.~1.}
+	\label{fig:dreamer_flow}
+\end{figure}
+
 DreamerV2 improves DreamerV1 by making it more stable and able to handle
 discrete actions, which is important for Atari. DreamerV3 tries to make the
 method work for many different tasks without changing hyperparameters. There
 are different ways to train a world model. You can predict future observations
-directly or predict latent states. Also, there are many possible architectures
-for the world model, like MLPs, LSTMs, or Transformers. DreamerV2
-\cite{hafner2021mastering} is a model-based RL algorithm. In general, Dreamer
-works by learning a world model, then using it to imagine future states, and
-then training the actor and critic on these imagined rollouts. The world model
-predicts what will happen next, the actor tries to choose good actions, and the
-critic estimates how good a state is.
+directly or predict latent states. In Dreamers case as shown in Figure
+\ref{fig:dreamer_flow} the world model predicts latent states.
 
-\begin{figure}[ht]
-	\centering
-	\includegraphics[width=0.9\textwidth]{images/DreamerFlow.png}
-	\caption{Overview of the DreamerV2 training pipeline. The world model learns to predict future states and rewards, enabling the actor-critic framework to optimize policies using imagined rollouts.}
-	\label{fig:dreamer_flow}
-\end{figure}
+Dreamerv2 builds upon the worldmodel with a actor-critic framework. The actor
+is responsible for selecting actions based on the current latent state, while
+the critic evaluates the chosen actions by estimating their value. Central to DreamerV2 is the
+use of the $\lambda$-return, which provides a balance between bias and variance
+since using $\lambda=0$ leads to high bias and low variance, while $\lambda=1$ leads to low bias and high variance. Approaching
+TD(0) and Monte Carlo respectively. The following sections detail how the
+$\lambda$-target is computed and how it is used to define the actor and critic
 
 The $\lambda$-target is defined recursively as:
 \begin{equation}
@@ -369,10 +374,11 @@ Some tricks are used to make the critic better:
 \textbf{Latent States:} The critic works on compact latent states, not raw observations, which makes learning faster and more stable.
 
 The critic is usually a small MLP with ELU activations and about 1 million
-parameters, outputting a single value for each state. 
+parameters, outputting a single value for each state.
 
-Given the advantages of model-based RL and the effectiveness of the Dreamer architecture we now come to the question of how to best
-represent the state of the environment.
+Given the advantages of model-based RL and the effectiveness of the Dreamer
+architecture we now come to the question of how to best represent the state of
+the environment.
 
 \section{Object-Centric Reinforcement Learning}
 \label{sec:object_centric_rl}
@@ -381,10 +387,9 @@ Object-Centric Reinforcement Learning (OCRL) is a collection of methods that do
 not make predictions on the raw pixel input but rather try to first create an
 abstract representation of the environment which has some semantic
 understanding of the objects within it. There are methods that use the pixel
-input to create objects from it \cite{greff2020object} but
-also approaches where the objects states are extracted from RAM
-\cite{delfosse2023ocatari} or given directly by the
-environment itself like in JAXAtari
+input to create objects from it \cite{greff2020object} but also approaches
+where the objects states are extracted from RAM \cite{delfosse2023ocatari} or
+given directly by the environment itself like in JAXAtari
 
 Object-centric model-based RL combine the abstraction of object representations
 with state prediction. By using structured object-centric states, agents can
@@ -420,13 +425,12 @@ understands the concept of a "ball" an an abstract object can use this knowledge
 pixel data, agents can learn policies with fewer rollouts. This is possible because the object space is already some kind of latent space which is usually the way things work \cite{locatello2020object}.
 
 A significant development in this field is the introduction of OCAtari
-(Object-Centric Atari) by Delfosse et al.
-\cite{delfosse2023ocatari}. OCAtari extends the
-widely-used Arcade Learning Environment (ALE) by providing resource-efficient
-extraction of object-centric states for Atari 2600 games. This framework fixes
-a gap, where despite growing interest in object-centric approaches, no
-standardized benchmark existed for evaluating such methods on the popular Atari
-domain.
+(Object-Centric Atari) by Delfosse et al. \cite{delfosse2023ocatari}. OCAtari
+extends the widely-used Arcade Learning Environment (ALE) by providing
+resource-efficient extraction of object-centric states for Atari 2600 games.
+This framework fixes a gap, where despite growing interest in object-centric
+approaches, no standardized benchmark existed for evaluating such methods on
+the popular Atari domain.
 
 The OCAtari framework works by two ways of extracting object states. It can
 either extract the object states directly from the emulator's RAM or by using
@@ -439,18 +443,18 @@ The importance of object-centric approaches in Atari environments is especially
 present in light of pixel-based methods in these domains. Delfosse et al.
 demonstrated that deep RL agents without interpretable object-centric
 representations can learn misaligned policies even in simple games like Pong
-\cite{delfosse2023ocatari}. This misalignment
-problem strengthens the argument for using object-centric understanding rather
-than attempting to retrofit interpretability onto pixel-based systems.
+\cite{delfosse2023ocatari}. This misalignment problem strengthens the argument
+for using object-centric understanding rather than attempting to retrofit
+interpretability onto pixel-based systems.
 
-Building upon OCAtari, JAXAtari \cite{machado2023revisiting} provides a JAX-based
-implementation that offers additional performance benefits through just-in-time
-compilation and vectorized environments. JAXAtari maintains compatibility with
-the object-centric state extraction capabilities of OCAtari while providing
-enhanced computational efficiency for large-scale experiments. This framework
-is particularly relevant for our work as it enables efficient training of world
-models on object-centric representations while maintaining the standardized
-benchmarking capabilities essential for reproducible research.
+Building upon OCAtari, JAXAtari \cite{machado2023revisiting} provides a
+JAX-based implementation that offers additional performance benefits through
+just-in-time compilation and vectorized environments. JAXAtari maintains
+compatibility with the object-centric state extraction capabilities of OCAtari
+while providing enhanced computational efficiency for large-scale experiments.
+This framework is particularly relevant for our work as it enables efficient
+training of world models on object-centric representations while maintaining
+the standardized benchmarking capabilities essential for reproducible research.
 
 Object-centric representations naturally lend themselves to relational
 reasoning, where agents must understand not just individual objects but also

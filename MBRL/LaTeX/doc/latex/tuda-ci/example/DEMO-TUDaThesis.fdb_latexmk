@@ -1,14 +1,14 @@
 # Fdb version 4
-["biber DEMO-TUDaThesis"] 1760383951.04204 "DEMO-TUDaThesis.bcf" "DEMO-TUDaThesis.bbl" "DEMO-TUDaThesis" 1760383960.92695 0
-  "DEMO-TUDaThesis.bcf" 1760383960.82317 109527 b1523b2bdc0783d148e024cec4877512 "pdflatex"
+["biber DEMO-TUDaThesis"] 1760447248.24412 "DEMO-TUDaThesis.bcf" "DEMO-TUDaThesis.bbl" "DEMO-TUDaThesis" 1760447260.43399 0
+  "DEMO-TUDaThesis.bcf" 1760447260.32553 108725 89c353b7327ec4cd2c96b283ad40a857 "pdflatex"
   "references.bib" 1760374790.48649 8126 0f287e0be056d751f9b983b9f6fd1eba ""
   (generated)
   "DEMO-TUDaThesis.bbl"
   "DEMO-TUDaThesis.blg"
   (rewritten before read)
-["pdflatex"] 1760383958.6515 "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" "DEMO-TUDaThesis.pdf" "DEMO-TUDaThesis" 1760383960.92727 0
+["pdflatex"] 1760447259.33085 "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" "DEMO-TUDaThesis.pdf" "DEMO-TUDaThesis" 1760447260.43432 0
   "/etc/texmf/web2c/texmf.cnf" 1758636827.55604 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" 1760383950.07393 33564 12b3537ca313876764bcfeafcc9ef21a ""
+  "/home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex" 1760447258.36646 33930 7d0c1aa1cc7538ff8e45dd387ec84864 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_4jpen6.enc" 1576101225 3036 1ea92f9009c1d80ca35c3367187b071e ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_b5rac7.enc" 1576101225 3075 0696ceafc85b8352a913efb9ba64bc17 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_e24joy.enc" 1576101225 2878 ee6c3e6e1872c475b7f5204786cfa185 ""
@@ -254,18 +254,18 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1758638717.05928 5349216 bf3a80e68d946c7acd95ff030fd9bb63 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1758647000 7307535 b9848762292d1db82db462d0ea9ddc6e ""
-  "DEMO-TUDaThesis.aux" 1760383960.81515 32312 210b9874806b1043a0ee38c1e09d3814 "pdflatex"
-  "DEMO-TUDaThesis.bbl" 1760383951.70314 44683 af737b84d1a22e7c43fb40369ce960a0 "biber DEMO-TUDaThesis"
-  "DEMO-TUDaThesis.lof" 1760383960.82317 603 baac92234c44c566dac238451b10dcd3 "pdflatex"
-  "DEMO-TUDaThesis.lot" 1760383960.82317 335 68584b8687c074251504eae8500fc100 "pdflatex"
-  "DEMO-TUDaThesis.out" 1760383960.09657 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
-  "DEMO-TUDaThesis.run.xml" 1760383960.82317 2443 6f92f53b76d02ba7909a4a9bfaefdb17 "pdflatex"
-  "DEMO-TUDaThesis.tex" 1760383950.07393 33564 12b3537ca313876764bcfeafcc9ef21a ""
-  "DEMO-TUDaThesis.toc" 1760383960.82317 4201 be233968dfe25b52dad5cb75ade99da0 "pdflatex"
-  "DEMO-TUDaThesis.xmpdata" 1760383960.217 190 9865e17fe208a62ffe1cefa41d44f110 "pdflatex"
+  "DEMO-TUDaThesis.aux" 1760447260.31306 32482 c3b60edf34dd7a84632faa0ab0d139ec "pdflatex"
+  "DEMO-TUDaThesis.bbl" 1760447248.9243 44684 22e5006f7b63ac61f7001e27a0e3f60c "biber DEMO-TUDaThesis"
+  "DEMO-TUDaThesis.lof" 1760447260.32553 688 8d42610199ef60b833b899ca3a8b0748 "pdflatex"
+  "DEMO-TUDaThesis.lot" 1760447260.32553 335 68584b8687c074251504eae8500fc100 "pdflatex"
+  "DEMO-TUDaThesis.out" 1760447259.56914 0 d41d8cd98f00b204e9800998ecf8427e "pdflatex"
+  "DEMO-TUDaThesis.run.xml" 1760447260.32553 2443 6f92f53b76d02ba7909a4a9bfaefdb17 "pdflatex"
+  "DEMO-TUDaThesis.tex" 1760447258.36646 33930 7d0c1aa1cc7538ff8e45dd387ec84864 ""
+  "DEMO-TUDaThesis.toc" 1760447260.32553 4201 be233968dfe25b52dad5cb75ade99da0 "pdflatex"
+  "DEMO-TUDaThesis.xmpdata" 1760447259.6855 190 9865e17fe208a62ffe1cefa41d44f110 "pdflatex"
   "URspecialopts.sty" 1758642097.07194 6483 920e1f2ffdfd78bee1da6dfa77a32369 ""
   "images/DreamerFlow.png" 1760267207.27876 141788 d4600fa853948fb4b9fe61b3b1c6d206 ""
-  "pdfa.xmpi" 1760383959.55064 5386 ab4b1cf92a31a466dd51c0442909b749 "pdflatex"
+  "pdfa.xmpi" 1760447258.99977 5386 90006cf39394fba6774831b443ae1ec0 "pdflatex"
   "tuda-a4paper.clo" 1758642096.25983 1684 691d78acd7ef7b0b98c56eb856fd2e2b ""
   "tuda_logo.pdf" 1758642096.03367 535101 e91be11cb03c1d5496698a80d026c7ef ""
   "tudacolors.def" 1758642096.43459 4441 1adb0ecc4475095bd29549d3ead2a986 ""
