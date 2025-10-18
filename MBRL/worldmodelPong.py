@@ -38,6 +38,11 @@ model_scale_factor = 10
 VERBOSE = True
 model = None
 
+def print_full_array(arr):
+    with jnp.printoptions(threshold=jnp.inf, linewidth=200):
+        print("Full observation array:")
+        print(arr)
+
 
 action_map = {
     0: "NOOP",
@@ -606,6 +611,7 @@ def compare_real_vs_model(
     frame_stack_size: int = 4,
     model_scale_factor=4,
     model_path=None,
+    show_only_one_step = False
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -809,10 +815,18 @@ def compare_real_vs_model(
 
         step_count += 1
         clock.tick(clock_speed)
+        #we are doing this just for testing now
+        if show_only_one_step:
+            print_obs = real_obs[(4 - 1) :: 4]
+            print_full_array(print_obs)
+            time.sleep(1)
+            break
+        
 
     pygame.quit()
     print("Comparison completed")
 
+import time
 
 def main():
 
@@ -930,21 +944,43 @@ def main():
         rewards = saved_data["rewards"]
         boundaries = saved_data["boundaries"]
 
+    if len(args := sys.argv) > 1 and args[1] == "renderonce":
+
+
+        
+        #just for now
+        for i in range(100):
+            shuffled_obs = jax.random.permutation(jax.random.PRNGKey(i), obs)
+            compare_real_vs_model(
+                num_steps=1000,
+                render_scale=6,
+                obs=shuffled_obs,
+                actions=actions,
+                normalization_stats=normalization_stats,
+                boundaries=boundaries,
+                env=env,
+                starting_step=0,
+                steps_into_future=10,
+                render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
+                frame_stack_size=frame_stack_size,
+                model_scale_factor=model_scale_factor,
+                show_only_one_step=True
+            )
     if len(args := sys.argv) > 1 and args[1] == "render":
         compare_real_vs_model(
-            num_steps=1000,
-            render_scale=6,
-            obs=obs,
-            actions=actions,
-            normalization_stats=normalization_stats,
-            boundaries=boundaries,
-            env=env,
-            starting_step=0,
-            steps_into_future=10,
-            render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
-            frame_stack_size=frame_stack_size,
-            model_scale_factor=model_scale_factor,
-        )
+                num_steps=1000,
+                render_scale=6,
+                obs=obs,
+                actions=actions,
+                normalization_stats=normalization_stats,
+                boundaries=boundaries,
+                env=env,
+                starting_step=0,
+                steps_into_future=10,
+                render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
+                frame_stack_size=frame_stack_size,
+                model_scale_factor=model_scale_factor,
+            )
 
 
 if __name__ == "__main__":

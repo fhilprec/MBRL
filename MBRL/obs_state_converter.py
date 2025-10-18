@@ -549,6 +549,7 @@ def pong_flat_observation_to_state(
     """
 
     if frame_stack_size > 1:
+
         # For frame stacking, unflatten first then take the last frame
         obs_structured = unflattener(obs)
         obs_structured = jax.tree_util.tree_map(lambda x: x[-1], obs_structured)

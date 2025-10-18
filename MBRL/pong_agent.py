@@ -16,7 +16,11 @@ import distrax
 from rtpt import RTPT
 from jax import lax
 
-from worldmodelPong import compare_real_vs_model, get_enhanced_reward
+
+
+
+
+from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_full_array
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
@@ -635,8 +639,25 @@ def generate_real_rollouts(
         pong_state = pong_flat_observation_to_state(
             cur_obs, unflattener, frame_stack_size=4
         )
+        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
+        # jax.debug.print(str(len(pong_state)))
+        # print_full_array(pong_state)
+        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
+        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
+        # print_obs = cur_obs[(4 - 1) :: 4]
+        # print_full_array(print_obs)
+        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
 
-        current_state = dummy_state.replace(env_state=pong_state)
+        key1, key2, subkey = jax.random.split(subkey, 3)
+        random_ball_vel_x = jnp.where(jax.random.uniform(key1) > 0.5, 1, -1)
+        random_ball_vel_y = jnp.where(jax.random.uniform(key2) > 0.5, 1, -1)
+        
+        randomized_pong_state = pong_state._replace(
+            ball_vel_x=random_ball_vel_x,
+            ball_vel_y=random_ball_vel_y
+        )
+
+        current_state = dummy_state.replace(env_state=randomized_pong_state)
 
         def rollout_step(carry, x):
             key, obs, state = carry
@@ -1118,7 +1139,7 @@ def main():
         "action_dim": 6,
         "rollout_length": 128,
         "num_rollouts": 3000,
-        "policy_epochs": 50,
+        "policy_epochs": 5,
         "actor_lr": 3e-4,
         "critic_lr": 3e-4,
         "lambda_": 0.95,
