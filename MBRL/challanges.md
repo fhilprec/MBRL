@@ -16,3 +16,6 @@ actor critic from dreamer paper https://arxiv.org/pdf/2010.02193
 Pong mit perfect Policy trainiert -> worldmodel lernt den Ball mit der Kelle zu tracken anstatt den Actions zu folgen
 
 
+TODO: use real rollouts from experience generation and just properly shuffle them. I am fed up with this other function
+Then get actor critic to run
+then adapt worldmodel so it can also train the actor critic

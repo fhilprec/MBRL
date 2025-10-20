@@ -171,6 +171,7 @@ def collect_experience_sequential(
 ):
     """Collect experience data sequentially to ensure proper transitions."""
     observations = []
+    states = []
     next_observations = []
     actions = []
     rewards = []
@@ -250,12 +251,13 @@ def collect_experience_sequential(
 
             rng, step_key = jax.random.split(rng)
             next_obs, next_state, reward, done, _ = env.step(state, action)
-
+        
             observations.append(current_obs)
             actions.append(action)
             next_observations.append(next_obs)
             rewards.append(reward)
             dones.append(done)
+            states.append(current_state)
 
             if not episodic_life:
 
@@ -293,6 +295,7 @@ def collect_experience_sequential(
         actions_array,
         rewards_array,
         dones_array,
+        flatten_obs(states, is_list=True),
         boundaries,
     )
 
@@ -728,9 +731,9 @@ def compare_real_vs_model(
 
         action = actions[step_count]
 
-        print(
-            f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
-        )
+        # print(
+        #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
+        # )
 
         next_real_obs = obs[step_count + 1]
 
@@ -853,7 +856,7 @@ def main():
 
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
-            obs, actions, rewards, _, boundaries = collect_experience_sequential(
+            obs, actions, rewards, _, states, boundaries = collect_experience_sequential(
                 env, num_episodes=20, max_steps_per_episode=10000, seed=i
             )
             next_obs = obs[1:]
@@ -869,6 +872,7 @@ def main():
                         "next_obs": next_obs,
                         "rewards": rewards,
                         "boundaries": boundaries,
+                        "states": states,
                     },
                     f,
                 )

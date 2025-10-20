@@ -20,7 +20,7 @@ from jax import lax
 
 
 
-from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_full_array
+from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_full_array, collect_experience_sequential
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
@@ -600,6 +600,40 @@ def generate_imagined_rollouts(
     return rollout_fn(initial_observations, keys)
 
 
+def run_single_episode(episode_key, actor_params, actor_network, env):
+    """Run one complete episode using JAX scan."""
+    reset_key, step_key = jax.random.split(episode_key)
+    obs, state = env.reset(reset_key)
+    
+    def step_fn(carry, _):
+        rng, obs, state, done = carry
+        
+        # Get action
+        rng, action_key = jax.random.split(rng)
+        flat_obs, _ = flatten_obs(obs, single_state=True)
+        pi = actor_network.apply(actor_params, flat_obs)
+        action = pi.sample(seed=action_key)
+        
+        # Step environment
+        next_obs, next_state, reward, next_done, _ = env.step(state, action)
+        
+        # Store transition
+        transition = (obs, state, action, reward, done)
+        
+        # Continue with next state (or stay at current if done)
+        new_obs = jax.lax.cond(done, lambda: obs, lambda: next_obs)
+        new_state = jax.lax.cond(done, lambda: state, lambda: next_state)
+        new_done = done | next_done
+        
+        return (rng, new_obs, new_state, new_done), transition
+    
+    initial_carry = (step_key, obs, state, jnp.array(False))
+    _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=10000)
+    
+    observations, states, actions, rewards, dones = transitions
+    return observations, actions, rewards, dones, states
+
+
 def generate_real_rollouts(
     dynamics_params: Any,
     actor_params: Any,
@@ -607,137 +641,79 @@ def generate_real_rollouts(
     actor_network: nn.Module,
     critic_network: nn.Module,
     rollout_length: int,
-    initial_observations: jnp.ndarray,
     normalization_stats: Dict,
     discount: float = 0.99,
+    num_episodes: int = 2,
     key: jax.random.PRNGKey = None,
-) -> Tuple[
-    jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-]:
-
-    from obs_state_converter import pong_flat_observation_to_state
-
+    initial_observations = None,
+    num_rollouts: int = 3000,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Collect episodes with JAX vmap and reshape to (rollout_length, num_rollouts, features)."""
+    
+    # Create environment
     game = JaxPong()
-    env = AtariWrapper(
-        game,
-        sticky_actions=False,
-        episodic_life=False,
-        frame_stack_size=4,
+    env = AtariWrapper(game, sticky_actions=False, episodic_life=False, frame_stack_size=4)
+    env = FlattenObservationWrapper(env)
+    
+    # Generate episode keys
+    episode_keys = jax.random.split(key, num_episodes)
+    
+    print(f"Collecting {num_episodes} episodes with vmap...")
+    
+    # Run episodes in parallel with vmap
+    vmapped_episode_fn = jax.vmap(
+        lambda k: run_single_episode(k, actor_params, actor_network, env),
+        in_axes=0
     )
-    dummy_obs, dummy_state = env.reset(jax.random.PRNGKey(0))
-    _, unflattener = flatten_obs(dummy_obs, single_state=True)
-
-    if key is None:
-        key = jax.random.PRNGKey(42)
-
-    state_mean = normalization_stats["mean"]
-    state_std = normalization_stats["std"]
-
-    def single_trajectory_rollout(cur_obs, subkey):
-        """Generate a single trajectory starting from cur_obs."""
-
-        pong_state = pong_flat_observation_to_state(
-            cur_obs, unflattener, frame_stack_size=4
-        )
-        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
-        # jax.debug.print(str(len(pong_state)))
-        # print_full_array(pong_state)
-        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
-        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
-        # print_obs = cur_obs[(4 - 1) :: 4]
-        # print_full_array(print_obs)
-        # jax.debug.print("------------------------------------------------------------------------------------------------------------")
-
-        key1, key2, subkey = jax.random.split(subkey, 3)
-        random_ball_vel_x = jnp.where(jax.random.uniform(key1) > 0.5, 1, -1)
-        random_ball_vel_y = jnp.where(jax.random.uniform(key2) > 0.5, 1, -1)
-        
-        randomized_pong_state = pong_state._replace(
-            ball_vel_x=random_ball_vel_x,
-            ball_vel_y=random_ball_vel_y
-        )
-
-        current_state = dummy_state.replace(env_state=randomized_pong_state)
-
-        def rollout_step(carry, x):
-            key, obs, state = carry
-
-            key, action_key = jax.random.split(key)
-            pi = actor_network.apply(actor_params, obs)
-            action = pi.sample(seed=action_key)
-            log_prob = pi.log_prob(action)
-
-            value_dist = critic_network.apply(critic_params, obs)
-            value = value_dist.mean()
-            next_obs, next_state, reward, done, _ = env.step(state, action)
-            next_obs, _ = flatten_obs(next_obs, single_state=True)
-
-            next_obs = next_obs.astype(jnp.float32)
-
-            # reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-            
-
-            old_score =  obs[-5]-obs[-1]
-            new_score =  next_obs[-5]-next_obs[-1]
-
-            reward = new_score - old_score
-            reward = jnp.where(jnp.abs(reward) > 1, 0.0, reward)
-
-
-            # jax.debug.print("obs[-5] : {} , obs[-1] : {}, next_obs[-5] : {}, next_obs[-1] : {}, reward : {}", obs[-5], obs[-1], next_obs[-5], next_obs[-1], reward)
-            # jax.debug.print("obs[-1] : {}", obs[-1])
-            # jax.debug.print("next_obs[-5] : {}", next_obs[-5])
-            # jax.debug.print("next_obs[-1] : {}", next_obs[-1])
-            # jax.debug.print("REWARD : {}", reward)
-
-            discount_factor = jnp.array(discount)
-
-            step_data = (next_obs, reward, discount_factor, action, value, log_prob, done)
-            new_carry = (key, next_obs, next_state)
-
-            return new_carry, step_data
-
-        cur_obs = cur_obs.astype(jnp.float32)
-        init_carry = (subkey, cur_obs, current_state)
-
-        _, trajectory_data = lax.scan(
-            rollout_step, init_carry, None, length=rollout_length
-        )
-
-        (
-            next_obs_seq,
-            rewards_seq,
-            discounts_seq,
-            actions_seq,
-            values_seq,
-            log_probs_seq,
-            dones_seq,
-        ) = trajectory_data
-
-        action_counts = jnp.bincount(actions_seq, length=6)
-        print(
-            f"Action 3 (LEFT): {action_counts[3]}, Action 4 (RIGHTFIRE): {action_counts[4]}"
-        )
-
-        observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
-        rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq])
-        discounts = jnp.concatenate([jnp.array([discount]), discounts_seq])
-
-
-        init_action = jnp.zeros_like(actions_seq[0])
-        initial_value_dist = critic_network.apply(critic_params, cur_obs)
-        initial_value = initial_value_dist.mean()
-        actions = jnp.concatenate([init_action[None, ...], actions_seq])
-        values = jnp.concatenate([initial_value[None, ...], values_seq])
-        log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
-
-        return observations, rewards, discounts, actions, values, log_probs, dones_seq
-
-    num_trajectories = initial_observations.shape[0]
-    keys = jax.random.split(key, num_trajectories)
-
-    rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0))
-    return rollout_fn(initial_observations, keys)
+    
+    all_obs, all_actions, all_rewards, all_dones, all_states = vmapped_episode_fn(episode_keys)
+    
+    # Flatten episodes: (num_episodes, max_steps, features) -> (total_steps, features)
+    all_obs = all_obs.reshape(-1, all_obs.shape[-1])
+    all_actions = all_actions.reshape(-1)
+    all_rewards = all_rewards.reshape(-1)
+    all_dones = all_dones.reshape(-1)
+    all_states = all_states.reshape(-1, all_states.shape[-1])
+    
+    total_steps = len(all_obs)
+    print(f"Total steps collected: {total_steps}")
+    
+    # Sample random rollouts
+    num_valid_starts = total_steps - rollout_length
+    if num_valid_starts < num_rollouts:
+        num_rollouts = num_valid_starts
+    
+    rng = jax.random.PRNGKey(42)
+    start_indices = jax.random.choice(rng, num_valid_starts, shape=(num_rollouts,), replace=False)
+    
+    # Create rollouts by slicing
+    obs_rollouts = jnp.stack([all_obs[i:i+rollout_length+1] for i in start_indices])
+    actions_rollouts = jnp.stack([all_actions[i:i+rollout_length] for i in start_indices])
+    rewards_rollouts = jnp.stack([all_rewards[i:i+rollout_length] for i in start_indices])
+    
+    # Compute values and log_probs
+    all_obs_for_critic = obs_rollouts.reshape(-1, obs_rollouts.shape[-1])
+    value_dists = critic_network.apply(critic_params, all_obs_for_critic)
+    values = value_dists.mean().reshape(num_rollouts, rollout_length + 1)
+    
+    all_actions_flat = actions_rollouts.reshape(-1)
+    all_obs_flat = obs_rollouts[:, :-1].reshape(-1, obs_rollouts.shape[-1])
+    pis = actor_network.apply(actor_params, all_obs_flat)
+    log_probs = pis.log_prob(all_actions_flat).reshape(num_rollouts, rollout_length)
+    
+    discounts = jnp.full_like(rewards_rollouts, discount)
+    
+    print(f"Rollouts shape: ({rollout_length+1}, {num_rollouts}, {obs_rollouts.shape[-1]})")
+    
+    # Transpose to (T, B, ...) format
+    return (
+        jnp.transpose(obs_rollouts, (1, 0, 2)),
+        jnp.transpose(actions_rollouts, (1, 0)),
+        jnp.transpose(rewards_rollouts, (1, 0)),
+        jnp.transpose(discounts, (1, 0)),
+        jnp.transpose(values, (1, 0)),
+        jnp.transpose(log_probs, (1, 0)),
+    )
 
 
 def train_dreamerv2_actor_critic(
@@ -1137,7 +1113,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 128,
+        "rollout_length": 20,
         "num_rollouts": 3000,
         "policy_epochs": 5,
         "actor_lr": 3e-4,
@@ -1223,7 +1199,6 @@ def main():
             imagined_actions,
             imagined_values,
             imagined_log_probs,
-            dones_seq
         ) = generate_real_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
@@ -1240,14 +1215,18 @@ def main():
         # print(jnp.sum(dones_seq))
         # exit()
 
-        print(imagined_rewards[:1000])
+        
 
         parser.add_argument("--render", type=int, help="Number of rollouts to render")
         args = parser.parse_args()
 
+        print(imagined_obs.shape)
+
         if args.render:
-            visualization_offset = 50
+            visualization_offset = 0
             for i in range(int(args.render)):
+                print_obs = imagined_obs[i + visualization_offset][:5][(4 - 1) :: 4]
+                print_full_array(print_obs)
                 compare_real_vs_model(
                     steps_into_future=0,
                     obs=imagined_obs[i + visualization_offset],
