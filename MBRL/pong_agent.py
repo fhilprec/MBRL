@@ -608,24 +608,42 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
     def step_fn(carry, _):
         rng, obs, state, done = carry
         
-        # Get action
-        rng, action_key = jax.random.split(rng)
-        flat_obs, _ = flatten_obs(obs, single_state=True)
-        pi = actor_network.apply(actor_params, flat_obs)
-        action = pi.sample(seed=action_key)
+        # Skip if already done
+        def continue_step(_):
+            # Get action
+            rng_new, action_key = jax.random.split(rng)
+            flat_obs, _ = flatten_obs(obs, single_state=True)
+            pi = actor_network.apply(actor_params, flat_obs)
+            action = pi.sample(seed=action_key)
+            
+            # Step environment
+            next_obs, next_state, reward, next_done, _ = env.step(state, action)
+            next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
+            reward = jnp.array(reward, dtype=jnp.float32)
+            # Store transition with valid mask (valid = not done BEFORE this step)
+            transition = (flat_obs, state, action, reward, ~done)
+            
+            return (rng_new, next_flat_obs, next_state, next_done), transition
         
-        # Step environment (only if not done)
-        next_obs, next_state, reward, next_done, _ = env.step(state, action)
-        next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
-        # Use current values if already done
-        obs = jax.lax.select(done, flat_obs, next_flat_obs)
-        reward = jnp.where(done, jnp.array(0.0), reward)
-        done = done | next_done
+        def skip_step(_):
+            # Return dummy data when done - ENSURE EXACT TYPE MATCHING
+            flat_obs, _ = flatten_obs(obs, single_state=True)
+            
+            # Make sure dummy values match the exact types from continue_step
+            dummy_action = jnp.array(0, dtype=jnp.int32)  # Match action type
+            dummy_reward = jnp.array(0.0, dtype=jnp.float32)  # Match reward type  
+            dummy_valid = jnp.array(False, dtype=jnp.bool_)  # Match valid mask type
+            
+            dummy_transition = (
+                flat_obs,  # Same obs type
+                state,     # Same state type
+                dummy_action,  # int32
+                dummy_reward,  # float32
+                dummy_valid    # bool
+            )
+            return (rng, flat_obs, state, done), dummy_transition
         
-        # Store transition with valid mask
-        transition = (flat_obs, state, action, reward, ~done)  # valid = not done before this step
-        
-        return (rng, flat_obs, state, done), transition
+        return jax.lax.cond(done, skip_step, continue_step, None)
     
     flattened_init_obs = flatten_obs(obs, single_state=True)[0]
 
@@ -672,36 +690,58 @@ def generate_real_rollouts(
         in_axes=0
     )
     
+    # After getting the vmapped results
     observations, actions, rewards, valid_mask, states, episode_length = vmapped_episode_fn(episode_keys)
-    
-    #all_obs is a pytree i need it to be a list of obs first so I can use flatten_obs
-    print(observations.shape)
-    print(valid_mask.shape)
-    print(valid_mask[0].sum())
-    exit()
 
-    # Flatten episodes: (num_episodes, max_steps, features) -> (total_steps, features)
-    all_obs = all_obs.reshape(-1, all_obs.shape[-1])
-    all_actions = all_actions.reshape(-1)
-    all_rewards = all_rewards.reshape(-1)
-    all_dones = all_dones.reshape(-1)
-    all_states = all_states.reshape(-1, all_states.shape[-1])
-    
+    print(f"Episode lengths: {episode_length}")
+
+    # Process each episode separately to extract only valid steps
+    all_valid_obs = []
+    all_valid_actions = []
+    all_valid_rewards = []
+    all_valid_states = []
+
+    for ep_idx in range(num_episodes):
+        ep_length = int(episode_length[ep_idx])
+        
+        # Extract valid steps for this episode
+        valid_obs = observations[ep_idx, :ep_length]
+        valid_actions = actions[ep_idx, :ep_length]
+        valid_rewards = rewards[ep_idx, :ep_length]
+        valid_states = states[ep_idx, :ep_length]
+        
+        all_valid_obs.append(valid_obs)
+        all_valid_actions.append(valid_actions)
+        all_valid_rewards.append(valid_rewards)
+        all_valid_states.append(valid_states)
+        
+        print(f"Episode {ep_idx+1}: {ep_length} valid steps")
+
+    # Concatenate all valid episodes
+    all_obs = jnp.concatenate(all_valid_obs, axis=0)
+    all_actions = jnp.concatenate(all_valid_actions, axis=0)
+    all_rewards = jnp.concatenate(all_valid_rewards, axis=0)
+    all_states = jnp.concatenate(all_valid_states, axis=0)
+
+    print(f"Total valid steps: {len(all_obs)}")
+
+    # Now you can sample rollouts from the concatenated valid data
     total_steps = len(all_obs)
-    print(f"Total steps collected: {total_steps}")
-    
-    # Sample random rollouts
     num_valid_starts = total_steps - rollout_length
     if num_valid_starts < num_rollouts:
         num_rollouts = num_valid_starts
-    
+        print(f"Reduced num_rollouts to {num_rollouts} due to insufficient data")
+
+    # Sample random rollout start positions
     rng = jax.random.PRNGKey(42)
     start_indices = jax.random.choice(rng, num_valid_starts, shape=(num_rollouts,), replace=False)
-    
+
     # Create rollouts by slicing
     obs_rollouts = jnp.stack([all_obs[i:i+rollout_length+1] for i in start_indices])
     actions_rollouts = jnp.stack([all_actions[i:i+rollout_length] for i in start_indices])
     rewards_rollouts = jnp.stack([all_rewards[i:i+rollout_length] for i in start_indices])
+
+    print(f"Rollout shapes: obs={obs_rollouts.shape}, actions={actions_rollouts.shape}, rewards={rewards_rollouts.shape}")
     
     # Compute values and log_probs
     all_obs_for_critic = obs_rollouts.reshape(-1, obs_rollouts.shape[-1])
