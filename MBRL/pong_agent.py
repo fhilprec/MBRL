@@ -600,8 +600,8 @@ def generate_imagined_rollouts(
     return rollout_fn(initial_observations, keys)
 
 
-def run_single_episode(episode_key, actor_params, actor_network, env):
-    """Run one complete episode using JAX scan."""
+def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000):
+    """Run one complete episode using JAX scan with masking."""
     reset_key, step_key = jax.random.split(episode_key)
     obs, state = env.reset(reset_key)
     
@@ -614,24 +614,30 @@ def run_single_episode(episode_key, actor_params, actor_network, env):
         pi = actor_network.apply(actor_params, flat_obs)
         action = pi.sample(seed=action_key)
         
-        # Step environment
+        # Step environment (only if not done)
         next_obs, next_state, reward, next_done, _ = env.step(state, action)
+        next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
+        # Use current values if already done
+        obs = jax.lax.select(done, flat_obs, next_flat_obs)
+        reward = jnp.where(done, jnp.array(0.0), reward)
+        done = done | next_done
         
-        # Store transition
-        transition = (obs, state, action, reward, done)
+        # Store transition with valid mask
+        transition = (flat_obs, state, action, reward, ~done)  # valid = not done before this step
         
-        # Continue with next state (or stay at current if done)
-        new_obs = jax.lax.cond(done, lambda: obs, lambda: next_obs)
-        new_state = jax.lax.cond(done, lambda: state, lambda: next_state)
-        new_done = done | next_done
-        
-        return (rng, new_obs, new_state, new_done), transition
+        return (rng, flat_obs, state, done), transition
     
-    initial_carry = (step_key, obs, state, jnp.array(False))
-    _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=10000)
+    flattened_init_obs = flatten_obs(obs, single_state=True)[0]
+
+    initial_carry = (step_key, flattened_init_obs, state, jnp.array(False))
+    _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=max_steps)
     
-    observations, states, actions, rewards, dones = transitions
-    return observations, actions, rewards, dones, states
+    observations, states, actions, rewards, valid_mask = transitions
+    
+    # Filter to only valid steps
+    episode_length = jnp.sum(valid_mask)
+    
+    return observations, actions, rewards, valid_mask, states, episode_length
 
 
 def generate_real_rollouts(
@@ -666,8 +672,14 @@ def generate_real_rollouts(
         in_axes=0
     )
     
-    all_obs, all_actions, all_rewards, all_dones, all_states = vmapped_episode_fn(episode_keys)
+    observations, actions, rewards, valid_mask, states, episode_length = vmapped_episode_fn(episode_keys)
     
+    #all_obs is a pytree i need it to be a list of obs first so I can use flatten_obs
+    print(observations.shape)
+    print(valid_mask.shape)
+    print(valid_mask[0].sum())
+    exit()
+
     # Flatten episodes: (num_episodes, max_steps, features) -> (total_steps, features)
     all_obs = all_obs.reshape(-1, all_obs.shape[-1])
     all_actions = all_actions.reshape(-1)
