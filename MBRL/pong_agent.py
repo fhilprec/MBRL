@@ -667,7 +667,7 @@ def generate_real_rollouts(
     rollout_length: int,
     normalization_stats: Dict,
     discount: float = 0.99,
-    num_episodes: int = 2,
+    num_episodes: int = 5,
     key: jax.random.PRNGKey = None,
     initial_observations = None,
     num_rollouts: int = 3000,
@@ -708,12 +708,10 @@ def generate_real_rollouts(
         valid_obs = observations[ep_idx, :ep_length]
         valid_actions = actions[ep_idx, :ep_length]
         valid_rewards = rewards[ep_idx, :ep_length]
-        valid_states = states[ep_idx, :ep_length]
         
         all_valid_obs.append(valid_obs)
         all_valid_actions.append(valid_actions)
         all_valid_rewards.append(valid_rewards)
-        all_valid_states.append(valid_states)
         
         print(f"Episode {ep_idx+1}: {ep_length} valid steps")
 
@@ -721,7 +719,6 @@ def generate_real_rollouts(
     all_obs = jnp.concatenate(all_valid_obs, axis=0)
     all_actions = jnp.concatenate(all_valid_actions, axis=0)
     all_rewards = jnp.concatenate(all_valid_rewards, axis=0)
-    all_states = jnp.concatenate(all_valid_states, axis=0)
 
     print(f"Total valid steps: {len(all_obs)}")
 
@@ -754,17 +751,18 @@ def generate_real_rollouts(
     log_probs = pis.log_prob(all_actions_flat).reshape(num_rollouts, rollout_length)
     
     discounts = jnp.full_like(rewards_rollouts, discount)
-    
-    print(f"Rollouts shape: ({rollout_length+1}, {num_rollouts}, {obs_rollouts.shape[-1]})")
-    
+
+    print(f"Rollouts shape: (, {num_rollouts}, {rollout_length+1}, {obs_rollouts.shape[-1]})")
+    print(rewards_rollouts.shape)
+    print(values.shape)
     # Transpose to (T, B, ...) format
     return (
-        jnp.transpose(obs_rollouts, (1, 0, 2)),
-        jnp.transpose(actions_rollouts, (1, 0)),
-        jnp.transpose(rewards_rollouts, (1, 0)),
-        jnp.transpose(discounts, (1, 0)),
-        jnp.transpose(values, (1, 0)),
-        jnp.transpose(log_probs, (1, 0)),
+        obs_rollouts[:, :-1],
+        actions_rollouts,
+        rewards_rollouts,
+        discounts,
+        values[:, :-1],
+        log_probs,
     )
 
 
@@ -839,6 +837,7 @@ def train_dreamerv2_actor_critic(
             axis=0,
         )
         return targets
+
 
     targets = jax.vmap(compute_trajectory_targets, in_axes=(1, 1, 1), out_axes=1)(
         rewards, values, discounts
