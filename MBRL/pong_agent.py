@@ -619,7 +619,9 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
-            reward = jnp.array(reward, dtype=jnp.float32)
+            
+            reward = jnp.array(improved_pong_reward(next_flat_obs, action, frame_stack_size=4), dtype=jnp.float32)
+
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
             
@@ -946,7 +948,7 @@ def train_dreamerv2_actor_critic(
         entropy = pi.entropy()
 
         advantages = targets - values
-        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
 
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
@@ -954,9 +956,9 @@ def train_dreamerv2_actor_critic(
         objective =  -reinforce_obj 
 
         entropy_bonus = entropy_scale * entropy
-        total_objective = objective - entropy_bonus
+        total_objective = objective + entropy_bonus
 
-        actor_loss = jnp.mean(total_objective)
+        actor_loss = -jnp.mean(total_objective)
 
         return actor_loss, {
             "actor_loss": actor_loss,
@@ -1160,17 +1162,17 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 
 def main():
 
-    training_runs = 30
+    training_runs = 100
 
     training_params = {
         "action_dim": 6,
         "rollout_length": 20,
         "num_rollouts": 3000,
-        "policy_epochs": 5,
+        "policy_epochs": 10,
         "actor_lr": 3e-4,
         "critic_lr": 3e-4,
         "lambda_": 0.95,
-        "entropy_scale": 1e-2,
+        "entropy_scale": 1e-4,
         "discount": 0.95,
         "max_grad_norm": 10.0,
         "target_kl": 1,
