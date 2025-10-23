@@ -1196,13 +1196,20 @@ def main():
             with open("experience_data_LSTM_pong_0.pkl", "rb") as f:
                 saved_data = pickle.load(f)
                 obs = saved_data["obs"]
-        else:
-            print("Train Model first")
-            exit()
+        # else:
+        #     print("Train Model first")
+        #     exit()
 
-        obs_shape = obs.shape[1:]
+        # obs_shape = obs.shape[1:]
         key = jax.random.PRNGKey(42)
-        dummy_obs = jnp.zeros((1,) + obs_shape, dtype=jnp.float32)
+        # dummy_obs = jnp.zeros((1,) + obs_shape, dtype=jnp.float32)
+
+            # Create environment
+        game = JaxPong()
+        env = AtariWrapper(game, sticky_actions=False, episodic_life=False, frame_stack_size=4)
+        env = FlattenObservationWrapper(env)
+
+        dummy_obs = flatten_obs(env.reset(jax.random.PRNGKey(0))[0], single_state=True)[0]
 
         actor_params = None
         critic_params = None
@@ -1242,6 +1249,11 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
+        
+        #stuff to make it run without a model
+        obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
+        dynamics_params = None
+        normalization_stats = None
         shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
 
         print("Generating imagined rollouts...")
