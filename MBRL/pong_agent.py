@@ -1221,20 +1221,20 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 
 def main():
 
-    training_runs = 100
+    training_runs = 1000
 
     training_params = {
         "action_dim": 6,
         "rollout_length": 20,
         "num_rollouts": 3000,
-        "policy_epochs": 4,  # Reduced to prevent overfitting
-        "actor_lr": 3e-4,  # Reduced for stable learning
-        "critic_lr": 8e-4,  # Slightly higher than actor
+        "policy_epochs": 10,  # Max epochs, KL will stop earlier
+        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
+        "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
-        "entropy_scale": 0.01,  # Increased significantly to prevent collapse
+        "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
-        "max_grad_norm": 0.5,  # Much tighter gradient clipping
-        "target_kl": 0.01,  # Enforce KL constraint
+        "max_grad_norm": 0.5,  # Tight gradient clipping
+        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
 
