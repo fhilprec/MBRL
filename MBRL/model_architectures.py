@@ -872,33 +872,34 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     ball_x = obs[8]  # Ball X position
     ball_y = obs[9]  # Ball Y position
 
-    # 1. Primary reward: Track ball vertically
-    
-    tracking_reward = 10 - abs(obs[9] - obs[1])  # ball_y - player_y
-    # y_distance = jnp.abs(ball_y - player_y)
-    # tracking_reward = jnp.exp(-y_distance / 20.0)  # Exponential decay
+    # 1. Primary reward: Track ball vertically with exponential distance penalty
+    y_distance = jnp.abs(ball_y - player_y)
 
-    # 2. Bonus for being in the right horizontal zone when ball approaches
-    # Encourage positioning when ball is on player's side
-    ball_approaching = ball_x > 0.5  # Assuming normalized coordinates
-    # positioning_bonus = jnp.where(ball_approaching & (y_distance < 0.1), 0.2, 0.0)
+    # Exponential reward that's stronger when closer to ball
+    # Range: [0, 1] where 1 is perfect alignment
+    tracking_reward = jnp.exp(-y_distance * 3.0)
 
-    # 3. Action rewards - encourage movement actions over no-op
-    # Actions 3 (LEFT) and 4 (RIGHTFIRE) are movement actions
-    movement_bonus = jnp.where(
-        (action == 3) | (action == 4),  # LEFT or RIGHTFIRE
-        0.5,  # Small bonus for movement
-        -0.02,  # Small penalty for no-op/other actions
+    # 2. Bonus for being aligned when ball is on player's side
+    ball_on_player_side = ball_x < 0.5  # Assuming player is on left side
+    alignment_bonus = jnp.where(
+        ball_on_player_side & (y_distance < 0.2),
+        0.5,  # Strong bonus for good positioning
+        0.0
     )
 
-    # 4. Prevent extreme movements (optional stabilization)
-    # Penalize if player is at screen edges unnecessarily
-    edge_penalty = jnp.where((player_y < 0.1) | (player_y > 0.9), -0.1, 0.0)
+    # 3. Small encouragement for movement actions (helps exploration)
+    # Actions 2 (RIGHT), 3 (LEFT), 4 (RIGHTFIRE), 5 (LEFTFIRE) are movement actions
+    movement_reward = jnp.where(
+        (action == 2) | (action == 3) | (action == 4) | (action == 5),
+        0.05,  # Small bonus
+        0.0
+    )
 
-    total_reward = tracking_reward * 0.5 + movement_bonus * 5
+    # Combine rewards with appropriate scaling
+    total_reward = tracking_reward + alignment_bonus + movement_reward
 
-    # Clip to reasonable range to prevent training instability
-    return jnp.clip(total_reward, -0.5, 1.5)
+    # Scale to reasonable range for learning
+    return total_reward
 
 
 def simple_movement_reward(obs, action, frame_stack_size=4):

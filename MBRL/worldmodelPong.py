@@ -618,6 +618,7 @@ def compare_real_vs_model(
 ):
 
     rng = jax.random.PRNGKey(0)
+    print(obs.shape)
 
     if len(obs) == 1:
         obs = obs.squeeze(0)
@@ -689,11 +690,12 @@ def compare_real_vs_model(
             else:
                 model_path = "model_pong.pkl"
 
-    with open(model_path, "rb") as f:
-        model_data = pickle.load(f)
-        dynamics_params = model_data["dynamics_params"]
-        normalization_stats = model_data.get("normalization_stats", None)
-    world_model = MODEL_ARCHITECTURE(model_scale_factor)
+    if steps_into_future != 0:
+        with open(model_path, "rb") as f:
+            model_data = pickle.load(f)
+            dynamics_params = model_data["dynamics_params"]
+            normalization_stats = model_data.get("normalization_stats", None)
+        world_model = MODEL_ARCHITECTURE(model_scale_factor)
 
     pygame.init()
     WIDTH = 160

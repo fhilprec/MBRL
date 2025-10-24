@@ -450,13 +450,14 @@ def create_dreamerv2_critic():
 
             mean = nn.Dense(1, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
             log_std = nn.Dense(
-                1, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+                1, kernel_init=orthogonal(0.01), bias_init=constant(-1.0)  # Initialize to lower std
             )(x)
 
             mean = jnp.squeeze(mean, axis=-1)
             log_std = jnp.squeeze(log_std, axis=-1)
 
-            log_std = jnp.clip(log_std, -10, 2)
+            # Tighter clipping for more stable learning: std in [0.05, 1.0]
+            log_std = jnp.clip(log_std, -3.0, 0.0)
 
             return distrax.Normal(mean, jnp.exp(log_std))
 
@@ -669,7 +670,7 @@ def generate_real_rollouts(
     rollout_length: int,
     normalization_stats: Dict,
     discount: float = 0.99,
-    num_episodes: int = 5,
+    num_episodes: int = 30,
     key: jax.random.PRNGKey = None,
     initial_observations = None,
     num_rollouts: int = 3000,
@@ -755,16 +756,19 @@ def generate_real_rollouts(
     discounts = jnp.full_like(rewards_rollouts, discount)
 
     print(f"Rollouts shape: (, {num_rollouts}, {rollout_length+1}, {obs_rollouts.shape[-1]})")
-    print(rewards_rollouts.shape)
-    print(values.shape)
-    # Transpose to (T, B, ...) format
+    print(f"Before transpose - rewards: {rewards_rollouts.shape}, values: {values.shape}")
+
+    # Transpose to (T, B, ...) format as expected by training function
+    # Current format: (B, T, ...) where B=num_rollouts, T=rollout_length
+    # Need format: (T, B, ...) where T=rollout_length, B=num_rollouts
+    # NOTE: values needs T+1 timesteps for bootstrapping, others need T timesteps
     return (
-        obs_rollouts[:, :-1],
-        actions_rollouts,
-        rewards_rollouts,
-        discounts,
-        values[:, :-1],
-        log_probs,
+        jnp.transpose(obs_rollouts[:, :-1], (1, 0, 2)),  # (B, T, F) -> (T, B, F)
+        jnp.transpose(actions_rollouts, (1, 0)),         # (B, T) -> (T, B)
+        jnp.transpose(rewards_rollouts, (1, 0)),         # (B, T) -> (T, B)
+        jnp.transpose(discounts, (1, 0)),                # (B, T) -> (T, B)
+        jnp.transpose(values, (1, 0)),                   # (B, T+1) -> (T+1, B) - KEEP all values!
+        jnp.transpose(log_probs, (1, 0)),                # (B, T) -> (T, B)
     )
 
 
@@ -826,21 +830,31 @@ def train_dreamerv2_actor_critic(
     T, B = rewards.shape[:2]
 
     def compute_trajectory_targets(traj_rewards, traj_values, traj_discounts):
-        """Compute λ-returns for a single trajectory."""
+        """Compute λ-returns for a single trajectory.
 
-        bootstrap = traj_values[-1]
+        Args:
+            traj_rewards: (T,) rewards for timesteps 0 to T-1
+            traj_values: (T+1,) values for timesteps 0 to T
+            traj_discounts: (T,) discount factors
+
+        Returns:
+            targets: (T,) lambda returns for timesteps 0 to T-1
+        """
+        bootstrap = traj_values[-1]  # V(s_T) for bootstrapping
 
         targets = lambda_return_dreamerv2(
-            traj_rewards[:-1],
-            traj_values[:-1],
-            traj_discounts[:-1],
-            bootstrap,
+            traj_rewards,          # (T,) - all T rewards
+            traj_values[:-1],      # (T,) - V(s_0) to V(s_{T-1})
+            traj_discounts,        # (T,) - all T discounts
+            bootstrap,             # V(s_T) - bootstrap value
             lambda_=lambda_,
             axis=0,
         )
         return targets
 
 
+    # Vmap over batch dimension (axis 1) - compute targets for each trajectory separately
+    # rewards shape: (T, B), vmap over B to get 3000 trajectories of length T
     targets = jax.vmap(compute_trajectory_targets, in_axes=(1, 1, 1), out_axes=1)(
         rewards, values, discounts
     )
@@ -855,6 +869,8 @@ def train_dreamerv2_actor_critic(
     print(
         f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     )
+    print(f"Targets shape: {targets.shape}, Values shape: {values.shape}")
+    print(f"Raw advantages - Mean: {(targets - values[:-1]).mean():.4f}, Std: {(targets - values[:-1]).std():.4f}")
     # print(
     #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     # )
@@ -865,11 +881,12 @@ def train_dreamerv2_actor_critic(
     #     f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
     # )
 
-    observations_flat = observations[:-1].reshape((T - 1) * B, -1)
-    actions_flat = actions[:-1].reshape((T - 1) * B)
-    targets_flat = targets.reshape((T - 1) * B)
-    values_flat = values[:-1].reshape((T - 1) * B)
-    old_log_probs_flat = log_probs[:-1].reshape((T - 1) * B)
+    # Use all T timesteps for training
+    observations_flat = observations.reshape(T * B, -1)
+    actions_flat = actions.reshape(T * B)
+    targets_flat = targets.reshape(T * B)
+    values_flat = values[:-1].reshape(T * B)  # values has T+1 timesteps
+    old_log_probs_flat = log_probs.reshape(T * B)
 
     """"
     Dreamerv2 code
@@ -942,29 +959,61 @@ def train_dreamerv2_actor_critic(
         old_log_probs,
         actor_grad="both",
         mix_ratio=0.1,
+        debug=False,
     ):
         pi = actor_network.apply(actor_params, obs)
         log_prob = pi.log_prob(actions)
         entropy = pi.entropy()
 
         advantages = targets - values
+
+        if debug:
+            jax.debug.print("Raw advantages: mean={mean}, std={std}, min={min}, max={max}",
+                          mean=advantages.mean(), std=advantages.std(),
+                          min=advantages.min(), max=advantages.max())
+            jax.debug.print("Actions: shape={shape}, dtype={dtype}, min={min}, max={max}, first_10={first}",
+                          shape=actions.shape, dtype=actions.dtype,
+                          min=actions.min(), max=actions.max(),
+                          first=actions[:10])
+            jax.debug.print("Pi logits: shape={shape}, min={min}, max={max}, first_sample={first}",
+                          shape=pi.logits.shape,
+                          min=pi.logits.min(), max=pi.logits.max(),
+                          first=pi.logits[0])
+            jax.debug.print("Pi probs: first_sample={first}",
+                          first=pi.probs[0])
+            jax.debug.print("Log probs: mean={mean}, std={std}, min={min}, max={max}, first_10={first}",
+                          mean=log_prob.mean(), std=log_prob.std(),
+                          min=log_prob.min(), max=log_prob.max(),
+                          first=log_prob[:10])
+
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-
+        # REINFORCE objective: maximize log_prob * advantages
+        # We want to MAXIMIZE this, so the loss should be NEGATIVE
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
 
-        objective =  -reinforce_obj 
+        if debug:
+            jax.debug.print("Normalized advantages: mean={mean}, std={std}",
+                          mean=advantages.mean(), std=advantages.std())
+            jax.debug.print("Reinforce obj: mean={mean}, std={std}, sum={sum}",
+                          mean=reinforce_obj.mean(), std=reinforce_obj.std(),
+                          sum=reinforce_obj.sum())
 
+        # Entropy bonus encourages exploration (we want to MAXIMIZE entropy)
         entropy_bonus = entropy_scale * entropy
-        total_objective = objective + entropy_bonus
 
+        # Total objective to MAXIMIZE (higher is better)
+        total_objective = reinforce_obj + entropy_bonus
+
+        # Loss to MINIMIZE (negative of what we want to maximize)
         actor_loss = -jnp.mean(total_objective)
 
         return actor_loss, {
             "actor_loss": actor_loss,
-            "objective": jnp.mean(objective),
+            "objective": jnp.mean(reinforce_obj),
             "entropy": jnp.mean(entropy),
             "advantages_mean": jnp.mean(advantages),
+            "advantages_std": jnp.std(advantages),
             "mix_ratio": mix_ratio,
         }
 
@@ -974,12 +1023,15 @@ def train_dreamerv2_actor_critic(
 
         key, subkey = jax.random.split(key)
 
-        perm = jax.random.permutation(subkey, (T - 1) * B)
-        obs_shuffled = observations_flat#[perm]
-        actions_shuffled = actions_flat#[perm]
-        targets_shuffled = targets_flat#[perm]
-        values_shuffled = values_flat#[perm]
-        old_log_probs_shuffled = old_log_probs_flat#[perm]
+        perm = jax.random.permutation(subkey, T * B)
+        obs_shuffled = observations_flat[perm]
+        actions_shuffled = actions_flat[perm]
+        targets_shuffled = targets_flat[perm]
+        values_shuffled = values_flat[perm]
+        old_log_probs_shuffled = old_log_probs_flat[perm]
+
+        if epoch == 0:
+            print(f"Training data shapes: obs={obs_shuffled.shape}, targets={targets_shuffled.shape}, values={values_shuffled.shape}")
 
         # if epoch == 0:
         #     current_preds_dist = critic_network.apply(
@@ -1025,6 +1077,7 @@ def train_dreamerv2_actor_critic(
             targets_shuffled,
             values_shuffled,
             old_log_probs_shuffled,
+            debug=False,  # Disable debug now that issue is fixed
         )
         actor_state = actor_state.apply_gradients(grads=actor_grads)
 
@@ -1032,21 +1085,27 @@ def train_dreamerv2_actor_critic(
         new_log_probs = new_pi.log_prob(actions_shuffled)
         kl_div = jnp.mean(old_log_probs_new - new_log_probs)
 
-        # if kl_div > target_kl:
-        #     print(
-        #         f"Early stopping at epoch {epoch}: KL divergence {kl_div:.6f} > {target_kl}"
-        #     )
-        #     break
+        if kl_div > target_kl:
+            print(
+                f"Early stopping at epoch {epoch}: KL divergence {kl_div:.6f} > {target_kl}"
+            )
+            break
 
         update_counter += 1
 
         epoch_metrics = {**critic_metrics, **actor_metrics}
         metrics_history.append(epoch_metrics)
 
-        print(
-            f"Epoch {epoch}: Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}, "
-            f"Entropy: {actor_metrics['entropy']:.4f}"
-        )
+        if epoch % 10 == 0:
+            print(
+                f"Epoch {epoch}: Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}, "
+                f"Entropy: {actor_metrics['entropy']:.4f}, KL: {kl_div:.6f}, "
+                f"Reinforce Obj: {actor_metrics['objective']:.4f}"
+            )
+        else:
+            print(
+                f"Epoch {epoch}: Actor Loss: {actor_loss:.4f}, Critic Loss: {critic_loss:.4f}"
+            )
 
         total_loss = actor_loss + critic_loss
         if total_loss < best_loss:
@@ -1168,15 +1227,15 @@ def main():
         "action_dim": 6,
         "rollout_length": 20,
         "num_rollouts": 3000,
-        "policy_epochs": 10,
-        "actor_lr": 3e-4,
-        "critic_lr": 3e-4,
+        "policy_epochs": 4,  # Reduced to prevent overfitting
+        "actor_lr": 3e-4,  # Reduced for stable learning
+        "critic_lr": 8e-4,  # Slightly higher than actor
         "lambda_": 0.95,
-        "entropy_scale": 1e-4,
+        "entropy_scale": 0.01,  # Increased significantly to prevent collapse
         "discount": 0.95,
-        "max_grad_norm": 10.0,
-        "target_kl": 1,
-        "early_stopping_patience": 25,
+        "max_grad_norm": 0.5,  # Much tighter gradient clipping
+        "target_kl": 0.01,  # Enforce KL constraint
+        "early_stopping_patience": 100,
     }
 
     for i in range(training_runs):
@@ -1259,9 +1318,9 @@ def main():
         print("Generating imagined rollouts...")
         (
             imagined_obs,
+            imagined_actions,   # FIX: Corrected order to match return statement
             imagined_rewards,
             imagined_discounts,
-            imagined_actions,
             imagined_values,
             imagined_log_probs,
         ) = generate_real_rollouts(
@@ -1290,12 +1349,11 @@ def main():
         if args.render:
             visualization_offset = 0
             for i in range(int(args.render)):
-                print_obs = imagined_obs[i + visualization_offset][:5][(4 - 1) :: 4]
-                print_full_array(print_obs)
+
                 compare_real_vs_model(
                     steps_into_future=0,
-                    obs=imagined_obs[i + visualization_offset],
-                    actions=imagined_actions[i + visualization_offset],
+                    obs=imagined_obs[:, i, :],
+                    actions=imagined_actions[:, i],
                     frame_stack_size=4,
                 )
 
