@@ -856,7 +856,7 @@ def enhanced_reward_integration(obs, action, frame_stack_size=4):
 
 def improved_pong_reward(obs, action, frame_stack_size=4):
     """
-    Improved reward function for Pong ball tracking.
+    Improved reward function for Pong - emphasizes winning behaviors.
 
     Args:
         obs: Flattened observation (should be shape [56] for 4-frame stack)
@@ -866,39 +866,61 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     if frame_stack_size > 1:
         obs = obs[(frame_stack_size - 1) :: frame_stack_size]
 
-    # Extract ball and player positions from the latest frame
-    # Assuming standard Pong state format: [player_x, player_y, ..., ball_x, ball_y, ...]
+    # Extract positions from the latest frame
+    player_x = obs[0]  # Player X position
     player_y = obs[1]  # Player Y position
     ball_x = obs[8]  # Ball X position
     ball_y = obs[9]  # Ball Y position
+    ball_vx = obs[10]  # Ball X velocity
+    ball_vy = obs[11]  # Ball Y velocity
 
-    # 1. Primary reward: Track ball vertically with exponential distance penalty
+    # 1. PRIMARY: Vertical tracking reward (exponential for tight alignment)
     y_distance = jnp.abs(ball_y - player_y)
+    # Stronger exponential for tighter tracking: range [0, 2.0]
+    tracking_reward = 2.0 * jnp.exp(-y_distance / 10.0)
 
-    # Exponential reward that's stronger when closer to ball
-    # Range: [0, 1] where 1 is perfect alignment
-    tracking_reward = jnp.exp(-y_distance * 3.0)
+    # 2. CRITICAL: Reward being ready when ball is approaching
+    ball_approaching = ball_vx < 0  # Ball moving towards player (left side)
+    x_distance = jnp.abs(ball_x - player_x)
 
-    # 2. Bonus for being aligned when ball is on player's side
-    ball_on_player_side = ball_x < 0.5  # Assuming player is on left side
-    alignment_bonus = jnp.where(
-        ball_on_player_side & (y_distance < 0.2),
-        0.5,  # Strong bonus for good positioning
+    defensive_bonus = jnp.where(
+        ball_approaching & (x_distance < 50.0),  # Ball is close and approaching
+        jnp.where(
+            y_distance < 15.0,  # And we're well-aligned
+            3.0,  # BIG reward for good defensive position
+            -1.0,  # Penalty for being misaligned when ball is close
+        ),
         0.0
     )
 
-    # 3. Small encouragement for movement actions (helps exploration)
-    # Actions 2 (RIGHT), 3 (LEFT), 4 (RIGHTFIRE), 5 (LEFTFIRE) are movement actions
-    movement_reward = jnp.where(
-        (action == 2) | (action == 3) | (action == 4) | (action == 5),
-        0.05,  # Small bonus
-        0.0
+    # 3. Predictive positioning: reward moving toward where ball will be
+    # If ball is moving up (vy > 0) and we're below it, reward upward movement
+    # If ball is moving down (vy < 0) and we're above it, reward downward movement
+    correct_direction_reward = jnp.where(
+        (ball_vy > 0) & (player_y < ball_y) & ((action == 3) | (action == 5)),  # Move up
+        0.5,
+        jnp.where(
+            (ball_vy < 0) & (player_y > ball_y) & ((action == 2) | (action == 4)),  # Move down
+            0.5,
+            0.0
+        )
     )
 
-    # Combine rewards with appropriate scaling
-    total_reward = tracking_reward + alignment_bonus + movement_reward
+    # 4. Small penalty for no-op to encourage active play
+    no_op_penalty = jnp.where(action == 0, -0.2, 0.0)
 
-    # Scale to reasonable range for learning
+    # 5. Offensive positioning: small bonus when ball is on opponent's side
+    offensive_bonus = jnp.where(ball_x > player_x + 30, 0.3, 0.0)
+
+    # Combine all rewards
+    total_reward = (
+        tracking_reward +
+        defensive_bonus +
+        correct_direction_reward +
+        no_op_penalty +
+        offensive_bonus
+    )
+
     return total_reward
 
 

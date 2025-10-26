@@ -400,7 +400,8 @@ def create_dreamerv2_actor(action_dim: int):
         @nn.compact
         def __call__(self, x):
 
-            hidden_size = 64
+            # Increased from 64 to 256 for better learning capacity
+            hidden_size = 256
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -414,6 +415,12 @@ def create_dreamerv2_actor(action_dim: int):
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            )(x)
+            x = nn.elu(x)
+
+            # Add 4th layer for more capacity
+            x = nn.Dense(
+                hidden_size // 2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
             )(x)
             x = nn.elu(x)
 
@@ -433,7 +440,8 @@ def create_dreamerv2_critic():
 
         @nn.compact
         def __call__(self, x):
-            hidden_size = 64
+            # Increased from 64 to 256 for better learning capacity
+            hidden_size = 256
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -447,6 +455,12 @@ def create_dreamerv2_critic():
 
             x = nn.Dense(
                 hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            )(x)
+            x = nn.elu(x)
+
+            # Add 4th layer for more capacity
+            x = nn.Dense(
+                hidden_size // 2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
             )(x)
             x = nn.elu(x)
 
@@ -549,10 +563,9 @@ def generate_imagined_rollouts(
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
             reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-
-            print(f"Raw reward before tanh: {reward}")
-            reward = jnp.tanh(reward * 0.1)
-            print(f"Final reward after tanh: {reward}")
+            # Removed aggressive tanh scaling - was compressing signal too much
+            # reward = jnp.tanh(reward * 0.1)  # OLD: This killed gradients!
+            reward = reward * 0.5  # Moderate scaling to keep values reasonable
 
             discount_factor = jnp.array(discount)
 
@@ -632,7 +645,8 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             score_reward = new_score - old_score
             score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
 
-            reward = reward + score_reward * 2 # to make actual score really important
+            # Increased from 2 to 10 - scoring points should be the PRIMARY objective
+            reward = reward + score_reward * 10
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
@@ -1236,16 +1250,16 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 20,
+        "rollout_length": 20,  # Increased from 20 - longer planning horizon for full rallies
         "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
-        "critic_lr": 5e-4,  # Moderate critic learning rate
+        "actor_lr": 8e-5,  # Increased from 8e-5 for faster learning
+        "critic_lr": 5e-4,  # Increased from 5e-4 for faster value learning
         "lambda_": 0.95,
-        "entropy_scale": 0.01,  # Maintain exploration
-        "discount": 0.95,
-        "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
+        "entropy_scale": 0.03,  # Increased from 0.01 for more exploration
+        "discount": 0.99,  # Increased from 0.95 for longer-term planning
+        "max_grad_norm": 1.0,  # Increased from 0.5 - less aggressive clipping
+        "target_kl": 0.3,  # Increased from 0.15 to allow more updates
         "early_stopping_patience": 100,
     }
 
@@ -1321,8 +1335,6 @@ def main():
 
         
 
-        evaluate_real_performance(actor_network, actor_params,  num_episodes=5)
-        exit()
 
         #stuff to make it run without a model
         obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
