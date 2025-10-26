@@ -2,6 +2,8 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 import jax
 import jax.numpy as jnp
 import optax
@@ -1248,7 +1250,7 @@ def main():
     }
 
     for i in range(training_runs):
-
+        print(f"This is the {i}th iteration training the actor-critic")
         parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
 
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
@@ -1412,6 +1414,6 @@ def main():
 
 
 if __name__ == "__main__":
-    rtpt = RTPT(name_initials="FH", experiment_name="DreamerV2Agent", max_iterations=3)
+    rtpt = RTPT(name_initials="FH", experiment_name="OCActorCritic", max_iterations=3)
     rtpt.start()
     main()
