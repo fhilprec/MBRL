@@ -1,0 +1,312 @@
+(jaxatari) florian@florian-ThinkPad-T470s:~/MBRL$ python MBRL/pong_agent.py --render 100
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.18)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+This is the 0th iteration training the actor-critic
+Loaded existing actor parameters
+Loaded existing critic parameters
+Actor parameters: 12,358
+Critic parameters: 12,098
+Episode 1:
+  Training reward would be: 0.050
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 65.00, Ball Y: 48.00, Distance: 17.00
+  Step 200, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 77.00, Ball Y: 69.00, Distance: 8.00
+  Step 300, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 178.00, Ball Y: 154.00, Distance: 24.00
+  Step 400, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 62.00, Ball Y: 58.00, Distance: 4.00
+  Step 500, Reward: 2.000
+  Training reward would be: 0.050
+  Player Y: 59.00, Ball Y: 54.00, Distance: 5.00
+  Step 600, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 60.00, Ball Y: 54.00, Distance: 6.00
+  Step 700, Reward: 4.000
+  Training reward would be: 0.100
+  Player Y: 91.00, Ball Y: 92.00, Distance: 1.00
+  Step 800, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 189.00, Ball Y: 177.00, Distance: 12.00
+  Step 900, Reward: 4.000
+  Training reward would be: 0.050
+  Player Y: 190.00, Ball Y: 168.00, Distance: 22.00
+  Step 1000, Reward: 5.000
+  Final reward: 5.000, Steps: 1000
+Episode 2:
+  Training reward would be: 0.050
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 65.00, Ball Y: 48.00, Distance: 17.00
+  Step 200, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 77.00, Ball Y: 69.00, Distance: 8.00
+  Step 300, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 178.00, Ball Y: 154.00, Distance: 24.00
+  Step 400, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 62.00, Ball Y: 58.00, Distance: 4.00
+  Step 500, Reward: 2.000
+  Training reward would be: 0.050
+  Player Y: 59.00, Ball Y: 54.00, Distance: 5.00
+  Step 600, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 60.00, Ball Y: 54.00, Distance: 6.00
+  Step 700, Reward: 4.000
+  Training reward would be: 0.100
+  Player Y: 91.00, Ball Y: 92.00, Distance: 1.00
+  Step 800, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 189.00, Ball Y: 177.00, Distance: 12.00
+  Step 900, Reward: 4.000
+  Training reward would be: 0.050
+  Player Y: 190.00, Ball Y: 168.00, Distance: 22.00
+  Step 1000, Reward: 5.000
+  Final reward: 5.000, Steps: 1000
+Episode 3:
+  Training reward would be: 0.050
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 65.00, Ball Y: 48.00, Distance: 17.00
+  Step 200, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 77.00, Ball Y: 69.00, Distance: 8.00
+  Step 300, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 178.00, Ball Y: 154.00, Distance: 24.00
+  Step 400, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 62.00, Ball Y: 58.00, Distance: 4.00
+  Step 500, Reward: 2.000
+  Training reward would be: 0.050
+  Player Y: 59.00, Ball Y: 54.00, Distance: 5.00
+  Step 600, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 60.00, Ball Y: 54.00, Distance: 6.00
+  Step 700, Reward: 4.000
+  Training reward would be: 0.100
+  Player Y: 91.00, Ball Y: 92.00, Distance: 1.00
+  Step 800, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 189.00, Ball Y: 177.00, Distance: 12.00
+  Step 900, Reward: 4.000
+  Training reward would be: 0.050
+  Player Y: 190.00, Ball Y: 168.00, Distance: 22.00
+  Step 1000, Reward: 5.000
+  Final reward: 5.000, Steps: 1000
+Episode 4:
+  Training reward would be: 0.050
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 65.00, Ball Y: 48.00, Distance: 17.00
+  Step 200, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 77.00, Ball Y: 69.00, Distance: 8.00
+  Step 300, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 178.00, Ball Y: 154.00, Distance: 24.00
+  Step 400, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 62.00, Ball Y: 58.00, Distance: 4.00
+  Step 500, Reward: 2.000
+  Training reward would be: 0.050
+  Player Y: 59.00, Ball Y: 54.00, Distance: 5.00
+  Step 600, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 60.00, Ball Y: 54.00, Distance: 6.00
+  Step 700, Reward: 4.000
+  Training reward would be: 0.100
+  Player Y: 91.00, Ball Y: 92.00, Distance: 1.00
+  Step 800, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 189.00, Ball Y: 177.00, Distance: 12.00
+  Step 900, Reward: 4.000
+  Training reward would be: 0.050
+  Player Y: 190.00, Ball Y: 168.00, Distance: 22.00
+  Step 1000, Reward: 5.000
+  Final reward: 5.000, Steps: 1000
+Episode 5:
+  Training reward would be: 0.050
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 65.00, Ball Y: 48.00, Distance: 17.00
+  Step 200, Reward: 0.000
+  Training reward would be: 0.050
+  Player Y: 77.00, Ball Y: 69.00, Distance: 8.00
+  Step 300, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 178.00, Ball Y: 154.00, Distance: 24.00
+  Step 400, Reward: 1.000
+  Training reward would be: 0.050
+  Player Y: 62.00, Ball Y: 58.00, Distance: 4.00
+  Step 500, Reward: 2.000
+  Training reward would be: 0.050
+  Player Y: 59.00, Ball Y: 54.00, Distance: 5.00
+  Step 600, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 60.00, Ball Y: 54.00, Distance: 6.00
+  Step 700, Reward: 4.000
+  Training reward would be: 0.100
+  Player Y: 91.00, Ball Y: 92.00, Distance: 1.00
+  Step 800, Reward: 3.000
+  Training reward would be: 0.050
+  Player Y: 189.00, Ball Y: 177.00, Distance: 12.00
+  Step 900, Reward: 4.000
+  Training reward would be: 0.050
+  Player Y: 190.00, Ball Y: 168.00, Distance: 22.00
+  Step 1000, Reward: 5.000
+  Final reward: 5.000, Steps: 1000
+
+Evaluation Results:
+Mean episode reward: 5.000 ± 0.000
+Episode rewards: [Array(5, dtype=int32), Array(5, dtype=int32), Array(5, dtype=int32), Array(5, dtype=int32), Array(5, dtype=int32)]
+(jaxatari) florian@florian-ThinkPad-T470s:~/MBRL$ python MBRL/pong_agent.py --render 100
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.18)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+This is the 0th iteration training the actor-critic
+Initialized new actor parameters
+Initialized new critic parameters
+Actor parameters: 12,358
+Critic parameters: 12,098
+Episode 1:
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: -2.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 200, Reward: -4.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 186.00, Distance: 90.00
+  Step 300, Reward: -7.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 172.00, Distance: 76.00
+  Step 400, Reward: -10.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 158.00, Distance: 62.00
+  Step 500, Reward: -13.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 144.00, Distance: 48.00
+  Step 600, Reward: -16.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 130.00, Distance: 56.00
+  Step 700, Reward: -19.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 116.00, Distance: 42.00
+  Final reward: -21.000, Steps: 754
+Episode 2:
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: -2.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 200, Reward: -4.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 186.00, Distance: 90.00
+  Step 300, Reward: -7.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 172.00, Distance: 76.00
+  Step 400, Reward: -10.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 158.00, Distance: 62.00
+  Step 500, Reward: -13.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 144.00, Distance: 48.00
+  Step 600, Reward: -16.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 130.00, Distance: 56.00
+  Step 700, Reward: -19.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 116.00, Distance: 42.00
+  Final reward: -21.000, Steps: 754
+Episode 3:
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: -2.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 200, Reward: -4.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 186.00, Distance: 90.00
+  Step 300, Reward: -7.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 172.00, Distance: 76.00
+  Step 400, Reward: -10.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 158.00, Distance: 62.00
+  Step 500, Reward: -13.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 144.00, Distance: 48.00
+  Step 600, Reward: -16.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 130.00, Distance: 56.00
+  Step 700, Reward: -19.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 116.00, Distance: 42.00
+  Final reward: -21.000, Steps: 754
+Episode 4:
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: -2.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 200, Reward: -4.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 186.00, Distance: 90.00
+  Step 300, Reward: -7.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 172.00, Distance: 76.00
+  Step 400, Reward: -10.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 158.00, Distance: 62.00
+  Step 500, Reward: -13.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 144.00, Distance: 48.00
+  Step 600, Reward: -16.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 130.00, Distance: 56.00
+  Step 700, Reward: -19.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 116.00, Distance: 42.00
+  Final reward: -21.000, Steps: 754
+Episode 5:
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 100, Reward: -2.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 115.00, Distance: 19.00
+  Step 200, Reward: -4.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 186.00, Distance: 90.00
+  Step 300, Reward: -7.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 172.00, Distance: 76.00
+  Step 400, Reward: -10.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 158.00, Distance: 62.00
+  Step 500, Reward: -13.000
+  Training reward would be: 0.000
+  Player Y: 96.00, Ball Y: 144.00, Distance: 48.00
+  Step 600, Reward: -16.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 130.00, Distance: 56.00
+  Step 700, Reward: -19.000
+  Training reward would be: 0.000
+  Player Y: 74.00, Ball Y: 116.00, Distance: 42.00
+  Final reward: -21.000, Steps: 754
+
+Evaluation Results:
+Mean episode reward: -21.000 ± 0.000
+Episode rewards: [Array(-21, dtype=int32), Array(-21, dtype=int32), Array(-21, dtype=int32), Array(-21, dtype=int32), Array(-21, dtype=int32)]
+(jaxatari) florian@florian-ThinkPad-T470s:~/MBRL$ ^C
+(jaxatari) florian@florian-ThinkPad-T470s:~/MBRL$ ^C
+(jaxatari) florian@florian-ThinkPad-T470s:~/MBRL$ 

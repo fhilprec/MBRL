@@ -1134,7 +1134,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, obs_shape, num_episodes=5):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
     """Evaluate the trained policy in the real Pong environment."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1320,6 +1320,10 @@ def main():
         print(f"Critic parameters: {critic_param_count:,}")
 
         
+
+        evaluate_real_performance(actor_network, actor_params,  num_episodes=5)
+        exit()
+
         #stuff to make it run without a model
         obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
         dynamics_params = None
