@@ -1338,7 +1338,7 @@ def main():
             imagined_discounts,
             imagined_values,
             imagined_log_probs,
-        ) = generate_real_rollouts(
+        ) = generate_real_rollouts(   
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,
