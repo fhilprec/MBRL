@@ -25,7 +25,8 @@
 %%%%%%%%%%%%%%%%%%%
 % Language settings
 %%%%%%%%%%%%%%%%%%%
-\usepackage{babel}
+\usepackage[english]{babel}
+\selectlanguage{english}
 \usepackage[autostyle]{csquotes}
 \usepackage{microtype}
 
@@ -40,6 +41,9 @@
 \DefineBibliographyStrings{english}{
   bibliography = {References},
 }
+
+
+
 
 
 %%%%%%%%%%%%%%%%%%%
@@ -76,11 +80,11 @@
 \subtitle{Master's Thesis: Summer Semester 2025}
 \author[Y. Name]{Your Full Name}
 \studentID{1234567}
-\reviewer{Jannis Blüml, Raban Emunds}
+\reviewer{Prof. Dr. Kristian Kersting\\[0.2em]2. Review: Jannis Blüml, Raban Emunds}
 
 \department{Department of Computer Science}
 \institute{Institute of Computer Science}
-\group{Machine Learning Research Group}
+\group{Machine Learning Research Group (AI \& ML Lab)}
 
 \submissiondate{24.10.2025}
 \examdate{24.10.2025}
@@ -112,6 +116,21 @@
 	GPU  & Graphics Processing Unit            \\
 	JAX  & Just After eXecution                \\
 \end{tabular}
+
+
+\addto\captionsenglish{%
+  \renewcommand{\contentsname}{Table of Contents}%
+  \renewcommand{\listfigurename}{List of Figures}%
+  \renewcommand{\listtablename}{List of Tables}%
+  \renewcommand{\figurename}{Figure}%
+  \renewcommand{\tablename}{Table}%
+  \renewcommand{\partname}{Part}%
+  \renewcommand{\chaptername}{Chapter}%
+  \renewcommand{\appendixname}{Appendix}%
+  \renewcommand{\abstractname}{Abstract}%
+  \renewcommand{\bibname}{Bibliography}%
+  \renewcommand{\refname}{References}%
+}
 
 \chapter{Introduction}
 \label{chap:introduction}

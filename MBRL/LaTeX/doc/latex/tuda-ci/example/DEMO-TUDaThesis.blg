@@ -1,18 +1,18 @@
 [0] Config.pm:307> INFO - This is Biber 2.19
 [0] Config.pm:310> INFO - Logfile is 'DEMO-TUDaThesis.blg'
-[49] biber:340> INFO - === Tue Oct 14, 2025, 15:13:50
-[60] Biber.pm:419> INFO - Reading 'DEMO-TUDaThesis.bcf'
-[92] Biber.pm:979> INFO - Found 21 citekeys in bib section 0
-[98] Biber.pm:4419> INFO - Processing section 0
-[104] Biber.pm:4610> INFO - Looking for bibtex file 'references.bib' for section 0
-[105] bibtex.pm:1713> INFO - LaTeX decoding ...
-[112] bibtex.pm:1519> INFO - Found BibTeX data source 'references.bib'
-[247] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'normalization = NFD' with 'normalization = prenormalized'
-[247] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'variable = shifted' with 'variable = non-ignorable'
-[247] Biber.pm:4239> INFO - Sorting list 'none/global//global/global' of type 'entry' with template 'none' and locale 'de-DE'
-[247] Biber.pm:4245> INFO - No sort tailoring available for locale 'de-DE'
-[256] bbl.pm:660> INFO - Writing 'DEMO-TUDaThesis.bbl' with encoding 'UTF-8'
-[262] bbl.pm:763> INFO - Output to DEMO-TUDaThesis.bbl
-[262] Biber.pm:131> WARN - BibTeX subsystem: /tmp/biber_tmp_GBfT/33e59b5ca9ec342068223d604c3f8d55_26236.utf8, line 2, warning: 9 characters of junk seen at toplevel
-[262] Biber.pm:131> WARN - I didn't find a database entry for 'greff2020object' (section 0)
-[262] Biber.pm:133> INFO - WARNINGS: 2
+[161] biber:340> INFO - === Sun Oct 26, 2025, 11:13:47
+[185] Biber.pm:419> INFO - Reading 'DEMO-TUDaThesis.bcf'
+[278] Biber.pm:979> INFO - Found 21 citekeys in bib section 0
+[297] Biber.pm:4419> INFO - Processing section 0
+[312] Biber.pm:4610> INFO - Looking for bibtex file 'references.bib' for section 0
+[315] bibtex.pm:1713> INFO - LaTeX decoding ...
+[347] bibtex.pm:1519> INFO - Found BibTeX data source 'references.bib'
+[841] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'variable = shifted' with 'variable = non-ignorable'
+[841] UCollate.pm:68> INFO - Overriding locale 'de-DE' defaults 'normalization = NFD' with 'normalization = prenormalized'
+[841] Biber.pm:4239> INFO - Sorting list 'none/global//global/global' of type 'entry' with template 'none' and locale 'de-DE'
+[841] Biber.pm:4245> INFO - No sort tailoring available for locale 'de-DE'
+[876] bbl.pm:660> INFO - Writing 'DEMO-TUDaThesis.bbl' with encoding 'UTF-8'
+[898] bbl.pm:763> INFO - Output to DEMO-TUDaThesis.bbl
+[898] Biber.pm:131> WARN - BibTeX subsystem: /tmp/biber_tmp_KtDG/33e59b5ca9ec342068223d604c3f8d55_161437.utf8, line 2, warning: 9 characters of junk seen at toplevel
+[898] Biber.pm:131> WARN - I didn't find a database entry for 'greff2020object' (section 0)
+[898] Biber.pm:133> INFO - WARNINGS: 2
