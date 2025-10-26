@@ -1155,7 +1155,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
 
         print(f"Episode {episode + 1}:")
 
-        while not done and step_count < 1000:
+        while not done and step_count < 10000:
 
             obs_tensor, _ = flatten_obs(obs, single_state=True)
 
