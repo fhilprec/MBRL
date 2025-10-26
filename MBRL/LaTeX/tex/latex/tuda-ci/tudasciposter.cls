@@ -336,7 +336,7 @@
 	You~selected~an~unknown~language~#1.\\
 	The~Variable~#2~does~not~have~a~predefined~value.\\
 	Ensure~to~redefine~#2~to~match~your~language.\\
-	Otherwise~the~ngerman~vaue~#3~will~be~used.
+	Otherwise~the~english~vaue~#3~will~be~used.
 }
 
 \providecommand*\authorandname{
@@ -345,7 +345,7 @@
 	und
 }
 
-\defcaptionname{ngerman, german}{\authorandname}{und}
+\defcaptionname{english, german}{\authorandname}{und}
 \defcaptionname{english, USenglish, american, UKenglish, british}{\authorandname}{and}
 
 
@@ -364,11 +364,11 @@
 %Language dependent configuration
 \AtBeginDocument{
 	\@ifpackageloaded{babel}{
-		\addto\extrasngerman{\def\authorandname{und}}
+		\addto\extrasenglish{\def\authorandname{und}}
 		\addto\extrasgerman{\def\authorandname{und}}
 		\addto\extrasenglish{\def\authorandname{and}}
 		\addto\extrasbritish{\def\authorandname{and}}
-		\addto\captionsngerman{\renewcommand{\figurename}{Abb.}}
+		\addto\captionsenglish{\renewcommand{\figurename}{Abb.}}
 		\addto\captionsgerman{\renewcommand{\figurename}{Abb.}}
 		\addto\captionsenglish{\renewcommand{\figurename}{Fig.}}
 		\addto\captionsbritish{\renewcommand{\figurename}{Fig.}}

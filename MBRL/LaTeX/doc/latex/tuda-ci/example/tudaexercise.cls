@@ -563,7 +563,7 @@
 	You~selected~an~unknown~language~#1.\\
 	The~Variable~#2~does~not~have~a~predefined~value.\\
 	Ensure~to~redefine~#2~to~match~your~language.\\
-	Otherwise~the~ngerman~vaue~#3~will~be~used.
+	Otherwise~the~english~vaue~#3~will~be~used.
 }
 
 \cs_new:Nn \ptxcd_define_captionFallback:Nn {
@@ -576,7 +576,7 @@
 
 \cs_new:Nn \ptxcd_declare_caption:Nnnn {
 	\ptxcd_define_captionFallback:Nn #1 {#2}
-	\defcaptionname{ngerman, german}{#1}{#2}
+	\defcaptionname{english, german}{#1}{#2}
 	\defcaptionname{english, USenglish, american}{#1}{#3}
 	\defcaptionname{UKenglish, british}{#1}{#4}
 }
@@ -733,24 +733,24 @@
 \RequirePackage{hyperref}
 \hypersetup{hidelinks, unicode}
 
-\providecaptionname{ngerman, german}{\sheetname}{Übungsblatt}
+\providecaptionname{english, german}{\sheetname}{Übungsblatt}
 \providecaptionname{english, american, british}{\sheetname}{Sheet}
 \newcommand*{\sheetsep}{~}
 
-\providecaptionname{ngerman, german}{\taskname}{Aufgabe}
+\providecaptionname{english, german}{\taskname}{Aufgabe}
 \providecaptionname{english, american, british}{\taskname}{Task}
 \newcommand*{\tasksep}{~}%TODO
 
-\providecaptionname{ngerman, german}{\solutionname}{Lösungsvorschlag}
+\providecaptionname{english, german}{\solutionname}{Lösungsvorschlag}
 \providecaptionname{english, american, british}{\solutionname}{Solution}
 \newcommand*{\solutionsep}{:~}
 
-\providecaptionname{ngerman, german}{\StudentNamename}{Nachname,~Vorname}
+\providecaptionname{english, german}{\StudentNamename}{Nachname,~Vorname}
 \providecaptionname{english, american, british}{\StudentNamename}{Last Name,~ First Name}
 \newcommand*{\StudentNamesep}{:~}
 
 \providecommand{\StudentIDname}{Matrikelnummer}
-\providecaptionname{ngerman, german}{\StudentIDname}{Matrikelnummer}
+\providecaptionname{english, german}{\StudentIDname}{Matrikelnummer}
 \providecaptionname{english, american, british}{\StudentIDname}{Enrollment ID}
 \newcommand*{\StudentIDsep}{:~}
 
@@ -769,10 +769,10 @@
 		}
 	}
 }
-\providecaptionname{ngerman, german}{\PointName}{Punkt}
+\providecaptionname{english, german}{\PointName}{Punkt}
 \providecaptionname{english, american, british}{\PointName}{Point}
 \providecommand{\PointsName}{Punkte}
-\providecaptionname{ngerman, german}{\PointsName}{Punkte}
+\providecaptionname{english, german}{\PointsName}{Punkte}
 \providecaptionname{english, american, british}{\PointsName}{Points}
 
 %Has to be initialized after captionnames have been defined

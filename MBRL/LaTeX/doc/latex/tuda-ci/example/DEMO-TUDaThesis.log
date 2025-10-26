@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.10.5)  26 OCT 2025 11:17
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.10.5)  26 OCT 2025 11:51
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -517,23 +517,7 @@ Package babel Info: Hyphen rules for 'australian' set to \l@ukenglish
 (babel)             (\language6). Reported on input line 105.
 Package babel Info: Hyphen rules for 'newzealand' set to \l@ukenglish
 (babel)             (\language6). Reported on input line 108.
-) (/usr/share/texlive/texmf-dist/tex/generic/babel-german/ngerman.ldf
-Language: ngerman 2024/01/19 v2.14 German support for babel (post-1996 orthography)
- (/usr/share/texlive/texmf-dist/tex/generic/babel-german/ngermanb.ldf
-Language: ngermanb 2024/01/19 v2.14 German support for babel (post-1996 orthography)
-Package babel Info: Making " an active character on input line 122.
-))
-
-Package babel Warning: Last declared language option is 'english',
-(babel)                but the last processed one was 'ngerman'.
-(babel)                The main language can't be set as both a global
-(babel)                and a package option. Use 'main=english' as
-(babel)                option. Reported on input line 4311.
-
-) (/usr/share/texlive/texmf-dist/tex/generic/babel/locale/de/babel-ngerman.tex
-Package babel Info: Importing font and identification data for ngerman
-(babel)             from babel-de.ini. Reported on input line 11.
-) (/usr/share/texlive/texmf-dist/tex/generic/babel/locale/en/babel-english.tex
+)) (/usr/share/texlive/texmf-dist/tex/generic/babel/locale/en/babel-english.tex
 Package babel Info: Importing font and identification data for english
 (babel)             from babel-en.ini. Reported on input line 11.
 ) (/usr/share/texlive/texmf-dist/tex/latex/csquotes/csquotes.sty
@@ -1106,10 +1090,18 @@ Package scrbase Info: activating english \g__ptxcd_cc_attr_by: on input line 72.
 Package scrbase Info: activating english \g__ptxcd_cc_attr_nc: on input line 72.
 Package scrbase Info: activating english \g__ptxcd_cc_attr_sa: on input line 72.
 Package scrbase Info: activating english \g__ptxcd_cc_attr_nd: on input line 72.
+Package scrbase Info: activating english \g__ptxcd_cc_attr_by: on input line 72.
+Package scrbase Info: activating english \g__ptxcd_cc_attr_nc: on input line 72.
+Package scrbase Info: activating english \g__ptxcd_cc_attr_sa: on input line 72.
+Package scrbase Info: activating english \g__ptxcd_cc_attr_nd: on input line 72.
+Package scrbase Info: activating english \g__ptxcd_cc_intro: on input line 72.
 Package scrbase Info: activating english \g__ptxcd_cc_intro: on input line 72.
 Package scrbase Info: activating english \g__ptxcd_cc_sep: on input line 72.
+Package scrbase Info: activating english \g__ptxcd_cc_sep: on input line 72.
+Package scrbase Info: activating english \researchgroupname on input line 72.
 Package scrbase Info: activating english \researchgroupname on input line 72.
 Package scrbase Info: activating english \institutename on input line 72.
+Package scrbase Info: activating english \istitutename on input line 72.
 Package scrbase Info: activating english \authorandname on input line 72.
 Package scrbase Info: activating english \ptxcd_datename on input line 72.
 Package hyperref Info: Link coloring OFF on input line 72.
@@ -1130,20 +1122,6 @@ Package: bookmark 2023-12-10 v1.31 PDF bookmarks (HO)
  (/usr/share/texlive/texmf-dist/tex/latex/bookmark/bkm-pdftex.def
 File: bkm-pdftex.def 2023-12-10 v1.31 bookmark driver for pdfTeX and luaTeX (HO)
 \BKM@id=\count480
-))
-Package biblatex Info: Trying to load language 'ngerman'...
-Package biblatex Info: ... file 'ngerman.lbx' found.
- (/usr/share/texlive/texmf-dist/tex/latex/biblatex/lbx/ngerman.lbx
-File: ngerman.lbx 2023/03/05 v3.19 biblatex localization (PK/MW)
-Package biblatex Info: Trying to load language 'german'...
-Package biblatex Info: ... file 'german.lbx' found.
- (/usr/share/texlive/texmf-dist/tex/latex/biblatex/lbx/german.lbx
-File: german.lbx 2023/03/05 v3.19 biblatex localization (PK/MW)
-)
-Package biblatex Info: Trying to load language 'german'...
-Package biblatex Info: ... file 'german.lbx' found.
- (/usr/share/texlive/texmf-dist/tex/latex/biblatex/lbx/german.lbx
-File: german.lbx 2023/03/05 v3.19 biblatex localization (PK/MW)
 ))
 Package biblatex Info: Trying to load language 'english'...
 Package biblatex Info: ... file 'english.lbx' found.
@@ -1168,10 +1146,6 @@ Package biblatex Warning: The following entry could not be found
 )
 Package biblatex Info: Reference section=0 on input line 72.
 Package biblatex Info: Reference segment=0 on input line 72.
- (/usr/share/texlive/texmf-dist/tex/latex/translations/translations-basic-dictionary-german.trsl
-File: translations-basic-dictionary-german.trsl (german translation file `translations-basic-dictionary')
-)
-Package translations Info: loading dictionary `translations-basic-dictionary' for `german'. on input line 72.
  (/usr/share/texlive/texmf-dist/tex/latex/translations/translations-basic-dictionary-english.trsl
 File: translations-basic-dictionary-english.trsl (english translation file `translations-basic-dictionary')
 )
@@ -1195,6 +1169,7 @@ Package tudapub/thesis Warning: I can't recognize your department Department
 (tudapub/thesis)                See tudathesis documentation for further
 (tudapub/thesis)                details.
 
+Package scrbase Info: activating english \departmentname on input line 93.
 \ptxcd_xmpdata_stream=\write6
 \openout6 = `DEMO-TUDaThesis.xmpdata'.
 
@@ -1379,12 +1354,12 @@ Class scrreprt Warning: \float@addtolists detected!
 
 ] [9]
 chapter 2.
-LaTeX Font Info:    Trying to load font information for TS1+XCharter-TLF on input line 215.
+LaTeX Font Info:    Trying to load font information for TS1+XCharter-TLF on input line 202.
 (/usr/share/texlive/texmf-dist/tex/latex/xcharter/TS1XCharter-TLF.fd
 File: TS1XCharter-TLF.fd 2020/05/25 (msharpe) Font definitions for TS1/XCharter-TLF.
 )
 LaTeX Font Info:    Font shape `TS1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 10.95pt on input line 215.
+(Font)              scaled to size 10.95pt on input line 202.
 Package microtype Info: Character `textbardbl ' is missing
 (microtype)             in font `TS1/XCharter-TLF/m/n/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
@@ -1397,25 +1372,25 @@ Package microtype Info: Character `textcelsius ' is missing
 <images/DreamerFlow.png, id=207, 1386.68062pt x 720.44156pt>
 File: images/DreamerFlow.png Graphic file (type png)
 <use images/DreamerFlow.png>
-Package pdftex.def Info: images/DreamerFlow.png  used on input line 322.
+Package pdftex.def Info: images/DreamerFlow.png  used on input line 309.
 (pdftex.def)             Requested size: 376.42744pt x 195.56615pt.
  [13 <./images/DreamerFlow.png>]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 8.0pt on input line 345.
+(Font)              scaled to size 8.0pt on input line 332.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/n' will be
-(Font)              scaled to size 6.0pt on input line 345.
+(Font)              scaled to size 6.0pt on input line 332.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/b/n' will be
-(Font)              scaled to size 10.95pt on input line 368.
+(Font)              scaled to size 10.95pt on input line 355.
  [14]
 
-LaTeX Warning: Citation 'greff2020object' on page 15 undefined on input line 409.
+LaTeX Warning: Citation 'greff2020object' on page 15 undefined on input line 396.
 
 [15] [16] [17] [18]
 chapter 3.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
-(Font)              `T1/Roboto-LF/bold/n' on input line 504.
+(Font)              `T1/Roboto-LF/bold/n' on input line 491.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
-(Font)              scaled to size 12.0pt on input line 504.
+(Font)              scaled to size 12.0pt on input line 491.
 [19
 
 ] [20]
@@ -1432,27 +1407,27 @@ chapter 6.
 
 ]
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/it' will be
-(Font)              scaled to size 10.95pt on input line 654.
+(Font)              scaled to size 10.95pt on input line 641.
 LaTeX Font Info:    Font shape `T1/XCharter-TLF/m/sc' will be
-(Font)              scaled to size 10.95pt on input line 654.
+(Font)              scaled to size 10.95pt on input line 641.
 Package microtype Info: Character `029' is missing
 (microtype)             in font `T1/XCharter-TLF/m/sc/10.95'.
 (microtype)             Ignoring protrusion settings for this character.
-LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 654.
+LaTeX Font Info:    Trying to load font information for T1+RobotoMono-TLF on input line 641.
  (/usr/share/texlive/texmf-dist/tex/latex/roboto/T1RobotoMono-TLF.fd
 File: T1RobotoMono-TLF.fd 2019/12/11 (autoinst) Font definitions for T1/RobotoMono-TLF.
 )
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/m/n' aliased to
-(Font)              `T1/RobotoMono-TLF/regular/n' on input line 654.
+(Font)              `T1/RobotoMono-TLF/regular/n' on input line 641.
 LaTeX Font Info:    Font shape `T1/RobotoMono-TLF/regular/n' will be
-(Font)              scaled to size 10.95pt on input line 654.
+(Font)              scaled to size 10.95pt on input line 641.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `RobotoMono-TLF' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 
-Overfull \hbox (19.19218pt too wide) in paragraph at lines 654--654
-[]\T1/XCharter-TLF/m/n/10.95 (-20) David Ha und Jür-gen Schmid-hu-ber. ^^R  World mo-dels^^P. In: \T1/XCharter-TLF/m/it/10.95 (-20) ar-Xiv pre-print ar-Xiv:1803.10122
+Overfull \hbox (18.52684pt too wide) in paragraph at lines 641--641
+[]\T1/XCharter-TLF/m/n/10.95 (-20) David Ha and Jür-gen Schmid-hu-ber. ^^P  World mod-els^^Q. In: \T1/XCharter-TLF/m/it/10.95 (-20) arXiv preprint arXiv:1803.10122
  []
 
 [26
@@ -1463,6 +1438,11 @@ chapter A.
 
 ]
 chapter B.
+
+Overfull \hbox (0.49257pt too wide) in paragraph at lines 665--666
+\T1/XCharter-TLF/m/n/10.95 (-20) List the hard-ware spec-i-fi-ca-tions re-quired to re-pro-duce the ex-per-i-ments, in-clud-ing GPU/CPU
+ []
+
 [29
 
 ]
@@ -1501,18 +1481,18 @@ Package logreq Info: Writing requests to 'DEMO-TUDaThesis.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 42030 strings out of 476015
- 882234 string characters out of 5790589
- 1942975 words of memory out of 5000000
- 63088 multiletter control sequences out of 15000+600000
- 696273 words of font info for 291 fonts, out of 8000000 for 9000
- 83 hyphenation exceptions out of 8191
- 122i,21n,131p,11018b,4433s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 41601 strings out of 476015
+ 866200 string characters out of 5790589
+ 1943975 words of memory out of 5000000
+ 62711 multiletter control sequences out of 15000+600000
+ 693077 words of font info for 273 fonts, out of 8000000 for 9000
+ 81 hyphenation exceptions out of 8191
+ 122i,21n,131p,11018b,4444s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/RobotoMono-Regular.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Italic.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/xcharter/XCharter-Roman.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on DEMO-TUDaThesis.pdf (30 pages, 1007610 bytes).
+Output written on DEMO-TUDaThesis.pdf (30 pages, 1007788 bytes).
 PDF statistics:
- 585 PDF objects out of 1000 (max. 8388607)
- 509 compressed objects within 6 object streams
+ 586 PDF objects out of 1000 (max. 8388607)
+ 510 compressed objects within 6 object streams
  115 named destinations out of 1000 (max. 500000)
  61311 words of extra memory for PDF output out of 61914 (max. 10000000)
 

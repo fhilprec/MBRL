@@ -1,7 +1,7 @@
 \babel@toc {english}{}\relax 
-\babel@toc {ngerman}{}\relax 
-\babel@toc {ngerman}{}\relax 
-\babel@toc {ngerman}{}\relax 
+\babel@toc {english}{}\relax 
+\babel@toc {english}{}\relax 
+\babel@toc {english}{}\relax 
 \contentsline {chapter}{List of Abbreviations}{7}{chapter*.5}%
 \contentsline {chapter}{\numberline {1}Introduction}{8}{chapter.1}%
 \contentsline {chapter}{\numberline {2}Background and Related Work}{10}{chapter.2}%

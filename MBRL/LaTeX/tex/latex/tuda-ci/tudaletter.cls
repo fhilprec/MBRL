@@ -502,9 +502,9 @@
 \setkomavar{backaddress}{Technische~ Universität~ Darmstadt\\Karolinenplatz~ 5\\64289~ Darmstadt}
 
 %renewcaptions
-\defcaptionname{german,ngerman,austrian,naustrian,%
+\defcaptionname{german,english,austrian,naustrian,%
 	swissgerman,nswissgerman}\yourmailname{Ihre~ Nachricht}%
-\defcaptionname{german, ngerman,austrian,naustrian,%
+\defcaptionname{german, english,austrian,naustrian,%
 	swissgerman,nswissgerman}\phonename{Tel.}%
 
 
