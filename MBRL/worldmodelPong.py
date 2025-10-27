@@ -851,7 +851,7 @@ def main():
     model = MODEL_ARCHITECTURE(model_scale_factor)
     normalization_stats = None
 
-    experience_its = 1
+    experience_its = 4
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
