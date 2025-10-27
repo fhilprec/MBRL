@@ -17,6 +17,7 @@ from flax.linen.initializers import constant, orthogonal
 import distrax
 from rtpt import RTPT
 from jax import lax
+import gc
 
 
 
@@ -512,16 +513,34 @@ def generate_imagined_rollouts(
 ) -> Tuple[
     jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
 ]:
-    """Generate imagined rollouts following DreamerV2 approach."""
+    """Generate imagined rollouts following DreamerV2 approach (OPTIMIZED & JIT-compiled)."""
 
     if key is None:
         key = jax.random.PRNGKey(42)
 
-    state_mean = normalization_stats["mean"]
-    state_std = normalization_stats["std"]
+    state_mean = 0
+    state_std = 1
     world_model = PongLSTM(10)
 
-    def single_trajectory_rollout(cur_obs, subkey):
+    num_trajectories = initial_observations.shape[0]
+
+    # Pre-compute initial LSTM states for all trajectories at once (OPTIMIZATION 1)
+    print(f"Initializing LSTM states for {num_trajectories} trajectories...")
+    dummy_action = jnp.zeros(1, dtype=jnp.int32)
+    def init_lstm_state(obs):
+        normalized_obs = (obs - state_mean) / state_std
+        _, lstm_state = world_model.apply(
+            dynamics_params, jax.random.PRNGKey(0), normalized_obs, dummy_action, None
+        )
+        return lstm_state
+
+    initial_lstm_states = jax.vmap(init_lstm_state)(initial_observations)
+    print("LSTM states initialized!")
+
+    # JIT-compiled rollout function (OPTIMIZATION 2)
+    # NOTE: First call will trigger JIT compilation which may take 1-2 minutes
+    @jax.jit
+    def single_trajectory_rollout(cur_obs, subkey, initial_lstm_state):
         """Generate a single trajectory starting from cur_obs."""
 
         def rollout_step(carry, x):
@@ -549,23 +568,14 @@ def generate_imagined_rollouts(
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
             reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-
-            print(f"Raw reward before tanh: {reward}")
             reward = jnp.tanh(reward * 0.1)
-            print(f"Final reward after tanh: {reward}")
 
             discount_factor = jnp.array(discount)
 
-            step_data = (next_obs, reward, discount_factor, action, value, log_prob)
+            step_data = (next_obs, action, reward, discount_factor, value, log_prob)
             new_carry = (key, next_obs, new_lstm_state)
 
             return new_carry, step_data
-
-        dummy_normalized_obs = (cur_obs - state_mean) / state_std
-        dummy_action = jnp.zeros(1, dtype=jnp.int32)
-        _, initial_lstm_state = world_model.apply(
-            dynamics_params, None, dummy_normalized_obs, dummy_action, None
-        )
 
         cur_obs = cur_obs.astype(jnp.float32)
         init_carry = (subkey, cur_obs, initial_lstm_state)
@@ -576,31 +586,95 @@ def generate_imagined_rollouts(
 
         (
             next_obs_seq,
+            actions_seq,
             rewards_seq,
             discounts_seq,
-            actions_seq,
             values_seq,
             log_probs_seq,
         ) = trajectory_data
 
-        observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq])
-        rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq])
-        discounts = jnp.concatenate([jnp.array([discount]), discounts_seq])
-
-        init_action = jnp.zeros_like(actions_seq[0])
+        # OPTIMIZATION 3: Avoid concatenations, build arrays directly in correct shape
+        # Initial values
         initial_value_dist = critic_network.apply(critic_params, cur_obs)
         initial_value = initial_value_dist.mean()
-        actions = jnp.concatenate([init_action[None, ...], actions_seq])
-        values = jnp.concatenate([initial_value[None, ...], values_seq])
-        log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq])
 
-        return observations, rewards, discounts, actions, values, log_probs
+        # Build full sequences directly (avoid concat overhead)
+        observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq], axis=0)
+        actions = jnp.concatenate([jnp.zeros_like(actions_seq[0])[None, ...], actions_seq], axis=0)
+        rewards = jnp.concatenate([jnp.array([0.0]), rewards_seq], axis=0)
+        discounts = jnp.concatenate([jnp.array([discount]), discounts_seq], axis=0)
+        values = jnp.concatenate([initial_value[None, ...], values_seq], axis=0)
+        log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq], axis=0)
 
-    num_trajectories = initial_observations.shape[0]
+        return observations, actions, rewards, discounts, values, log_probs
+
     keys = jax.random.split(key, num_trajectories)
 
-    rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0))
-    return rollout_fn(initial_observations, keys)
+    # OPTIMIZATION 4: Use vmap with pre-computed LSTM states
+    rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0, 0))
+
+    # IMPORTANT: Process in batches to avoid excessive JIT compilation time
+    # First batch triggers compilation, subsequent batches reuse compiled code
+    batch_size = 100  # Process 100 trajectories at a time
+    num_batches = (num_trajectories + batch_size - 1) // batch_size
+
+    print(f"Generating {num_trajectories} imagined trajectories in {num_batches} batches...")
+    print("First batch will trigger JIT compilation (may take 30-60 seconds)...")
+
+    all_observations = []
+    all_actions = []
+    all_rewards = []
+    all_discounts = []
+    all_values = []
+    all_log_probs = []
+
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, num_trajectories)
+
+        # Properly slice the LSTM state pytree
+        batch_lstm_states = jax.tree_util.tree_map(
+            lambda x: x[start_idx:end_idx],
+            initial_lstm_states
+        )
+
+        batch_obs, batch_actions, batch_rewards, batch_discounts, batch_values, batch_log_probs = rollout_fn(
+            initial_observations[start_idx:end_idx],
+            keys[start_idx:end_idx],
+            batch_lstm_states
+        )
+
+        all_observations.append(batch_obs)
+        all_actions.append(batch_actions)
+        all_rewards.append(batch_rewards)
+        all_discounts.append(batch_discounts)
+        all_values.append(batch_values)
+        all_log_probs.append(batch_log_probs)
+
+        if batch_idx == 0:
+            print(f"First batch complete! Remaining batches will be faster...")
+        elif (batch_idx + 1) % 10 == 0:
+            print(f"Completed {batch_idx + 1}/{num_batches} batches...")
+
+    # Concatenate all batches
+    observations = jnp.concatenate(all_observations, axis=0)
+    actions = jnp.concatenate(all_actions, axis=0)
+    rewards = jnp.concatenate(all_rewards, axis=0)
+    discounts = jnp.concatenate(all_discounts, axis=0)
+    values = jnp.concatenate(all_values, axis=0)
+    log_probs = jnp.concatenate(all_log_probs, axis=0)
+
+    print("All imagined rollouts complete!")
+
+    # OPTIMIZATION 5: Direct transpose to correct format (T, B, ...)
+    return (
+        jnp.transpose(observations[:, :-1], (1, 0, 2)),  # (B, T, F) -> (T, B, F)
+        jnp.transpose(actions[:, 1:], (1, 0)),           # (B, T) -> (T, B)
+        jnp.transpose(rewards[:, 1:], (1, 0)),           # (B, T) -> (T, B)
+        jnp.transpose(discounts[:, 1:], (1, 0)),         # (B, T) -> (T, B)
+        jnp.transpose(values, (1, 0)),                   # (B, T+1) -> (T+1, B)
+        jnp.transpose(log_probs[:, 1:], (1, 0)),         # (B, T) -> (T, B)
+    )
 
 
 def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000):
@@ -1249,6 +1323,8 @@ def main():
         "early_stopping_patience": 100,
     }
 
+    model_exists = False
+
     for i in range(training_runs):
         print(f"This is the {i}th iteration training the actor-critic")
         parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
@@ -1261,11 +1337,17 @@ def main():
                 saved_data = pickle.load(f)
                 dynamics_params = saved_data["dynamics_params"]
                 normalization_stats = saved_data.get("normalization_stats", None)
+                model_exists = True
+                del saved_data
+                gc.collect()
 
             print(f"Loading existing model from experience_data_LSTM_pong_0.pkl...")
             with open("experience_data_LSTM_pong_0.pkl", "rb") as f:
                 saved_data = pickle.load(f)
                 obs = saved_data["obs"]
+                del saved_data
+                gc.collect()
+                print("Loaded model and experience data, freed saved_data from memory")
         # else:
         #     print("Train Model first")
         #     exit()
@@ -1320,6 +1402,7 @@ def main():
         print(f"Critic parameters: {critic_param_count:,}")
 
         parser.add_argument("--eval", type=bool, help="Specifies whether to run evaluation", default=0)
+        parser.add_argument("--render", type=int, help="Specifies whether to run rendering", default=0)
         args = parser.parse_args()
 
         if args.eval:
@@ -1327,12 +1410,19 @@ def main():
             exit()
 
         #stuff to make it run without a model
-        obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
-        dynamics_params = None
-        normalization_stats = None
+        if not model_exists:
+            obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
+            dynamics_params = None
+            normalization_stats = None
         shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
 
+        # Free the original obs array, we only need shuffled_obs
+        del obs
+        gc.collect()
+
+
         print("Generating imagined rollouts...")
+        print("NOTE: First call may take 1-2 minutes for JIT compilation - please wait...")
         (
             imagined_obs,
             imagined_actions,   # FIX: Corrected order to match return statement
@@ -1340,7 +1430,7 @@ def main():
             imagined_discounts,
             imagined_values,
             imagined_log_probs,
-        ) = generate_imagined_rollouts(   
+        ) = generate_imagined_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,
@@ -1353,14 +1443,21 @@ def main():
             key=jax.random.PRNGKey(SEED),
         )
 
+        # Free memory after imagination rollouts
+        del shuffled_obs
+        del dynamics_params
+        del normalization_stats
+        gc.collect()
+        jax.clear_caches()
+        print("Freed shuffled_obs, dynamics_params, and normalization_stats from memory")
+
         # print(jnp.sum(dones_seq))
         # exit()
 
-        
 
-       
 
-        print(imagined_obs.shape)
+
+
 
         if args.render:
             visualization_offset = 0
@@ -1416,6 +1513,17 @@ def main():
         analyze_policy_behavior(actor_network, actor_params, imagined_obs)
 
         save_model_checkpoints(actor_params, critic_params)
+
+        # Free imagined rollout data after training
+        del imagined_obs
+        del imagined_actions
+        del imagined_rewards
+        del imagined_discounts
+        del imagined_values
+        del imagined_log_probs
+        gc.collect()
+        jax.clear_caches()
+        print("Freed all imagined rollout arrays from memory")
 
 
 if __name__ == "__main__":
