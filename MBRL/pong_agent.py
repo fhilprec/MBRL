@@ -1319,10 +1319,12 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
-        
+        parser.add_argument("--eval", type=int, help="Specifies whether to run evaluation", default=0)
+        args = parser.parse_args()
 
-        evaluate_real_performance(actor_network, actor_params,  num_episodes=5)
-        exit()
+        if args.eval:
+            evaluate_real_performance(actor_network, actor_params,  num_episodes=5)
+            exit()
 
         #stuff to make it run without a model
         obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
@@ -1356,8 +1358,7 @@ def main():
 
         
 
-        parser.add_argument("--render", type=int, help="Number of rollouts to render")
-        args = parser.parse_args()
+       
 
         print(imagined_obs.shape)
 
@@ -1419,5 +1420,6 @@ def main():
 
 if __name__ == "__main__":
     rtpt = RTPT(name_initials="FH", experiment_name="OCActorCritic", max_iterations=3)
+
     rtpt.start()
     main()
