@@ -1319,7 +1319,7 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
-        parser.add_argument("--eval", type=int, help="Specifies whether to run evaluation", default=0)
+        parser.add_argument("--eval", type=bool, help="Specifies whether to run evaluation", default=0)
         args = parser.parse_args()
 
         if args.eval:
