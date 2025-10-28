@@ -18,6 +18,8 @@ docs/build/
 *.log
 *.xmpi
 *.pdf
+*.fls
+*.bbl-SAVE-ERROR
 
 # LaTeX compilation artifacts
 *.aux
