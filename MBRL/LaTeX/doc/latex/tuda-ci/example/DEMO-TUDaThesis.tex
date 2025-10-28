@@ -333,8 +333,8 @@ is responsible for selecting actions based on the current latent state, while
 the critic evaluates the chosen actions by estimating their value. Central to DreamerV2 is the
 use of the $\lambda$-return, which provides a balance between bias and variance
 since using $\lambda=0$ leads to high bias and low variance, while $\lambda=1$ leads to low bias and high variance. Approaching
-TD(0) and Monte Carlo respectively. The following sections detail how the
-$\lambda$-target is computed and how it is used to define the actor and critic
+TD(0) and Monte Carlo respectively. The following sections explain in detail how the
+$\lambda$-target is computed and how it is used to define the actor and critic.
 
 The $\lambda$-target is defined recursively as:
 \begin{equation}
@@ -355,18 +355,19 @@ the critic, using both REINFORCE and backpropagation through the model.
 
 The actor loss is:
 \begin{align}
-	\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \\
-	                                                                  & -(1-\rho)V^{\lambda}_t                                                                 \\
-	                                                                  & -\eta \mathcal{H}[a_t|\hat{z}_t] \Big]
+	\mathcal{L}(\psi) = \mathbb{E}\left[\sum_{t=1}^{H-1} \Big[\right. & -\rho \ln p_\psi(\hat{a}_t | \hat{z}_t) \, \text{sg}(V^{\lambda}_t - v_\xi(\hat{z}_t)) \label{eq:reinforce} \\
+	                                                                  & -(1-\rho)V^{\lambda}_t \label{eq:dynamics} \\
+	                                                                  & -\eta \mathcal{H}[a_t|\hat{z}_t] \Big] \label{eq:entropy}
 \end{align}
 
 The loss has three parts:
 
-\textbf{REINFORCE:} Maximizes the log-probability of actions, weighted by the advantage (difference between lambda-return and critic). The stop-gradient (sg) is used to not mess up the critic.
+\textbf{REINFORCE} \eqref{eq:reinforce}: Maximizes the log-probability of actions, weighted by the advantage (difference between lambda-return and critic). The stop-gradient (sg) is used to not mess up the critic.
 
-\textbf{Dynamics Backprop:} Backpropagates through the model for more direct gradients.
+\textbf{Dynamics Backprop} \eqref{eq:dynamics}: Backpropagates through the model for more direct gradients.
 
-\textbf{Entropy Regularization:} Encourages exploration by making the action distribution more random. $\eta$ controls how much exploration.
+\textbf{Entropy Regularization} \eqref{eq:entropy}: Encourages exploration by making the action distribution more random. $\eta$ controls how much exploration.
+
 
 $\rho$ decides how much REINFORCE vs. backprop you use. For Atari, usually $\rho=1$ (just REINFORCE), $\eta=10^{-3}$.
 
@@ -383,7 +384,7 @@ is the lambda-target with stopped gradients. This helps keep learning stable.
 
 Some tricks are used to make the critic better:
 
-\textbf{Target Network:} Like in DQN, a delayed copy of the critic is used for targets, updated every 100 steps.
+\textbf{Target Network:} Like in DQN \cite{DQN}, a delayed copy of the critic is used for targets, updated every 100 steps.
 
 \textbf{Trajectory Weighting:} Loss terms are weighted by predicted discounts, so episode ends are handled properly.
 
@@ -403,7 +404,7 @@ Object-Centric Reinforcement Learning (OCRL) is a collection of methods that do
 not make predictions on the raw pixel input but rather try to first create an
 abstract representation of the environment which has some semantic
 understanding of the objects within it. There are methods that use the pixel
-input to create objects from it \cite{greff2020object} but also approaches
+input to create objects from it \cite{locatello2020object} but also approaches
 where the objects states are extracted from RAM \cite{delfosse2023ocatari} or
 given directly by the environment itself like in JAXAtari
 
