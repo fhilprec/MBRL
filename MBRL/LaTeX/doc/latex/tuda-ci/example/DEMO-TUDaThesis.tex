@@ -406,21 +406,7 @@ abstract representation of the environment which has some semantic
 understanding of the objects within it. There are methods that use the pixel
 input to create objects from it \cite{locatello2020object} but also approaches
 where the objects states are extracted from RAM \cite{delfosse2023ocatari} or
-given directly by the environment itself like in JAXAtari
-
-Object-centric model based RL combine the abstraction of object representations
-with state prediction. By using structured object-centric states, agents can
-reason about state transitions in a more robust and interpretable way compared
-to pixel-based representations. Pixel based representation can thus suffer from
-several issues namely:
-
-\begin{itemize}
-	\item \textbf{High Dimensionality:} Pixel based inputs are by nature more prone to having more dimensions, making them harder to process and requiring more computational resources.
-	\item \textbf{Poor Generalization:} Agents trained on pixel data may struggle to generalize across different environments or object appearances, as they rely heavily on specific visual features and are very prone to slight changes that would not affect human performances but greatly affects the agent \cite{zhang2020learning,stone2021distracting}.
-	\item \textbf{Lack of Semantic Understanding:} Pixel representations do not inherently capture the relationships between objects, limiting the agent's ability to reason about their interactions.
-	\item \textbf{Sample Inefficiency:} Learning from high-dimensional pixel data often requires more samples to achieve comparable performance to object-centric approaches \cite{watters2019cobra}.
-	\item \textbf{Sensitivity to Noise and Distractors:} Pixel-based methods sometimes focus on irrelevant visual details of the environment which get abstracted away when using object-centric approaches.
-\end{itemize}
+given directly by the environment itself like in JAXAtari.
 
 This object extraction mimics human perception, which naturally segments scenes
 into distinct entities and focuses on their interactions. Therefore object centricity provides several advantages over pixel based
@@ -484,6 +470,23 @@ and ball trajectory determines the appropriate movement strategy.
 \textbf{Temporal Relationships:} Tracking how object relationships evolve over time and predicting future interactions. This temporal aspect is particularly important for planning and anticipatory behavior.
 
 \textbf{Causality:} \cite{scholkopf2021toward,dasgupta2019causal} Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
+
+
+
+Object-centric model based RL combines the abstraction of object representations
+with state prediction. By using structured object-centric states, agents can
+reason about state transitions in a more robust and interpretable way compared
+to pixel-based representations. Pixel based representation can thus suffer from
+several issues namely:
+
+\begin{itemize}
+	\item \textbf{High Dimensionality:} Pixel based inputs are by nature more prone to having more dimensions, making them harder to process and requiring more computational resources.
+	\item \textbf{Poor Generalization:} Agents trained on pixel data may struggle to generalize across different environments or object appearances, as they rely heavily on specific visual features and are very prone to slight changes that would not affect human performances but greatly affects the agent \cite{zhang2020learning,stone2021distracting}.
+	\item \textbf{Lack of Semantic Understanding:} Pixel representations do not inherently capture the relationships between objects, limiting the agent's ability to reason about their interactions.
+	\item \textbf{Sample Inefficiency:} Learning from high-dimensional pixel data often requires more samples to achieve comparable performance to object-centric approaches \cite{watters2019cobra}.
+	\item \textbf{Sensitivity to Noise and Distractors:} Pixel-based methods sometimes focus on irrelevant visual details of the environment which get abstracted away when using object-centric approaches.
+\end{itemize}
+
 
 The integration of relational reasoning with model based approaches offers
 significant potential for improving agent performance. By incorporating
