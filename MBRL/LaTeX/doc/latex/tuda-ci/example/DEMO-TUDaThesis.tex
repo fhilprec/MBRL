@@ -1,5 +1,5 @@
 %% Master Thesis Table of Contents
-%% Integrating Object-Centric Learning with Model-Based Reinforcement Learning
+%% Integrating Object-Centric Learning with Model Based Reinforcement Learning
 
 \documentclass[
 	english,
@@ -72,11 +72,11 @@
 \begin{document}
 
 \Metadata{
-	title=Structured World Understanding: Integrating Object-Centric Learning with Model-Based Reinforcement Learning,
+	title=Structured World Understanding: Integrating Object-Centric Learning with Model Based Reinforcement Learning,
 	author=Your Name
 }
 
-\title{Structured World Understanding: Integrating Object-Centric Learning with Model-Based Reinforcement Learning}
+\title{Structured World Understanding: Integrating Object-Centric Learning with Model Based Reinforcement Learning}
 \subtitle{Master's Thesis: Summer Semester 2025}
 \author[Y. Name]{Your Full Name}
 \studentID{1234567}
@@ -101,8 +101,8 @@
 \addcontentsline{toc}{chapter}{List of Abbreviations}
 \begin{tabular}{ll}
 	RL   & Reinforcement Learning              \\
-	MBRL & Model-Based Reinforcement Learning  \\
-	MFRL & Model-Free Reinforcement Learning   \\
+	MBRL & Model Based Reinforcement Learning  \\
+	MFRL & Model Free Reinforcement Learning   \\
 	CNN  & Convolutional Neural Network        \\
 	LSTM & Long Short-Term Memory              \\
 	PPO  & Proximal Policy Optimization        \\
@@ -152,7 +152,7 @@ Object Centricity has the goal of
 interpretability and Robustness whereas Model Based approaches try to improve
 sample efficiency and planning capabilities among others. This
 thesis aims to investigate the potential benefits of integrating object-centric
-learning into model-based reinforcement learning frameworks to address these
+learning into model based reinforcement learning frameworks to address these
 challenges by harvesting the strengths of both paradigms. This thesis is
 therefore guided by the following research questions:
 \begin{enumerate}
@@ -162,7 +162,7 @@ therefore guided by the following research questions:
 	      object-centric world models?
 	\item What is the impact of different world model architectures (such as LSTM-based
 	      versus alternative designs) on the overall performance of object-centric
-	      model-based reinforcement learning in structured environments?
+	      model based reinforcement learning in structured environments?
 	\item Does the object-centric inductive bias in world models improve robustness to
 	      changes in the environment?
 \end{enumerate}
@@ -184,7 +184,7 @@ with existing Model Based approaches since they usually rely on latent space whi
 resulting in the loss of human interpretability.
 
 The remainder of this thesis is structured as follows: Chapter 2 provides
-background information on reinforcement learning, model-based approaches, and
+background information on reinforcement learning, model based approaches, and
 object-centric representations. Chapter 3 details the methodology, including
 the world model architecture, actor-critic integration, and training pipeline.
 Chapter 4 presents the experimental setup, results, and analysis. Chapter 5
@@ -194,7 +194,7 @@ Chapter 6 concludes the thesis and outlines directions for future work.
 \chapter{Background and Related Work}
 \label{chap:background}
 This chapter aims to give an overview into the relevant mathematical background and related work
-in the fields of Reinforcement Learning, Model-Based Reinforcement Learning and Object-Centric Learning.
+in the fields of Reinforcement Learning, Model Based Reinforcement Learning and Object-Centric Learning.
 \section{Reinforcement Learning}
 \label{sec:reinforcement_learning}
 
@@ -243,13 +243,13 @@ action value function a function of both state and action. This can sometimes
 be more useful since it directly tells you the value of taking a certain action
 as well.
 
-Model-free reinforcement learning approaches learn optimal policies directly
+Model free reinforcement learning approaches learn optimal policies directly
 from experience without explicitly modeling the environment dynamics. These
 methods estimate value functions or policies through trial-and-error
 interactions with the environment, making them broadly applicable but
 potentially sample-inefficient.
 
-As mentioned in the introduction, model-free rely on learning an agent directly
+As mentioned in the introduction, model free rely on learning an agent directly
 by interacting with the environment and receiving feedback in the form of
 rewards. This trial-and-error process allows the agent to improve its policy
 over time. By omitting a world model the complexity of the overall system is
@@ -261,11 +261,11 @@ tasks and make the agent more robust \cite{ha2018world,hafner2020dream}.
 Moreover they provide limited interpretability with regards to their learned
 policy.
 
-Popular model-free algorithms include temporal difference methods like
+Popular model free algorithms include temporal difference methods like
 Q-Learning and SARSA, as well as policy gradient methods such as REINFORCE,
 Actor-Critic, and Proximal Policy Optimization (PPO).
 
-Model-based reinforcement learning addresses some limitations of model-free
+Model based reinforcement learning addresses some limitations of model free
 approaches by learning an explicit model of the environment dynamics.
 
 The world model typically learns to predict next states and rewards given
@@ -282,7 +282,7 @@ prediction can be omitted if the reward can somehow be directly read out from
 the game itself which is common in Atari games for example assuming there
 exists an object centric approach that encompasses the score.
 
-Model-based methods potentially have much better sample efficiency since it
+Model based methods potentially have much better sample efficiency since it
 takes less sampling in the environment to learn reasonable state transitions
 than it takes to train a reinforcement learning. After the Model has been
 properly trained the agent can learn entirely within the worldmodel making
@@ -306,7 +306,7 @@ during inference \cite{talvitie2017self,lambert2020learning}.
 \section{Dreamer Architecture}
 \label{sec:dreamer_architecture}
 
-The Dreamer architecture is a family of model-based RL algorithms (DreamerV1,
+The Dreamer architecture is a family of model based RL algorithms (DreamerV1,
 V2, V3) that use a world model together with actor-critic methods. The main
 idea is to learn a compact latent space where the agent can imagine rollouts
 and train its policy without always interacting with the real environment.
@@ -391,7 +391,7 @@ Some tricks are used to make the critic better:
 The critic is usually a small MLP with ELU activations and about 1 million
 parameters, outputting a single value for each state.
 
-Given the advantages of model-based RL and the effectiveness of the Dreamer
+Given the advantages of model based RL and the effectiveness of the Dreamer
 architecture we now come to the question of how to best represent the state of
 the environment.
 
@@ -406,7 +406,7 @@ input to create objects from it \cite{greff2020object} but also approaches
 where the objects states are extracted from RAM \cite{delfosse2023ocatari} or
 given directly by the environment itself like in JAXAtari
 
-Object-centric model-based RL combine the abstraction of object representations
+Object-centric model based RL combine the abstraction of object representations
 with state prediction. By using structured object-centric states, agents can
 reason about state transitions in a more robust and interpretable way compared
 to pixel-based representations. Pixel based representation can thus suffer from
@@ -483,7 +483,7 @@ and ball trajectory determines the appropriate movement strategy.
 
 \textbf{Causality:} \cite{scholkopf2021toward,dasgupta2019causal} Recognizing cause-and-effect relationships between actions and object state changes. This understanding enables more sophisticated planning and can help avoid unintended consequences.
 
-The integration of relational reasoning with model-based approaches offers
+The integration of relational reasoning with model based approaches offers
 significant potential for improving agent performance. By incorporating
 relational structure into world models, agents can make more accurate
 predictions about future states and plan more effectively. This integration
@@ -580,15 +580,15 @@ Answer here : (RQ1) How does the prediction accuracy of object-centric world mod
 
 \subsection{Sample Efficiency Comparison}
 \label{subsec:sample_efficiency_comp}
-Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+Answer here : (RQ1) To what extent does integrating object-centric representations with model based RL improve sample efficiency compared to model free baselines and pixel-based model based approaches?
 
 \subsection{Final Performance Evaluation}
 \label{subsec:final_performance}
-Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+Answer here : (RQ1) To what extent does integrating object-centric representations with model based RL improve sample efficiency compared to model free baselines and pixel-based model based approaches?
 
 \subsection{Learning Curve Analysis}
 \label{subsec:learning_curves}
-Answer here : (RQ1) To what extent does integrating object-centric representations with model-based RL improve sample efficiency compared to model-free baselines and pixel-based model-based approaches?
+Answer here : (RQ1) To what extent does integrating object-centric representations with model based RL improve sample efficiency compared to model free baselines and pixel-based model based approaches?
 
 \section{Ablation Studies}
 \label{sec:ablation_studies}
@@ -599,11 +599,11 @@ Answer here : (RQ2) How effectively can the DreamerV2-style actor-critic framewo
 
 \subsection{Architecture Component Analysis}
 \label{subsec:architecture_analysis}
-Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model based RL in structured environments?
 
 \subsection{Reward Function Design Effects}
 \label{subsec:reward_effects}
-Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model-based RL in structured environments?
+Answer here : (RQ3) What is the impact of different world model architectures (LSTM-based vs. alternatives) on the overall performance of object-centric model based RL in structured environments?
 
 \subsection{Real vs. Model Comparison}
 \label{subsec:real_vs_model}

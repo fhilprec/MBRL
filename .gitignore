@@ -21,6 +21,7 @@ docs/build/
 *.fls
 *.bbl-SAVE-ERROR
 *.toc
+*.xmpdata
 
 # LaTeX compilation artifacts
 *.aux
