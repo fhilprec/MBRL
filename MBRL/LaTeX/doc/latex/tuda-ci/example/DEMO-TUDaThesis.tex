@@ -83,7 +83,6 @@
 \reviewer{Prof. Dr. Kristian Kersting\\[0.2em]2. Review: Jannis Blüml, Raban Emunds}
 
 \department{Department of Computer Science}
-\institute{Institute of Computer Science}
 \group{Machine Learning Research Group (AI \& ML Lab)}
 
 \submissiondate{24.10.2025}
@@ -122,30 +121,36 @@
 \chapter{Introduction}
 \label{chap:introduction}
 
-Reinforcement Learning as one of the three flavors in Machine Learning among
-Supervised and Unsupervised Learning follows the approach of having an agent
-performs actions in an environment and receiving rewards for certain actions.
-So unlike Supervised Learning for example there is no ground truth from the
+Modern Artificial Intelligence Approchaes often struggle with understanding and reasoning about complex 
+environments in a structured, interpretable way. Reinforcement Learning in particular
+suffers from agents learning control tasks or games especially well without grasping the underlying rules pf the game.
+Unlike Supervised Learning for example there is no ground truth from the
 which the agent can learn from. Among numerous distinctions within
-Reinforcement Learning there is the difference between Model Based
+reinforcement rearning there is the difference between Model Based
 Reinforcement Learning and Model Free Reinforcement Learning. The latter
-focuses on the learning of only the Agent which is deployed in the environment
+focuses on the learning of only the agent which is deployed in the environment
 (or learns from samples). Thus the agent will have no explicit way of
-predicting the next state of the environment, although sufficiently large for
-example neural networks might create some implicit model of the world. Model
-based Reinforcement learning augments the architecture by a Model that is
+predicting the next state of the environment. Model
+based Reinforcement learning augments the architecture by a model that is
 predicting the next state of the world but also still trains an agent. Although
 model free approaches usually are less complex since they only have to learn
 one model, the agent they also have significant disadvantages.
 
-Model Free Learning approaches often struggle with sample efficiency and
+Model free learning often struggle with sample efficiency and
 generalization to new tasks. Small changes in the environment can lead to
 significant drops in performance. Moreover, agents can learn misaligned
 policies that exploit loopholes in the environment rather than achieving the
 intended goals. These challenges highlight the need for more structured and
-interpretable learning methods. So Object Centricity and Model Based approaches
-both have the goal of improving abstract reasoning by developing a more
-abstract understanding of the world and improving sample efficiency. This
+interpretable learning methods. 
+
+A solution to the lack of structure and interpretability can be Object Centricity, which focuses on learning or providing some kind of object representation that can be used for reasoning and decision-making. 
+This can involve identifying and manipulating objects within the environment, leading to more interpretable and robust policies.
+Built on top of Atari  OCAtari \cite{delfosse2023ocatari} provides a standardized framework for extracting object representations
+from the standard Atari environment. This makes different object centric appraoches more comparable.
+
+Object Centricity has the goal of 
+interpretability and Robustness whereas Model Based approaches try to improve
+sample efficiency and planning capabilities among others. This
 thesis aims to investigate the potential benefits of integrating object-centric
 learning into model-based reinforcement learning frameworks to address these
 challenges by harvesting the strengths of both paradigms. This thesis is
@@ -163,16 +168,20 @@ therefore guided by the following research questions:
 \end{enumerate}
 
 Within this thesis we propose to develop a world model that is running on top
-of object centric states provided by the JAXAtari framework. This world model
-will be based on an LSTM architecture and will be trained to predict the next
-state of the environment given the current state and action. An actor-critic
-framework based on the DreamerV2 architecture will be integrated with the world
+of object centric states provided by the a framework called JAXAtari \cite{jaxatari}. This world model will be trained to predict 
+the next
+state of the environment given the current state and actionWithin. An actor-critic
+framework based on the DreamerV2 \cite{hafner2020dream} architecture will be integrated with the world
 model to learn policies from imagined rollouts. The training pipeline will
 involve alternating between updating the world model and optimizing the policy
 based on simulated experiences. The performance of the proposed approach will
 be evaluated in the Pong environment from the Atari benchmark suite, comparing
 it against pixel-based baselines and assessing its sample efficiency and
-robustness.
+robustness. Combining both appraoches thus offers the possibility of complex planning
+using object centric states. Although out of the scope of this thesis one could imagine interpretable
+planned stategies describing how certain objects influence decisions of the agent. This is usually quite hard
+with existing Model Based approaches since they usually rely on latent space which is then used to make predictions
+resulting in the loss of human interpretability.
 
 The remainder of this thesis is structured as follows: Chapter 2 provides
 background information on reinforcement learning, model-based approaches, and

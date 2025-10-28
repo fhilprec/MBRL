@@ -10,6 +10,15 @@ results/
 docs/build/
 *.pkl
 
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.log
+*.xmpi
+*.pdf
+
 # LaTeX compilation artifacts
 *.aux
 *.fdb_latexmk
