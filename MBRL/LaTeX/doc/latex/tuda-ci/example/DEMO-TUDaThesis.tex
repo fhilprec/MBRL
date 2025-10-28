@@ -261,9 +261,10 @@ tasks and make the agent more robust \cite{ha2018world,hafner2020dream}.
 Moreover they provide limited interpretability with regards to their learned
 policy.
 
-Popular model free algorithms include temporal difference methods like
-Q-Learning and SARSA, as well as policy gradient methods such as REINFORCE,
-Actor-Critic, and Proximal Policy Optimization (PPO).
+Popular model free algorithms include temporal difference methods like Q-Learning
+ \cite{watkins1989learning} and SARSA \cite{rummery1994line}, as well as policy 
+ gradient methods such as REINFORCE \cite{williams1992simple}, Actor-Critic \cite{barto1983neuronlike}, 
+ and Proximal Policy Optimization (PPO) \cite{schulman2017proximal}.
 
 Model based reinforcement learning addresses some limitations of model free
 approaches by learning an explicit model of the environment dynamics.
@@ -284,16 +285,16 @@ exists an object centric approach that encompasses the score.
 
 Model based methods potentially have much better sample efficiency since it
 takes less sampling in the environment to learn reasonable state transitions
-than it takes to train a reinforcement learning. After the Model has been
+than it takes to train a reinforcement learning. After the model has been
 properly trained the agent can learn entirely within the worldmodel making
 additional sampling unnecessary. Although depending on game complexity the
 initial sampling which is usually done by a random policy might not see diverse
-enough states. This is for most Atari Games not an Issue but for more complex
+enough states. This is for most Atari Games not an issue but for more complex
 environment it can be important to retrain the worldmodel with new experience
 that is sampled by the now trained (within the model) trained agent in the real
 environment \cite{janner2019trust,sutton1991dyna}. Moreover there are
 approaches that use explicit planning strategies that hugely benefit
-interpretability. Using the worldmodel the Agent can make guesses what might
+interpretability. Using the worldmodel the agent can make guesses what might
 happen in the future and explicitly reason why it decides for a certain action
 \cite{schrittwieser2020mastering,greydanus2018visualizing}.
 
@@ -310,7 +311,7 @@ The Dreamer architecture is a family of model based RL algorithms (DreamerV1,
 V2, V3) that use a world model together with actor-critic methods. The main
 idea is to learn a compact latent space where the agent can imagine rollouts
 and train its policy without always interacting with the real environment.
-Dreamer builds on ideas from PlaNet, which first used latent dynamics, but
+Dreamer builds on ideas from PlaNet \cite{hafner2019learninglatentdynamicsplanning}, which first used latent dynamics, but
 Dreamer adds actor-critic learning and works better for Atari games.
 
 \begin{figure}[ht]
@@ -327,7 +328,7 @@ are different ways to train a world model. You can predict future observations
 directly or predict latent states. In Dreamers case as shown in Figure
 \ref{fig:dreamer_flow} the world model predicts latent states.
 
-Dreamerv2 builds upon the worldmodel with a actor-critic framework. The actor
+DreamerV2 builds upon the world model with an actor-critic framework. The actor
 is responsible for selecting actions based on the current latent state, while
 the critic evaluates the chosen actions by estimating their value. Central to DreamerV2 is the
 use of the $\lambda$-return, which provides a balance between bias and variance
