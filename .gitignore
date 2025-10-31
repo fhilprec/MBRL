@@ -23,6 +23,10 @@ docs/build/
 *.toc
 *.xmpdata
 
+node_modules/
+package-lock.json
+package.json
+
 # LaTeX compilation artifacts
 *.aux
 *.fdb_latexmk

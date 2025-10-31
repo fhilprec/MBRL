@@ -2,7 +2,7 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import jax
 import jax.numpy as jnp
@@ -1310,7 +1310,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 20,
+        "rollout_length": 10,
         "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
