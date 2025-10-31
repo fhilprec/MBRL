@@ -548,7 +548,13 @@ def generate_imagined_rollouts(
 
             key, action_key = jax.random.split(key)
             pi = actor_network.apply(actor_params, obs)
-            action = pi.sample(seed=action_key)
+
+            # Add exploration noise to prevent policy collapse during imagination
+            key, noise_key = jax.random.split(key)
+            exploration_noise = jax.random.normal(noise_key, pi.logits.shape) * 0.5
+            pi_exploratory = distrax.Categorical(logits=pi.logits + exploration_noise)
+
+            action = pi_exploratory.sample(seed=action_key)
             log_prob = pi.log_prob(action)
 
             value_dist = critic_network.apply(critic_params, obs)
@@ -568,7 +574,7 @@ def generate_imagined_rollouts(
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
             reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-            reward = jnp.tanh(reward * 0.1)
+            # Keep rewards at same scale as real rollouts - no compression
 
             discount_factor = jnp.array(discount)
 
@@ -1316,7 +1322,7 @@ def main():
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
         "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
-        "entropy_scale": 0.01,  # Maintain exploration
+        "entropy_scale": 0.1,  # Increased to prevent policy collapse
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
         "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
