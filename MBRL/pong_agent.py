@@ -706,13 +706,15 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             reward = jnp.array(improved_pong_reward(next_flat_obs, action, frame_stack_size=4), dtype=jnp.float32)
 
 
-            old_score =  flat_obs[-5]-flat_obs[-1]
-            new_score =  next_flat_obs[-5]-next_flat_obs[-1]
 
-            score_reward = new_score - old_score
-            score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
+            #this really helps but I cannot use it with the worldmodel
+            # old_score =  flat_obs[-5]-flat_obs[-1]
+            # new_score =  next_flat_obs[-5]-next_flat_obs[-1]
 
-            reward = reward + score_reward * 2 # to make actual score really important
+            # score_reward = new_score - old_score
+            # score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
+
+            # reward = reward + score_reward * 2 # to make actual score really important
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
@@ -1328,12 +1330,32 @@ def main():
         "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
+    parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
+    parser.add_argument("--eval", type=bool, help="Specifies whether to run evaluation", default=0)
+    parser.add_argument("--render", type=int, help="Specifies whether to run rendering", default=0)
+    parser.add_argument("--rollout_style", type=str, help="Specifies whether to use 'model' or 'real' rollouts", default="real")
+    args = parser.parse_args()
+
+
+    rollout_func = None
+    prefix = ""
+    if args.rollout_style not in ["model", "real"]:
+        print("Invalid rollout_style argument. Use 'model' or 'real'.")
+        exit()
+    else:
+        print(f"Using '{args.rollout_style}' rollouts for training.")
+        if args.rollout_style == "model":
+            rollout_func = generate_imagined_rollouts
+            prefix = "imagined_"
+        if args.rollout_style == "real":
+            rollout_func = generate_real_rollouts
+            prefix = "real_"
 
     model_exists = False
 
     for i in range(training_runs):
         print(f"This is the {i}th iteration training the actor-critic")
-        parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
+        
 
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
@@ -1372,9 +1394,9 @@ def main():
         actor_params = None
         critic_params = None
 
-        if os.path.exists("actor_params.pkl"):
+        if os.path.exists(f"{prefix}actor_params.pkl"):
             try:
-                with open("actor_params.pkl", "rb") as f:
+                with open(f"{prefix}actor_params.pkl", "rb") as f:
                     saved_data = pickle.load(f)
                     actor_params = saved_data.get("params", saved_data)
                     print("Loaded existing actor parameters")
@@ -1387,9 +1409,9 @@ def main():
             actor_params = actor_network.init(subkey, dummy_obs)
             print("Initialized new actor parameters")
 
-        if os.path.exists("critic_params.pkl"):
+        if os.path.exists(f"{prefix}critic_params.pkl"):
             try:
-                with open("critic_params.pkl", "rb") as f:
+                with open(f"{prefix}critic_params.pkl", "rb") as f:
                     saved_data = pickle.load(f)
                     critic_params = saved_data.get("params", saved_data)
                     print("Loaded existing critic parameters")
@@ -1407,13 +1429,12 @@ def main():
         print(f"Actor parameters: {actor_param_count:,}")
         print(f"Critic parameters: {critic_param_count:,}")
 
-        parser.add_argument("--eval", type=bool, help="Specifies whether to run evaluation", default=0)
-        parser.add_argument("--render", type=int, help="Specifies whether to run rendering", default=0)
-        args = parser.parse_args()
+       
 
         if args.eval:
             evaluate_real_performance(actor_network, actor_params,  num_episodes=5)
             exit()
+
 
         #stuff to make it run without a model
         if not model_exists:
@@ -1436,7 +1457,7 @@ def main():
             imagined_discounts,
             imagined_values,
             imagined_log_probs,
-        ) = generate_imagined_rollouts(
+        ) = rollout_func(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,
@@ -1508,17 +1529,17 @@ def main():
 
         print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
 
-        def save_model_checkpoints(actor_params, critic_params):
+        def save_model_checkpoints(actor_params, critic_params, prefix=prefix):
             """Save parameters with consistent structure"""
-            with open("actor_params.pkl", "wb") as f:
+            with open(f"{prefix}actor_params.pkl", "wb") as f:
                 pickle.dump({"params": actor_params}, f)
-            with open("critic_params.pkl", "wb") as f:
+            with open(f"{prefix}critic_params.pkl", "wb") as f:
                 pickle.dump({"params": critic_params}, f)
             print("Saved actor, critic parameters")
 
         analyze_policy_behavior(actor_network, actor_params, imagined_obs)
 
-        save_model_checkpoints(actor_params, critic_params)
+        save_model_checkpoints(actor_params, critic_params, prefix=prefix)
 
         # Free imagined rollout data after training
         del imagined_obs
