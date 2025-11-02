@@ -1392,8 +1392,8 @@ def main():
 
         actor_param_count = sum(x.size for x in jax.tree.leaves(actor_params))
         critic_param_count = sum(x.size for x in jax.tree.leaves(critic_params))
-        print(f"Actor parameters: {actor_param_count:,}")
-        print(f"Critic parameters: {critic_param_count:,}")
+        # print(f"Actor parameters: {actor_param_count:,}")
+        # print(f"Critic parameters: {critic_param_count:,}")
 
         parser.add_argument("--eval", type=bool, help="Specifies whether to run evaluation", default=0)
         parser.add_argument("--render", type=int, help="Specifies whether to run rendering", default=0)
