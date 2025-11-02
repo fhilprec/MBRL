@@ -2,7 +2,7 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import jax
 import jax.numpy as jnp
@@ -706,7 +706,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             score_reward = new_score - old_score
             score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
 
-            reward = reward + score_reward * 2 # to make actual score really important
+            reward = reward + score_reward * 10 # to make actual score really important
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
@@ -1310,7 +1310,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 20,
+        "rollout_length": 10,
         "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
@@ -1319,7 +1319,7 @@ def main():
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
 
@@ -1430,7 +1430,7 @@ def main():
             imagined_discounts,
             imagined_values,
             imagined_log_probs,
-        ) = generate_imagined_rollouts(
+        ) = generate_real_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
             critic_params=critic_params,
@@ -1443,13 +1443,7 @@ def main():
             key=jax.random.PRNGKey(SEED),
         )
 
-        # Free memory after imagination rollouts
-        del shuffled_obs
-        del dynamics_params
-        del normalization_stats
-        gc.collect()
-        jax.clear_caches()
-        print("Freed shuffled_obs, dynamics_params, and normalization_stats from memory")
+      
 
         # print(jnp.sum(dones_seq))
         # exit()
@@ -1514,16 +1508,7 @@ def main():
 
         save_model_checkpoints(actor_params, critic_params)
 
-        # Free imagined rollout data after training
-        del imagined_obs
-        del imagined_actions
-        del imagined_rewards
-        del imagined_discounts
-        del imagined_values
-        del imagined_log_probs
-        gc.collect()
-        jax.clear_caches()
-        print("Freed all imagined rollout arrays from memory")
+
 
 
 if __name__ == "__main__":
