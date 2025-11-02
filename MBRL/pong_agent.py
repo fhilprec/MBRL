@@ -841,6 +841,10 @@ def generate_real_rollouts(
     # Current format: (B, T, ...) where B=num_rollouts, T=rollout_length
     # Need format: (T, B, ...) where T=rollout_length, B=num_rollouts
     # NOTE: values needs T+1 timesteps for bootstrapping, others need T timesteps
+
+    total_valid_steps = int(total_steps)
+    print(f"Total valid steps: {total_valid_steps}")
+
     return (
         jnp.transpose(obs_rollouts[:, :-1], (1, 0, 2)),  # (B, T, F) -> (T, B, F)
         jnp.transpose(actions_rollouts, (1, 0)),         # (B, T) -> (T, B)
@@ -848,6 +852,7 @@ def generate_real_rollouts(
         jnp.transpose(discounts, (1, 0)),                # (B, T) -> (T, B)
         jnp.transpose(values, (1, 0)),                   # (B, T+1) -> (T+1, B) - KEEP all values!
         jnp.transpose(log_probs, (1, 0)),                # (B, T) -> (T, B)
+        total_valid_steps,
     )
 
 
@@ -1424,6 +1429,7 @@ def main():
             imagined_discounts,
             imagined_values,
             imagined_log_probs,
+            total_valid_steps,
         ) = generate_real_rollouts(
             dynamics_params=dynamics_params,
             actor_params=actor_params,
@@ -1498,7 +1504,29 @@ def main():
                 pickle.dump({"params": critic_params}, f)
             print("Saved actor, critic parameters")
 
-        analyze_policy_behavior(actor_network, actor_params, imagined_obs)
+        action_probs = analyze_policy_behavior(actor_network, actor_params, imagined_obs)
+
+        # Compute scalar metrics for logging
+        mean_reward = float(jnp.mean(imagined_rewards))
+        try:
+            p = np.array(action_probs)
+        except Exception:
+            p = np.asarray(action_probs)
+
+        # simple entropy and movement metrics
+        entropy_val = -float(np.sum(p * np.log(p + 1e-12)))
+        movement_prob = float(p[3] + p[4]) if p.size > 4 else 0.0
+        most_likely = int(np.argmax(p))
+
+        # Append a single-line log entry to training_log
+        log_line = (
+            f"iter={i}, mean_reward={mean_reward:.6f}, total_valid_steps={total_valid_steps}, "
+            f"action_probs={p.tolist()}, entropy={entropy_val:.6f}, movement_prob={movement_prob:.6f}, "
+            f"most_likely={most_likely}\n"
+        )
+
+        with open("training_log", "a") as lf:
+            lf.write(log_line)
 
         save_model_checkpoints(actor_params, critic_params)
 
