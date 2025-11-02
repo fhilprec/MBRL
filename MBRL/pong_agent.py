@@ -700,13 +700,11 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             reward = jnp.array(improved_pong_reward(next_flat_obs, action, frame_stack_size=4), dtype=jnp.float32)
 
 
-            old_score =  flat_obs[-5]-flat_obs[-1]
-            new_score =  next_flat_obs[-5]-next_flat_obs[-1]
+            # old_score =  flat_obs[-5]-flat_obs[-1]
+            # new_score =  next_flat_obs[-5]-next_flat_obs[-1]
 
-            score_reward = new_score - old_score
-            score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
-
-            reward = reward + score_reward * 10 # to make actual score really important
+            # score_reward = new_score - old_score
+            # score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
