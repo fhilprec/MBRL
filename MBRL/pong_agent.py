@@ -779,8 +779,6 @@ def generate_real_rollouts(
     # After getting the vmapped results
     observations, actions, rewards, valid_mask, states, episode_length = vmapped_episode_fn(episode_keys)
 
-    print(f"Episode lengths: {episode_length}")
-
     # Process each episode separately to extract only valid steps
     all_valid_obs = []
     all_valid_actions = []
@@ -799,8 +797,6 @@ def generate_real_rollouts(
         all_valid_actions.append(valid_actions)
         all_valid_rewards.append(valid_rewards)
         
-        print(f"Episode {ep_idx+1}: {ep_length} valid steps")
-
     # Concatenate all valid episodes
     all_obs = jnp.concatenate(all_valid_obs, axis=0)
     all_actions = jnp.concatenate(all_valid_actions, axis=0)
@@ -824,7 +820,7 @@ def generate_real_rollouts(
     actions_rollouts = jnp.stack([all_actions[i:i+rollout_length] for i in start_indices])
     rewards_rollouts = jnp.stack([all_rewards[i:i+rollout_length] for i in start_indices])
 
-    print(f"Rollout shapes: obs={obs_rollouts.shape}, actions={actions_rollouts.shape}, rewards={rewards_rollouts.shape}")
+    # print(f"Rollout shapes: obs={obs_rollouts.shape}, actions={actions_rollouts.shape}, rewards={rewards_rollouts.shape}")
     
     # Compute values and log_probs
     all_obs_for_critic = obs_rollouts.reshape(-1, obs_rollouts.shape[-1])
@@ -838,8 +834,8 @@ def generate_real_rollouts(
     
     discounts = jnp.full_like(rewards_rollouts, discount)
 
-    print(f"Rollouts shape: (, {num_rollouts}, {rollout_length+1}, {obs_rollouts.shape[-1]})")
-    print(f"Before transpose - rewards: {rewards_rollouts.shape}, values: {values.shape}")
+    # print(f"Rollouts shape: (, {num_rollouts}, {rollout_length+1}, {obs_rollouts.shape[-1]})")
+    # print(f"Before transpose - rewards: {rewards_rollouts.shape}, values: {values.shape}")
 
     # Transpose to (T, B, ...) format as expected by training function
     # Current format: (B, T, ...) where B=num_rollouts, T=rollout_length
@@ -949,11 +945,11 @@ def train_dreamerv2_actor_critic(
     #     f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
     # )
 
-    print(
-        f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
-    )
-    print(f"Targets shape: {targets.shape}, Values shape: {values.shape}")
-    print(f"Raw advantages - Mean: {(targets - values[:-1]).mean():.4f}, Std: {(targets - values[:-1]).std():.4f}")
+    # print(
+    #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
+    # )
+    # print(f"Targets shape: {targets.shape}, Values shape: {values.shape}")
+    # print(f"Raw advantages - Mean: {(targets - values[:-1]).mean():.4f}, Std: {(targets - values[:-1]).std():.4f}")
     # print(
     #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     # )
@@ -1050,24 +1046,24 @@ def train_dreamerv2_actor_critic(
 
         advantages = targets - values
 
-        if debug:
-            jax.debug.print("Raw advantages: mean={mean}, std={std}, min={min}, max={max}",
-                          mean=advantages.mean(), std=advantages.std(),
-                          min=advantages.min(), max=advantages.max())
-            jax.debug.print("Actions: shape={shape}, dtype={dtype}, min={min}, max={max}, first_10={first}",
-                          shape=actions.shape, dtype=actions.dtype,
-                          min=actions.min(), max=actions.max(),
-                          first=actions[:10])
-            jax.debug.print("Pi logits: shape={shape}, min={min}, max={max}, first_sample={first}",
-                          shape=pi.logits.shape,
-                          min=pi.logits.min(), max=pi.logits.max(),
-                          first=pi.logits[0])
-            jax.debug.print("Pi probs: first_sample={first}",
-                          first=pi.probs[0])
-            jax.debug.print("Log probs: mean={mean}, std={std}, min={min}, max={max}, first_10={first}",
-                          mean=log_prob.mean(), std=log_prob.std(),
-                          min=log_prob.min(), max=log_prob.max(),
-                          first=log_prob[:10])
+        # if debug:
+        #     jax.debug.print("Raw advantages: mean={mean}, std={std}, min={min}, max={max}",
+        #                   mean=advantages.mean(), std=advantages.std(),
+        #                   min=advantages.min(), max=advantages.max())
+        #     jax.debug.print("Actions: shape={shape}, dtype={dtype}, min={min}, max={max}, first_10={first}",
+        #                   shape=actions.shape, dtype=actions.dtype,
+        #                   min=actions.min(), max=actions.max(),
+        #                   first=actions[:10])
+        #     jax.debug.print("Pi logits: shape={shape}, min={min}, max={max}, first_sample={first}",
+        #                   shape=pi.logits.shape,
+        #                   min=pi.logits.min(), max=pi.logits.max(),
+        #                   first=pi.logits[0])
+        #     jax.debug.print("Pi probs: first_sample={first}",
+        #                   first=pi.probs[0])
+        #     jax.debug.print("Log probs: mean={mean}, std={std}, min={min}, max={max}, first_10={first}",
+        #                   mean=log_prob.mean(), std=log_prob.std(),
+        #                   min=log_prob.min(), max=log_prob.max(),
+        #                   first=log_prob[:10])
 
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -1075,12 +1071,12 @@ def train_dreamerv2_actor_critic(
         # We want to MAXIMIZE this, so the loss should be NEGATIVE
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
 
-        if debug:
-            jax.debug.print("Normalized advantages: mean={mean}, std={std}",
-                          mean=advantages.mean(), std=advantages.std())
-            jax.debug.print("Reinforce obj: mean={mean}, std={std}, sum={sum}",
-                          mean=reinforce_obj.mean(), std=reinforce_obj.std(),
-                          sum=reinforce_obj.sum())
+        # if debug:
+        #     jax.debug.print("Normalized advantages: mean={mean}, std={std}",
+        #                   mean=advantages.mean(), std=advantages.std())
+        #     jax.debug.print("Reinforce obj: mean={mean}, std={std}, sum={sum}",
+        #                   mean=reinforce_obj.mean(), std=reinforce_obj.std(),
+        #                   sum=reinforce_obj.sum())
 
         # Entropy bonus encourages exploration (we want to MAXIMIZE entropy)
         entropy_bonus = entropy_scale * entropy
