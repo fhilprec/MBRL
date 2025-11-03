@@ -22,6 +22,9 @@ from obs_state_converter import pong_flat_observation_to_state
 
 from model_architectures import *
 
+MODEL_ARCHITECTURE = PongLSTM
+model_scale_factor = 2
+
 
 def get_reward_from_observation_score(obs):
     """Extract reward from Pong observation - adjust index as needed for Pong"""
@@ -31,8 +34,33 @@ def get_reward_from_observation_score(obs):
     return obs[-3] if len(obs) > 3 else 0
 
 
-MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 10
+def calculate_score_based_reward(flat_obs, next_flat_obs):
+    """
+    Calculate reward based on score difference between observations.
+    Returns +1 if player scored, -1 if enemy scored, 0 otherwise.
+
+    Args:
+        flat_obs: Current observation (flattened)
+        next_flat_obs: Next observation (flattened)
+
+    Returns:
+        Score-based reward: 1, -1, or 0
+    """
+    # Extract scores from observations
+    # flat_obs[-5] is player score, flat_obs[-1] is enemy score
+    old_score = flat_obs[..., -5] - flat_obs[..., -1]
+    new_score = next_flat_obs[..., -5] - next_flat_obs[..., -1]
+
+    # Calculate score change
+    score_reward = new_score - old_score
+
+    # Filter out rewards where abs > 1 (set them to 0)
+    score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
+
+    return score_reward
+
+
+
 
 
 VERBOSE = True
@@ -169,135 +197,164 @@ def collect_experience_sequential(
     policy_params=None,
     network=None,
 ):
-    """Collect experience data sequentially to ensure proper transitions."""
-    observations = []
-    states = []
-    next_observations = []
-    actions = []
-    rewards = []
-    dones = []
-    boundaries = []
+    """Collect experience data using JAX vmap and scan for efficiency."""
 
-    dead = False
-    total_steps = 0
     rng = jax.random.PRNGKey(seed)
 
-    def pong_left_right_policy(rng):
-        """Simple left-right movement policy for Pong"""
-        rng, action_key = jax.random.split(rng)
-
-        action_prob = jax.random.uniform(action_key)
-
-        action = jax.random.randint(action_key, (), 0, 6)
-
-        return action
-
-    def pong_tracking_policy(rng, step_count):
-        """Policy that alternates between tracking movements"""
-        rng, action_key = jax.random.split(rng)
-
-        cycle = step_count % 60
-
-        if cycle < 30:
-            if jax.random.uniform(action_key) < 0.7:
-                action = 2
-            else:
-                action = jax.random.randint(action_key, (), 0, 6)
-        else:
-            if jax.random.uniform(action_key) < 0.7:
-                action = 3
-            else:
-                action = jax.random.randint(action_key, (), 0, 6)
-
-        return action
-
-    def random_pong_policy(rng):
-        """Completely random policy for exploration"""
-        rng, action_key = jax.random.split(rng)
-        action = jax.random.randint(action_key, (), 0, 6)
-        return action
-
     def perfect_policy(obs, rng):
-
+        """Perfect policy that tracks ball position"""
         rng, action_key = jax.random.split(rng)
-        if jax.random.uniform(action_key) < 0.5:
-            action = jax.random.randint(action_key, (), 0, 6)
-            return action
+        # 50% random exploration
+        do_random = jax.random.uniform(action_key) < 0.5
+        random_action = jax.random.randint(action_key, (), 0, 6)
 
-        if obs.player.y[3] > obs.ball.y[3]:
-            return 4
-        if obs.player.y[3] < obs.ball.y[3]:
-            return 3
-        if obs.player.y[3] == obs.ball.y[3]:
-            return 0
+        # Ball tracking logic
+        perfect_action = jax.lax.cond(
+            obs.player.y[3] > obs.ball.y[3],
+            lambda _: jnp.array(4),
+            lambda _: jax.lax.cond(
+                obs.player.y[3] < obs.ball.y[3],
+                lambda _: jnp.array(3),
+                lambda _: jnp.array(0),
+                None
+            ),
+            None
+        )
 
-    for episode in range(num_episodes):
-        rng, reset_key = jax.random.split(rng)
+        return jax.lax.select(do_random, random_action, perfect_action)
+
+    def run_single_episode(episode_key):
+        """Run one complete episode using JAX scan."""
+        reset_key, step_key = jax.random.split(episode_key)
         obs, state = env.reset(reset_key)
 
-        for step in range(max_steps_per_episode):
-            current_state = state
-            current_obs = obs
+        def step_fn(carry, _):
+            rng, obs, state, done = carry
 
-            rng, action_key = jax.random.split(rng)
+            # Skip if already done
+            def continue_step(_):
+                # Get action
+                rng_new, action_key = jax.random.split(rng)
 
-            if network and policy_params:
+                if network and policy_params:
+                    flat_obs, _ = flatten_obs(obs, single_state=True)
+                    pi, _ = network.apply(policy_params, flat_obs)
+                    action = pi.sample(seed=action_key)
+                else:
+                    action = perfect_policy(obs, rng_new)
 
-                flat_obs, _ = flatten_obs(obs, single_state=True)
-                pi, _ = network.apply(policy_params, flat_obs)
-                action = pi.sample(seed=action_key)
-            else:
-                action = perfect_policy(obs, rng)
+                # Step environment
+                next_obs, next_state, reward, next_done, _ = env.step(state, action)
 
-            rng, step_key = jax.random.split(rng)
-            next_obs, next_state, reward, done, _ = env.step(state, action)
-        
-            observations.append(current_obs)
-            actions.append(action)
-            next_observations.append(next_obs)
-            rewards.append(reward)
-            dones.append(done)
-            states.append(current_state)
+                # Store transition with valid mask (valid = not done BEFORE this step)
+                transition = (obs, state, action, jnp.float32(reward), next_done, ~done)
 
-            if not episodic_life:
+                return (rng_new, next_obs, next_state, next_done), transition
 
-                if hasattr(current_state, "env_state") and hasattr(
-                    current_state.env_state, "death_counter"
-                ):
-                    if current_state.env_state.death_counter > 0 and not dead:
-                        dead = True
-                    if not current_state.env_state.death_counter > 0 and dead:
-                        dead = False
-                        boundaries.append(total_steps)
+            def skip_step(_):
+                # Return dummy data when done - ENSURE EXACT TYPE MATCHING
+                dummy_action = jnp.array(0, dtype=jnp.int32)
+                dummy_reward = jnp.array(0.0, dtype=jnp.float32)
+                dummy_done = jnp.array(False, dtype=jnp.bool_)
+                dummy_valid = jnp.array(False, dtype=jnp.bool_)
 
-            if done:
-                print(f"Episode {episode+1} done after {step+1} steps")
+                dummy_transition = (obs, state, dummy_action, dummy_reward, dummy_done, dummy_valid)
+                return (rng, obs, state, done), dummy_transition
 
-                if episodic_life:
-                    if len(boundaries) == 0:
-                        boundaries.append(step)
-                        print("No boundaries found, adding first step")
-                    else:
-                        boundaries.append(boundaries[-1] + step + 1)
-                        print("Adding boundary at step", boundaries[-1])
-                break
+            return jax.lax.cond(done, skip_step, continue_step, None)
 
-            state = next_state
-            obs = next_obs
-            total_steps += 1
+        initial_carry = (step_key, obs, state, jnp.array(False))
+        _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=max_steps_per_episode)
 
-    actions_array = jnp.array(actions)
-    rewards_array = jnp.array(rewards)
-    dones_array = jnp.array(dones)
+        observations, states, actions, rewards, dones, valid_mask = transitions
 
-    return (
-        flatten_obs(observations, is_list=True),
-        actions_array,
-        rewards_array,
-        dones_array,
-        flatten_obs(states, is_list=True),
-        boundaries,
-    )
+        # Calculate episode length
+        episode_length = jnp.sum(valid_mask)
+
+        return observations, states, actions, rewards, dones, valid_mask, episode_length
+
+    # Generate episode keys
+    episode_keys = jax.random.split(rng, num_episodes)
+
+    print(f"Collecting {num_episodes} episodes with vmap...")
+
+    # Run episodes in parallel with vmap
+    vmapped_episode_fn = jax.vmap(run_single_episode, in_axes=0)
+    observations, states, actions, rewards, dones, valid_mask, episode_lengths = vmapped_episode_fn(episode_keys)
+
+    # Process each episode separately to extract only valid steps
+    all_valid_obs = []
+    all_valid_states = []
+    all_valid_actions = []
+    all_valid_rewards = []
+    all_valid_dones = []
+    boundaries = []
+    cumulative_steps = 0
+
+    for ep_idx in range(num_episodes):
+        ep_length = int(episode_lengths[ep_idx])
+
+        if ep_length > 0:
+            # Extract valid steps for this episode
+            # Use tree.map for PyTree observations
+            valid_obs = jax.tree.map(lambda x: x[ep_idx, :ep_length], observations)
+            valid_states = jax.tree.map(lambda x: x[ep_idx, :ep_length], states)
+            valid_actions = actions[ep_idx, :ep_length]
+            valid_rewards = rewards[ep_idx, :ep_length]
+            valid_dones = dones[ep_idx, :ep_length]
+
+            all_valid_obs.append(valid_obs)
+            all_valid_states.append(valid_states)
+            all_valid_actions.append(valid_actions)
+            all_valid_rewards.append(valid_rewards)
+            all_valid_dones.append(valid_dones)
+
+            cumulative_steps += ep_length
+            boundaries.append(cumulative_steps)
+
+            print(f"Episode {ep_idx+1} done after {ep_length} steps")
+
+    # Concatenate all valid episodes
+    if all_valid_obs:
+        all_obs = jax.tree.map(lambda *arrays: jnp.concatenate(arrays, axis=0), *all_valid_obs)
+        all_states = jax.tree.map(lambda *arrays: jnp.concatenate(arrays, axis=0), *all_valid_states)
+        all_actions = jnp.concatenate(all_valid_actions, axis=0)
+        all_rewards = jnp.concatenate(all_valid_rewards, axis=0)
+        all_dones = jnp.concatenate(all_valid_dones, axis=0)
+
+        # Flatten observations and states efficiently
+        # Simply concatenate all leaf arrays along the feature dimension
+        obs_leaves = jax.tree_util.tree_leaves(all_obs)
+        state_leaves = jax.tree_util.tree_leaves(all_states)
+
+        # Ensure all leaves are 2D (batch_size, features) before concatenating
+        obs_leaves_2d = [leaf if leaf.ndim == 2 else leaf[:, None] for leaf in obs_leaves]
+        state_leaves_2d = [leaf if leaf.ndim == 2 else leaf[:, None] for leaf in state_leaves]
+
+        # Concatenate all leaves to create flat arrays
+        flat_obs = jnp.concatenate(obs_leaves_2d, axis=1)
+        flat_states = jnp.concatenate(state_leaves_2d, axis=1)
+
+        print(f"Total valid steps: {cumulative_steps}")
+
+        return (
+            flat_obs,
+            all_actions,
+            all_rewards,
+            all_dones,
+            flat_states,
+            boundaries,
+        )
+    else:
+        # Return empty arrays if no valid data
+        return (
+            jnp.array([]),
+            jnp.array([]),
+            jnp.array([]),
+            jnp.array([]),
+            jnp.array([]),
+            [],
+        )
 
 
 def train_world_model(
@@ -330,59 +387,35 @@ def train_world_model(
     normalized_next_obs = (next_obs - state_mean) / state_std
 
     def create_sequential_batches(batch_size=32):
-
+        """Optimized batch creation using list comprehension and minimizing operations"""
         sequences = []
+        stride = sequence_length // 4
 
-        for i in range(len(episode_boundaries) - 1):
-            if i == 0:
-                start_idx = 0
-                end_idx = episode_boundaries[0]
-            else:
-                start_idx = episode_boundaries[i - 1]
-                end_idx = episode_boundaries[i]
+        # Add 0 at the beginning for easier indexing
+        boundaries_with_zero = [0] + episode_boundaries
 
-            for j in range(
-                0, end_idx - start_idx - sequence_length + 1, sequence_length // 4
-            ):
-                if start_idx + j + sequence_length > end_idx:
+        for i in range(len(episode_boundaries)):
+            start_idx = boundaries_with_zero[i]
+            end_idx = boundaries_with_zero[i + 1]
+            episode_length = end_idx - start_idx
 
-                    padding_length = start_idx + j + sequence_length - end_idx
-                    padded_obs = jnp.concatenate(
-                        [
-                            normalized_obs[start_idx + j : end_idx],
-                            jnp.tile(normalized_obs[end_idx - 1], (padding_length, 1)),
-                        ],
-                        axis=0,
-                    )
-                    padded_actions = jnp.concatenate(
-                        [
-                            actions[start_idx + j : end_idx],
-                            jnp.tile(actions[end_idx - 1], (padding_length,)),
-                        ],
-                        axis=0,
-                    )
-                    padded_next_obs = jnp.concatenate(
-                        [
-                            normalized_next_obs[start_idx + j : end_idx],
-                            jnp.tile(
-                                normalized_next_obs[end_idx - 1], (padding_length, 1)
-                            ),
-                        ],
-                        axis=0,
-                    )
+            # Skip episodes that are too short
+            if episode_length < sequence_length:
+                continue
 
-                    sequences.append((padded_obs, padded_actions, padded_next_obs))
-                    continue
+            # Calculate valid starting positions
+            num_sequences = (episode_length - sequence_length) // stride + 1
 
-                sequences.append(
-                    (
-                        normalized_obs[start_idx + j : start_idx + j + sequence_length],
-                        actions[start_idx + j : start_idx + j + sequence_length],
-                        normalized_next_obs[
-                            start_idx + j : start_idx + j + sequence_length
-                        ],
-                    )
-                )
+            for seq_idx in range(num_sequences):
+                seq_start = start_idx + seq_idx * stride
+                seq_end = seq_start + sequence_length
+
+                # Extract sequences directly - no padding needed since we validated length
+                sequences.append((
+                    normalized_obs[seq_start:seq_end],
+                    actions[seq_start:seq_end],
+                    normalized_next_obs[seq_start:seq_end]
+                ))
 
         return sequences
 
@@ -406,6 +439,7 @@ def train_world_model(
     )
 
     model = MODEL_ARCHITECTURE(model_scale_factor)
+    reward_model = RewardPredictorMLP(model_scale_factor)
 
     lr_schedule = optax.cosine_decay_schedule(
         init_value=learning_rate,
@@ -417,11 +451,22 @@ def train_world_model(
         optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
     )
 
+    # Separate optimizer for reward predictor
+    reward_optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
+    )
+
     rng = jax.random.PRNGKey(42)
     dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
     params = model.init(rng, dummy_state, dummy_action, None)
     opt_state = optimizer.init(params)
+
+    # Initialize reward predictor
+    rng, reward_rng = jax.random.split(rng)
+    reward_params = reward_model.init(reward_rng, dummy_state)
+    reward_opt_state = reward_optimizer.init(reward_params)
 
     _, lstm_state_template = model.apply(params, rng, dummy_state, dummy_action, None)
 
@@ -507,6 +552,29 @@ def train_world_model(
         )
         return jnp.mean(losses)
 
+    @jax.jit
+    def reward_update_step(reward_params, reward_opt_state, batch_obs, batch_next_obs):
+        """Update reward predictor parameters"""
+        def reward_loss_fn(r_params):
+            # Flatten batch dimensions for processing
+            flat_obs = batch_obs.reshape(-1, batch_obs.shape[-1])
+            flat_next_obs = batch_next_obs.reshape(-1, batch_next_obs.shape[-1])
+
+            # Calculate target rewards based on score difference
+            target_rewards = calculate_score_based_reward(flat_obs, flat_next_obs)
+
+            # Predict rewards
+            predicted_rewards = reward_model.apply(r_params, reward_rng, flat_next_obs)
+
+            # MSE loss
+            loss = jnp.mean((predicted_rewards - target_rewards) ** 2)
+            return loss
+
+        loss, grads = jax.value_and_grad(reward_loss_fn)(reward_params)
+        updates, new_reward_opt_state = reward_optimizer.update(grads, reward_opt_state, reward_params)
+        new_reward_params = optax.apply_updates(reward_params, updates)
+        return new_reward_params, new_reward_opt_state, loss
+
     train_batch_states = jnp.stack([batch[0] for batch in train_batches])
     train_batch_actions = jnp.stack([batch[1] for batch in train_batches])
     train_batch_next_states = jnp.stack([batch[2] for batch in train_batches])
@@ -523,9 +591,6 @@ def train_world_model(
 
     for epoch in range(num_epochs):
 
-        rng_shuffle, shuffle_key = jax.random.split(rng_shuffle)
-        indices = jax.random.permutation(shuffle_key, len(train_batches))
-
         epoch_shuffle_key = jax.random.fold_in(rng_shuffle, epoch)
         epoch_indices = jax.random.permutation(epoch_shuffle_key, len(train_batches))
 
@@ -533,21 +598,46 @@ def train_world_model(
         shuffled_train_actions = train_batch_actions[epoch_indices]
         shuffled_train_next_states = train_batch_next_states[epoch_indices]
 
-        if shuffled_train_states.shape[0] > gpu_batch_size:
-            shuffled_train_states = shuffled_train_states[:gpu_batch_size]
-            shuffled_train_actions = shuffled_train_actions[:gpu_batch_size]
-            shuffled_train_next_states = shuffled_train_next_states[:gpu_batch_size]
+        # Process all training data in chunks to improve stability
+        num_train_batches = shuffled_train_states.shape[0]
+        num_chunks = (num_train_batches + gpu_batch_size - 1) // gpu_batch_size
 
-        params, opt_state, train_loss = update_step_batched(
-            params,
-            opt_state,
-            shuffled_train_states,
-            shuffled_train_actions,
-            shuffled_train_next_states,
-            lstm_state_template,
-            epoch,
-            num_epochs,
-        )
+        epoch_train_losses = []
+        epoch_reward_losses = []
+
+        for chunk_idx in range(num_chunks):
+            chunk_start = chunk_idx * gpu_batch_size
+            chunk_end = min((chunk_idx + 1) * gpu_batch_size, num_train_batches)
+
+            chunk_states = shuffled_train_states[chunk_start:chunk_end]
+            chunk_actions = shuffled_train_actions[chunk_start:chunk_end]
+            chunk_next_states = shuffled_train_next_states[chunk_start:chunk_end]
+
+            params, opt_state, chunk_train_loss = update_step_batched(
+                params,
+                opt_state,
+                chunk_states,
+                chunk_actions,
+                chunk_next_states,
+                lstm_state_template,
+                epoch,
+                num_epochs,
+            )
+
+            # Train reward predictor
+            reward_params, reward_opt_state, chunk_reward_loss = reward_update_step(
+                reward_params,
+                reward_opt_state,
+                chunk_states,
+                chunk_next_states,
+            )
+
+            epoch_train_losses.append(chunk_train_loss)
+            epoch_reward_losses.append(chunk_reward_loss)
+
+        # Average losses over all chunks
+        train_loss = jnp.mean(jnp.array(epoch_train_losses))
+        reward_loss = jnp.mean(jnp.array(epoch_reward_losses))
 
         if train_loss < best_loss:
             best_loss = train_loss
@@ -588,12 +678,13 @@ def train_world_model(
 
             current_lr = lr_schedule(epoch)
             print(
-                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, LR: {current_lr:.2e}"
+                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
             )
 
     print("Training completed")
-    return params, {
+    return params, reward_params, {
         "final_loss": train_loss,
+        "final_reward_loss": reward_loss,
         "normalization_stats": normalization_stats,
         "best_loss": best_loss,
     }
@@ -860,8 +951,10 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, states, boundaries = collect_experience_sequential(
-                env, num_episodes=20, max_steps_per_episode=10000, seed=i
+                env, num_episodes=2, max_steps_per_episode=10000, seed=i
             )
+
+
             next_obs = obs[1:]
             obs = obs[:-1]
 
@@ -895,6 +988,7 @@ def main():
         with open(save_path, "rb") as f:
             saved_data = pickle.load(f)
             dynamics_params = saved_data["dynamics_params"]
+            reward_predictor_params = saved_data.get("reward_predictor_params", None)
             normalization_stats = saved_data.get("normalization_stats", None)
     else:
         print("No existing model found. Training a new model...")
@@ -918,7 +1012,7 @@ def main():
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
 
-        dynamics_params, training_info = train_world_model(
+        dynamics_params, reward_predictor_params, training_info = train_world_model(
             obs_array,
             actions_array,
             next_obs_array,
@@ -933,6 +1027,7 @@ def main():
             pickle.dump(
                 {
                     "dynamics_params": dynamics_params,
+                    "reward_predictor_params": reward_predictor_params,
                     "normalization_stats": training_info.get(
                         "normalization_stats", None
                     ),

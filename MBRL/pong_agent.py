@@ -1458,6 +1458,7 @@ def main():
             imagined_discounts,
             imagined_values,
             imagined_log_probs,
+            total_valid_steps
         ) = rollout_func(
             dynamics_params=dynamics_params,
             actor_params=actor_params,

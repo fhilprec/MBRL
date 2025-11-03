@@ -975,3 +975,31 @@ def get_enhanced_reward(obs, action, frame_stack_size=4):
     movement_bonus = jnp.where((action == 3) | (action == 4), 0.05, -0.01)
 
     return ball_reward + distance_bonus + movement_bonus
+
+
+def RewardPredictorMLP(model_scale_factor=1):
+    """
+    Simple MLP that predicts reward from a single observation.
+    Takes only observations (no LSTM state) and outputs a scalar reward.
+    """
+    def forward(state):
+        batch_size = state.shape[0] if len(state.shape) > 1 else 1
+
+        if len(state.shape) == 1:
+            state = state.reshape(1, -1)
+
+        # Simple MLP architecture
+        x = hk.Linear(int(256 * model_scale_factor))(state)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(128 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(64 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+
+        # Output layer - single scalar reward
+        reward = hk.Linear(1)(x)
+        reward = jnp.squeeze(reward, axis=-1)  # Remove last dimension to get scalar per batch
+
+        return reward
+
+    return hk.transform(forward)
