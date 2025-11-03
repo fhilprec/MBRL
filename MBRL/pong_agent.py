@@ -23,7 +23,7 @@ import gc
 
 
 
-from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_full_array, collect_experience_sequential
+from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_full_array, collect_experience_sequential, calculate_score_based_reward
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
@@ -510,6 +510,8 @@ def generate_imagined_rollouts(
     normalization_stats: Dict,
     discount: float = 0.99,
     key: jax.random.PRNGKey = None,
+    reward_predictor_params: Any = None,
+    model_scale_factor: int = 2,
 ) -> Tuple[
     jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
 ]:
@@ -573,8 +575,18 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-            # Keep rewards at same scale as real rollouts - no compression
+            # Compute improved pong reward
+            improved_reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
+
+            # Compute reward predictor reward if available
+            reward_predictor_reward = 0.0
+            if reward_predictor_params is not None:
+                reward_model = RewardPredictorMLP(model_scale_factor)
+                predicted_reward = reward_model.apply(reward_predictor_params, None, next_obs[None, :])
+                reward_predictor_reward = jnp.squeeze(predicted_reward)
+
+            # Combine rewards: improved pong reward + predicted score reward
+            reward = improved_reward + reward_predictor_reward * 2.0
 
             discount_factor = jnp.array(discount)
 
@@ -683,7 +695,7 @@ def generate_imagined_rollouts(
     )
 
 
-def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000):
+def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=2):
     """Run one complete episode using JAX scan with masking."""
     reset_key, step_key = jax.random.split(episode_key)
     obs, state = env.reset(reset_key)
@@ -702,19 +714,21 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
-            
-            reward = jnp.array(improved_pong_reward(next_flat_obs, action, frame_stack_size=4), dtype=jnp.float32)
 
+            # Compute improved pong reward
+            improved_reward = improved_pong_reward(next_flat_obs, action, frame_stack_size=4)
 
+            # Compute reward predictor reward if available
+            reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
+            if reward_predictor_params is not None:
+                reward_model = RewardPredictorMLP(model_scale_factor)
+                # Use RNG key for apply (though not needed for deterministic forward pass)
+                rng_reward = jax.random.PRNGKey(0)
+                predicted_reward = reward_model.apply(reward_predictor_params, rng_reward, next_flat_obs[None, :])
+                reward_predictor_reward = jnp.squeeze(predicted_reward)
 
-            #this really helps but I cannot use it with the worldmodel
-            # old_score =  flat_obs[-5]-flat_obs[-1]
-            # new_score =  next_flat_obs[-5]-next_flat_obs[-1]
-
-            # score_reward = new_score - old_score
-            # score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
-
-            # reward = reward + score_reward * 2 # to make actual score really important
+            # Combine rewards: improved pong reward + predicted score reward
+            reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
@@ -767,6 +781,8 @@ def generate_real_rollouts(
     key: jax.random.PRNGKey = None,
     initial_observations = None,
     num_rollouts: int = 3000,
+    reward_predictor_params: Any = None,
+    model_scale_factor: int = 2,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Collect episodes with JAX vmap and reshape to (rollout_length, num_rollouts, features)."""
     
@@ -782,7 +798,7 @@ def generate_real_rollouts(
     
     # Run episodes in parallel with vmap
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor),
         in_axes=0
     )
     
@@ -1316,6 +1332,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 def main():
 
     training_runs = 1000
+    model_scale_factor = 2  # Same as in worldmodelPong.py
 
     training_params = {
         "action_dim": 6,
@@ -1365,6 +1382,7 @@ def main():
             with open("world_model_PongLSTM_pong.pkl", "rb") as f:
                 saved_data = pickle.load(f)
                 dynamics_params = saved_data["dynamics_params"]
+                reward_predictor_params = saved_data.get("reward_predictor_params", None)
                 normalization_stats = saved_data.get("normalization_stats", None)
                 model_exists = True
                 del saved_data
@@ -1441,6 +1459,7 @@ def main():
         if not model_exists:
             obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
             dynamics_params = None
+            reward_predictor_params = None
             normalization_stats = None
         shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
 
@@ -1470,6 +1489,8 @@ def main():
             normalization_stats=normalization_stats,
             discount=training_params["discount"],
             key=jax.random.PRNGKey(SEED),
+            reward_predictor_params=reward_predictor_params,
+            model_scale_factor=model_scale_factor,
         )
 
       
