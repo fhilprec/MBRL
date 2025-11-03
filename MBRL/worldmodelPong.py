@@ -705,7 +705,8 @@ def compare_real_vs_model(
     frame_stack_size: int = 4,
     model_scale_factor=4,
     model_path=None,
-    show_only_one_step = False
+    show_only_one_step = False,
+    reward_predictor_params=None,
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -721,9 +722,16 @@ def compare_real_vs_model(
         action,
     ):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
-        print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f} Extracted Reward : {real_obs[-5]-real_obs[-1]}"
-        )
+        # print(
+        #     f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f} Extracted Reward : {real_obs[-5]-real_obs[-1]}"
+        # )
+        #print the reward model prediction
+        if reward_predictor_params is not None:
+            reward_model = RewardPredictorMLP(model_scale_factor)
+            predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[0][None, :])
+            rounded_reward = jnp.round(predicted_reward * 2)
+            if rounded_reward != 0:
+                print(f"Step {step}, Reward Model Prediction: {rounded_reward}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -951,8 +959,10 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, states, boundaries = collect_experience_sequential(
-                env, num_episodes=2, max_steps_per_episode=10000, seed=i
+                env, num_episodes=25, max_steps_per_episode=10000, seed=i
             )
+
+            
 
 
             next_obs = obs[1:]
@@ -1082,6 +1092,7 @@ def main():
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
+                reward_predictor_params=reward_predictor_params,
             )
 
 
