@@ -875,6 +875,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     ball_x = obs[8]  # Ball X position
     ball_y = obs[9]  # Ball Y position
 
+
     # 1. Primary reward: Track ball vertically with exponential distance penalty
     y_distance = jnp.abs(ball_y - player_y)
 
@@ -898,8 +899,6 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         0.0
     )
 
-    #please also add a very strong reward for getting the ball behind the enemy paddle and a strong penalty for letting the ball get past your paddle
-    # 4. Strong reward/penalty for scoring/missing
     score_reward = jnp.where(
         ball_x > player_x + 3,  # Ball past player's paddle
         -1.0,  # Strong penalty for missing
@@ -909,8 +908,6 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
             0.0
         )
     )
-
-    print("score_reward: ", score_reward)
 
     # Combine rewards with appropriate scaling
     total_reward = tracking_reward + alignment_bonus + movement_reward + score_reward

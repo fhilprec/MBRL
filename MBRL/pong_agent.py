@@ -789,8 +789,6 @@ def generate_real_rollouts(
     # After getting the vmapped results
     observations, actions, rewards, valid_mask, states, episode_length = vmapped_episode_fn(episode_keys)
 
-    print(f"Episode lengths: {episode_length}")
-
     # Process each episode separately to extract only valid steps
     all_valid_obs = []
     all_valid_actions = []
@@ -809,8 +807,6 @@ def generate_real_rollouts(
         all_valid_actions.append(valid_actions)
         all_valid_rewards.append(valid_rewards)
         
-        print(f"Episode {ep_idx+1}: {ep_length} valid steps")
-
     # Concatenate all valid episodes
     all_obs = jnp.concatenate(all_valid_obs, axis=0)
     all_actions = jnp.concatenate(all_valid_actions, axis=0)
@@ -834,7 +830,7 @@ def generate_real_rollouts(
     actions_rollouts = jnp.stack([all_actions[i:i+rollout_length] for i in start_indices])
     rewards_rollouts = jnp.stack([all_rewards[i:i+rollout_length] for i in start_indices])
 
-    print(f"Rollout shapes: obs={obs_rollouts.shape}, actions={actions_rollouts.shape}, rewards={rewards_rollouts.shape}")
+    # print(f"Rollout shapes: obs={obs_rollouts.shape}, actions={actions_rollouts.shape}, rewards={rewards_rollouts.shape}")
     
     # Compute values and log_probs
     all_obs_for_critic = obs_rollouts.reshape(-1, obs_rollouts.shape[-1])
@@ -848,13 +844,17 @@ def generate_real_rollouts(
     
     discounts = jnp.full_like(rewards_rollouts, discount)
 
-    print(f"Rollouts shape: (, {num_rollouts}, {rollout_length+1}, {obs_rollouts.shape[-1]})")
-    print(f"Before transpose - rewards: {rewards_rollouts.shape}, values: {values.shape}")
+    # print(f"Rollouts shape: (, {num_rollouts}, {rollout_length+1}, {obs_rollouts.shape[-1]})")
+    # print(f"Before transpose - rewards: {rewards_rollouts.shape}, values: {values.shape}")
 
     # Transpose to (T, B, ...) format as expected by training function
     # Current format: (B, T, ...) where B=num_rollouts, T=rollout_length
     # Need format: (T, B, ...) where T=rollout_length, B=num_rollouts
     # NOTE: values needs T+1 timesteps for bootstrapping, others need T timesteps
+
+    total_valid_steps = int(total_steps)
+    print(f"Total valid steps: {total_valid_steps}")
+
     return (
         jnp.transpose(obs_rollouts[:, :-1], (1, 0, 2)),  # (B, T, F) -> (T, B, F)
         jnp.transpose(actions_rollouts, (1, 0)),         # (B, T) -> (T, B)
@@ -862,6 +862,7 @@ def generate_real_rollouts(
         jnp.transpose(discounts, (1, 0)),                # (B, T) -> (T, B)
         jnp.transpose(values, (1, 0)),                   # (B, T+1) -> (T+1, B) - KEEP all values!
         jnp.transpose(log_probs, (1, 0)),                # (B, T) -> (T, B)
+        total_valid_steps,
     )
 
 
@@ -959,11 +960,11 @@ def train_dreamerv2_actor_critic(
     #     f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
     # )
 
-    print(
-        f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
-    )
-    print(f"Targets shape: {targets.shape}, Values shape: {values.shape}")
-    print(f"Raw advantages - Mean: {(targets - values[:-1]).mean():.4f}, Std: {(targets - values[:-1]).std():.4f}")
+    # print(
+    #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
+    # )
+    # print(f"Targets shape: {targets.shape}, Values shape: {values.shape}")
+    # print(f"Raw advantages - Mean: {(targets - values[:-1]).mean():.4f}, Std: {(targets - values[:-1]).std():.4f}")
     # print(
     #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
     # )
@@ -1060,24 +1061,24 @@ def train_dreamerv2_actor_critic(
 
         advantages = targets - values
 
-        if debug:
-            jax.debug.print("Raw advantages: mean={mean}, std={std}, min={min}, max={max}",
-                          mean=advantages.mean(), std=advantages.std(),
-                          min=advantages.min(), max=advantages.max())
-            jax.debug.print("Actions: shape={shape}, dtype={dtype}, min={min}, max={max}, first_10={first}",
-                          shape=actions.shape, dtype=actions.dtype,
-                          min=actions.min(), max=actions.max(),
-                          first=actions[:10])
-            jax.debug.print("Pi logits: shape={shape}, min={min}, max={max}, first_sample={first}",
-                          shape=pi.logits.shape,
-                          min=pi.logits.min(), max=pi.logits.max(),
-                          first=pi.logits[0])
-            jax.debug.print("Pi probs: first_sample={first}",
-                          first=pi.probs[0])
-            jax.debug.print("Log probs: mean={mean}, std={std}, min={min}, max={max}, first_10={first}",
-                          mean=log_prob.mean(), std=log_prob.std(),
-                          min=log_prob.min(), max=log_prob.max(),
-                          first=log_prob[:10])
+        # if debug:
+        #     jax.debug.print("Raw advantages: mean={mean}, std={std}, min={min}, max={max}",
+        #                   mean=advantages.mean(), std=advantages.std(),
+        #                   min=advantages.min(), max=advantages.max())
+        #     jax.debug.print("Actions: shape={shape}, dtype={dtype}, min={min}, max={max}, first_10={first}",
+        #                   shape=actions.shape, dtype=actions.dtype,
+        #                   min=actions.min(), max=actions.max(),
+        #                   first=actions[:10])
+        #     jax.debug.print("Pi logits: shape={shape}, min={min}, max={max}, first_sample={first}",
+        #                   shape=pi.logits.shape,
+        #                   min=pi.logits.min(), max=pi.logits.max(),
+        #                   first=pi.logits[0])
+        #     jax.debug.print("Pi probs: first_sample={first}",
+        #                   first=pi.probs[0])
+        #     jax.debug.print("Log probs: mean={mean}, std={std}, min={min}, max={max}, first_10={first}",
+        #                   mean=log_prob.mean(), std=log_prob.std(),
+        #                   min=log_prob.min(), max=log_prob.max(),
+        #                   first=log_prob[:10])
 
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -1085,12 +1086,12 @@ def train_dreamerv2_actor_critic(
         # We want to MAXIMIZE this, so the loss should be NEGATIVE
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
 
-        if debug:
-            jax.debug.print("Normalized advantages: mean={mean}, std={std}",
-                          mean=advantages.mean(), std=advantages.std())
-            jax.debug.print("Reinforce obj: mean={mean}, std={std}, sum={sum}",
-                          mean=reinforce_obj.mean(), std=reinforce_obj.std(),
-                          sum=reinforce_obj.sum())
+        # if debug:
+        #     jax.debug.print("Normalized advantages: mean={mean}, std={std}",
+        #                   mean=advantages.mean(), std=advantages.std())
+        #     jax.debug.print("Reinforce obj: mean={mean}, std={std}, sum={sum}",
+        #                   mean=reinforce_obj.mean(), std=reinforce_obj.std(),
+        #                   sum=reinforce_obj.sum())
 
         # Entropy bonus encourages exploration (we want to MAXIMIZE entropy)
         entropy_bonus = entropy_scale * entropy
@@ -1327,7 +1328,7 @@ def main():
         "entropy_scale": 0.1,  # Increased to prevent policy collapse
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
@@ -1426,8 +1427,8 @@ def main():
 
         actor_param_count = sum(x.size for x in jax.tree.leaves(actor_params))
         critic_param_count = sum(x.size for x in jax.tree.leaves(critic_params))
-        print(f"Actor parameters: {actor_param_count:,}")
-        print(f"Critic parameters: {critic_param_count:,}")
+        # print(f"Actor parameters: {actor_param_count:,}")
+        # print(f"Critic parameters: {critic_param_count:,}")
 
        
 
@@ -1470,13 +1471,7 @@ def main():
             key=jax.random.PRNGKey(SEED),
         )
 
-        # Free memory after imagination rollouts
-        del shuffled_obs
-        del dynamics_params
-        del normalization_stats
-        gc.collect()
-        jax.clear_caches()
-        print("Freed shuffled_obs, dynamics_params, and normalization_stats from memory")
+      
 
         # print(jnp.sum(dones_seq))
         # exit()
@@ -1537,20 +1532,33 @@ def main():
                 pickle.dump({"params": critic_params}, f)
             print("Saved actor, critic parameters")
 
-        analyze_policy_behavior(actor_network, actor_params, imagined_obs)
+        action_probs = analyze_policy_behavior(actor_network, actor_params, imagined_obs)
+
+        # Compute scalar metrics for logging
+        mean_reward = float(jnp.mean(imagined_rewards))
+        try:
+            p = np.array(action_probs)
+        except Exception:
+            p = np.asarray(action_probs)
+
+        # simple entropy and movement metrics
+        entropy_val = -float(np.sum(p * np.log(p + 1e-12)))
+        movement_prob = float(p[3] + p[4]) if p.size > 4 else 0.0
+        most_likely = int(np.argmax(p))
+
+        # Append a single-line log entry to training_log
+        log_line = (
+            f"iter={i}, mean_reward={mean_reward:.6f}, total_valid_steps={total_valid_steps}, "
+            f"action_probs={p.tolist()}, entropy={entropy_val:.6f}, movement_prob={movement_prob:.6f}, "
+            f"most_likely={most_likely}\n"
+        )
+
+        with open("training_log", "a") as lf:
+            lf.write(log_line)
 
         save_model_checkpoints(actor_params, critic_params, prefix=prefix)
 
-        # Free imagined rollout data after training
-        del imagined_obs
-        del imagined_actions
-        del imagined_rewards
-        del imagined_discounts
-        del imagined_values
-        del imagined_log_probs
-        gc.collect()
-        jax.clear_caches()
-        print("Freed all imagined rollout arrays from memory")
+
 
 
 if __name__ == "__main__":
