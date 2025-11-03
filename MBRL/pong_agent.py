@@ -727,8 +727,14 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                 predicted_reward = reward_model.apply(reward_predictor_params, rng_reward, next_flat_obs[None, :])
                 reward_predictor_reward = jnp.squeeze(predicted_reward)
 
+            old_score = flat_obs[-5]-flat_obs[-1] 
+            new_score = next_flat_obs[-5]-next_flat_obs[-1] 
+            score_reward = new_score - old_score 
+            score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward))
+
+
             # Combine rewards: improved pong reward + predicted score reward
-            reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
+            reward = jnp.array(improved_reward + score_reward * 2.0, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
