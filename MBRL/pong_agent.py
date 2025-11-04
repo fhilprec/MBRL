@@ -1253,10 +1253,14 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
     )
     total_rewards = []
 
-    rng = jax.random.PRNGKey(0)
+    # Use a random seed if not provided
+
+    seed = np.random.randint(0, 2**31)
+    rng = jax.random.PRNGKey(seed)
 
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
+        print(rng)
         obs, state = env.reset(reset_key)
         episode_reward = 0
         done = False
@@ -1272,7 +1276,9 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
             temperature = 0.1
             scaled_logits = pi.logits / temperature
             scaled_pi = distrax.Categorical(logits=scaled_logits)
-            action = scaled_pi.sample(seed=jax.random.PRNGKey(step_count))
+            # Use rng for sampling to get different actions each episode
+            rng, action_key = jax.random.split(rng)
+            action = scaled_pi.sample(seed=action_key)
             if step_count % 100 == 0:
                 obs_flat, _ = flatten_obs(obs, single_state=True)
                 training_reward = improved_pong_reward(
@@ -1352,7 +1358,7 @@ def main():
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
         "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
-        "entropy_scale": 0.01,  # Increased to prevent policy collapse
+        "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
         "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
