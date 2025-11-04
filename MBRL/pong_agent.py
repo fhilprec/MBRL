@@ -551,12 +551,14 @@ def generate_imagined_rollouts(
             key, action_key = jax.random.split(key)
             pi = actor_network.apply(actor_params, obs)
 
-            # Add exploration noise to prevent policy collapse during imagination
-            key, noise_key = jax.random.split(key)
-            exploration_noise = jax.random.normal(noise_key, pi.logits.shape) * 0.5
-            pi_exploratory = distrax.Categorical(logits=pi.logits + exploration_noise)
+            # # Add exploration noise to prevent policy collapse during imagination
+            # key, noise_key = jax.random.split(key)
+            # exploration_noise = jax.random.normal(noise_key, pi.logits.shape) * 0.5
+            # pi_exploratory = distrax.Categorical(logits=pi.logits + exploration_noise)
 
-            action = pi_exploratory.sample(seed=action_key)
+            # action = pi_exploratory.sample(seed=action_key)
+            action = pi.sample(seed=action_key)
+
             log_prob = pi.log_prob(action)
 
             value_dist = critic_network.apply(critic_params, obs)
@@ -714,6 +716,14 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
+
+            # keep this nice reward for analysis
+            # old_score =  flat_obs[-5]-flat_obs[-1]
+            # new_score =  next_flat_obs[-5]-next_flat_obs[-1]
+
+            # score_reward = new_score - old_score
+            # score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
+
 
             # Compute improved pong reward
             improved_reward = improved_pong_reward(next_flat_obs, action, frame_stack_size=4)
