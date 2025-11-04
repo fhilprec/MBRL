@@ -1342,7 +1342,7 @@ def main():
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
         "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
-        "entropy_scale": 0.1,  # Increased to prevent policy collapse
+        "entropy_scale": 0.01,  # Increased to prevent policy collapse
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
         "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
