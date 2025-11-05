@@ -697,7 +697,7 @@ def compare_real_vs_model(
     actions=None,
     normalization_stats=None,
     steps_into_future: int = 20,
-    clock_speed=10,
+    clock_speed=50,
     boundaries=None,
     env=None,
     starting_step: int = 0,
