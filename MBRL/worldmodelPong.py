@@ -505,62 +505,19 @@ def train_world_model(
         epoch,
         max_epochs,
     ):
-        # Multi-step prediction: predict 1, 2, 3... N steps ahead
-        max_horizon = 5  # Predict up to 5 steps ahead
-        horizon_weights = jnp.array([1.0, 0.8, 0.6, 0.4, 0.2])  # Decay weights for longer horizons
-
         def scan_fn(rssm_state, inputs):
-            current_state, current_action, target_next_state, step_idx = inputs
+            current_state, current_action, target_next_state = inputs
 
-            # Single-step prediction (primary loss)
+            # Single-step prediction loss
             pred_next_state, new_rssm_state = model.apply(
                 params, rng, current_state[None, :], current_action[None], rssm_state
             )
             pred_next_state = pred_next_state.squeeze()
             single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
 
-            # Multi-step predictions
-            def compute_multistep_loss(horizon):
-                # Check if we have enough future steps
-                max_steps = state_batch.shape[0]
-                future_idx = step_idx + horizon
-                valid_horizon = future_idx < max_steps
+            return new_rssm_state, single_step_loss
 
-                def compute_loss(_):
-                    # Roll out model for 'horizon' steps
-                    def rollout_step(carry, action_t):
-                        state_t, rssm_t = carry
-                        next_state_t, next_rssm_t = model.apply(
-                            params, rng, state_t[None, :], action_t[None], rssm_t
-                        )
-                        return (next_state_t.squeeze(), next_rssm_t), None
-
-                    # Get actions for the rollout
-                    actions_slice = action_batch[step_idx:future_idx]
-                    (final_state, _), _ = lax.scan(
-                        rollout_step, (current_state, rssm_state), actions_slice
-                    )
-
-                    # Compare with target
-                    target = next_state_batch[future_idx - 1]
-                    return jnp.mean((target - final_state) ** 2)
-
-                def skip_loss(_):
-                    return 0.0
-
-                return lax.cond(valid_horizon, compute_loss, skip_loss, None)
-
-            # Compute losses for each horizon
-            multistep_losses = jax.vmap(compute_multistep_loss)(jnp.arange(2, max_horizon + 1))
-            weighted_multistep_loss = jnp.sum(multistep_losses * horizon_weights[1:])
-
-            total_loss = single_step_loss + 0.3 * weighted_multistep_loss  # Weight multi-step at 30%
-
-            return new_rssm_state, total_loss
-
-        # Add step indices to scan inputs
-        step_indices = jnp.arange(state_batch.shape[0])
-        scan_inputs = (state_batch, action_batch, next_state_batch, step_indices)
+        scan_inputs = (state_batch, action_batch, next_state_batch)
         _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
 
         return jnp.mean(step_losses)
