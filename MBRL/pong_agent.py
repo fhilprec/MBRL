@@ -540,7 +540,6 @@ def generate_imagined_rollouts(
     print("LSTM states initialized!")
 
     # JIT-compiled rollout function (OPTIMIZATION 2)
-    # NOTE: First call will trigger JIT compilation which may take 1-2 minutes
     @jax.jit
     def single_trajectory_rollout(cur_obs, subkey, initial_lstm_state):
         """Generate a single trajectory starting from cur_obs."""
@@ -1281,10 +1280,10 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
             action = scaled_pi.sample(seed=action_key)
             if step_count % 100 == 0:
                 obs_flat, _ = flatten_obs(obs, single_state=True)
-                training_reward = improved_pong_reward(
-                    obs_flat, action, frame_stack_size=4
-                )
-                print(f"  Training reward would be: {training_reward:.3f}")
+                # training_reward = improved_pong_reward(
+                #     obs_flat, action, frame_stack_size=4
+                # )
+                # print(f"  Training reward would be: {training_reward:.3f}")
 
                 obs_flat, _ = flatten_obs(obs, single_state=True)
 
@@ -1292,9 +1291,9 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
 
                 player_y = last_obs[1]
                 ball_y = last_obs[9]
-                print(
-                    f"  Player Y: {player_y:.2f}, Ball Y: {ball_y:.2f}, Distance: {abs(ball_y-player_y):.2f}"
-                )
+                # print(
+                #     f"  Player Y: {player_y:.2f}, Ball Y: {ball_y:.2f}, Distance: {abs(ball_y-player_y):.2f}"
+                # )
 
             obs, state, reward, done, _ = env.step(state, action)
             episode_reward += reward
@@ -1485,7 +1484,7 @@ def main():
 
 
         print("Generating imagined rollouts...")
-        print("NOTE: First call may take 1-2 minutes for JIT compilation - please wait...")
+
         (
             imagined_obs,
             imagined_actions,   # FIX: Corrected order to match return statement
