@@ -522,7 +522,7 @@ def generate_imagined_rollouts(
 
     state_mean = 0
     state_std = 1
-    world_model = PongLSTM(10)
+    world_model = PongLSTM(2)
 
     num_trajectories = initial_observations.shape[0]
 
@@ -625,7 +625,9 @@ def generate_imagined_rollouts(
         values = jnp.concatenate([initial_value[None, ...], values_seq], axis=0)
         log_probs = jnp.concatenate([jnp.array([0.0]), log_probs_seq], axis=0)
 
-        return observations, actions, rewards, discounts, values, log_probs
+        total_steps = len(observations)
+
+        return observations, actions, rewards, discounts, values, log_probs, total_steps
 
     keys = jax.random.split(key, num_trajectories)
 
@@ -657,7 +659,7 @@ def generate_imagined_rollouts(
             initial_lstm_states
         )
 
-        batch_obs, batch_actions, batch_rewards, batch_discounts, batch_values, batch_log_probs = rollout_fn(
+        batch_obs, batch_actions, batch_rewards, batch_discounts, batch_values, batch_log_probs, total_steps = rollout_fn(
             initial_observations[start_idx:end_idx],
             keys[start_idx:end_idx],
             batch_lstm_states
@@ -683,7 +685,7 @@ def generate_imagined_rollouts(
     values = jnp.concatenate(all_values, axis=0)
     log_probs = jnp.concatenate(all_log_probs, axis=0)
 
-    print("All imagined rollouts complete!")
+
 
     # OPTIMIZATION 5: Direct transpose to correct format (T, B, ...)
     return (
@@ -693,6 +695,7 @@ def generate_imagined_rollouts(
         jnp.transpose(discounts[:, 1:], (1, 0)),         # (B, T) -> (T, B)
         jnp.transpose(values, (1, 0)),                   # (B, T+1) -> (T+1, B)
         jnp.transpose(log_probs[:, 1:], (1, 0)),         # (B, T) -> (T, B)
+        0
     )
 
 
