@@ -369,6 +369,8 @@ def train_world_model(
     episode_boundaries=None,
     frame_stack_size=4,
     model_scale_factor=1,
+    checkpoint_path=None,
+    save_every=10,
 ):
 
     gpu_batch_size = 250
@@ -378,8 +380,9 @@ def train_world_model(
     state_mean = jnp.mean(obs, axis=0)
     state_std = jnp.std(obs, axis=0) + 1e-8
 
-    state_mean = 0
-    state_std = 1
+    # IMPORTANT: Normalization is now ENABLED
+    # state_mean = 0
+    # state_std = 1
 
     normalization_stats = {"mean": state_mean, "std": state_std}
 
@@ -460,13 +463,35 @@ def train_world_model(
     rng = jax.random.PRNGKey(42)
     dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
-    params = model.init(rng, dummy_state, dummy_action, None)
-    opt_state = optimizer.init(params)
 
-    # Initialize reward predictor
-    rng, reward_rng = jax.random.split(rng)
-    reward_params = reward_model.init(reward_rng, dummy_state)
-    reward_opt_state = reward_optimizer.init(reward_params)
+
+    start_epoch = 0
+    if checkpoint_path:
+        checkpoint_file = checkpoint_path.replace(".pkl", "_checkpoint.pkl")
+    else:
+        checkpoint_file = None
+
+    if checkpoint_file and os.path.exists(checkpoint_file):
+        print(f"Loading checkpoint from {checkpoint_file}...")
+        with open(checkpoint_file, "rb") as f:
+            checkpoint_data = pickle.load(f)
+            params = checkpoint_data["params"]
+            opt_state = checkpoint_data["opt_state"]
+            reward_params = checkpoint_data["reward_params"]
+            reward_opt_state = checkpoint_data["reward_opt_state"]
+            start_epoch = checkpoint_data["epoch"] + 1
+            best_loss = checkpoint_data.get("best_loss", float("inf"))
+            normalization_stats = checkpoint_data.get("normalization_stats", normalization_stats)
+        print(f"Resuming training from epoch {start_epoch}")
+    else:
+        params = model.init(rng, dummy_state, dummy_action, None)
+        opt_state = optimizer.init(params)
+
+        # Initialize reward predictor
+        rng, reward_rng = jax.random.split(rng)
+        reward_params = reward_model.init(reward_rng, dummy_state)
+        reward_opt_state = reward_optimizer.init(reward_params)
+        best_loss = float("inf")
 
     _, lstm_state_template = model.apply(params, rng, dummy_state, dummy_action, None)
 
@@ -480,19 +505,62 @@ def train_world_model(
         epoch,
         max_epochs,
     ):
+        # Multi-step prediction: predict 1, 2, 3... N steps ahead
+        max_horizon = 5  # Predict up to 5 steps ahead
+        horizon_weights = jnp.array([1.0, 0.8, 0.6, 0.4, 0.2])  # Decay weights for longer horizons
 
         def scan_fn(rssm_state, inputs):
-            current_state, current_action, target_next_state = inputs
+            current_state, current_action, target_next_state, step_idx = inputs
 
+            # Single-step prediction (primary loss)
             pred_next_state, new_rssm_state = model.apply(
                 params, rng, current_state[None, :], current_action[None], rssm_state
             )
             pred_next_state = pred_next_state.squeeze()
-            loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
 
-            return new_rssm_state, loss
+            # Multi-step predictions
+            def compute_multistep_loss(horizon):
+                # Check if we have enough future steps
+                max_steps = state_batch.shape[0]
+                future_idx = step_idx + horizon
+                valid_horizon = future_idx < max_steps
 
-        scan_inputs = (state_batch, action_batch, next_state_batch)
+                def compute_loss(_):
+                    # Roll out model for 'horizon' steps
+                    def rollout_step(carry, action_t):
+                        state_t, rssm_t = carry
+                        next_state_t, next_rssm_t = model.apply(
+                            params, rng, state_t[None, :], action_t[None], rssm_t
+                        )
+                        return (next_state_t.squeeze(), next_rssm_t), None
+
+                    # Get actions for the rollout
+                    actions_slice = action_batch[step_idx:future_idx]
+                    (final_state, _), _ = lax.scan(
+                        rollout_step, (current_state, rssm_state), actions_slice
+                    )
+
+                    # Compare with target
+                    target = next_state_batch[future_idx - 1]
+                    return jnp.mean((target - final_state) ** 2)
+
+                def skip_loss(_):
+                    return 0.0
+
+                return lax.cond(valid_horizon, compute_loss, skip_loss, None)
+
+            # Compute losses for each horizon
+            multistep_losses = jax.vmap(compute_multistep_loss)(jnp.arange(2, max_horizon + 1))
+            weighted_multistep_loss = jnp.sum(multistep_losses * horizon_weights[1:])
+
+            total_loss = single_step_loss + 0.3 * weighted_multistep_loss  # Weight multi-step at 30%
+
+            return new_rssm_state, total_loss
+
+        # Add step indices to scan inputs
+        step_indices = jnp.arange(state_batch.shape[0])
+        scan_inputs = (state_batch, action_batch, next_state_batch, step_indices)
         _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
 
         return jnp.mean(step_losses)
@@ -585,11 +653,10 @@ def train_world_model(
 
     rng_shuffle = jax.random.PRNGKey(123)
 
-    best_loss = float("inf")
     patience = 50
     no_improve_count = 0
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
 
         epoch_shuffle_key = jax.random.fold_in(rng_shuffle, epoch)
         epoch_indices = jax.random.permutation(epoch_shuffle_key, len(train_batches))
@@ -681,6 +748,21 @@ def train_world_model(
                 f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
             )
 
+        # Save checkpoint every save_every epochs
+        if checkpoint_file and (epoch + 1) % save_every == 0:
+            checkpoint_data = {
+                "params": params,
+                "opt_state": opt_state,
+                "reward_params": reward_params,
+                "reward_opt_state": reward_opt_state,
+                "epoch": epoch,
+                "best_loss": best_loss,
+                "normalization_stats": normalization_stats,
+            }
+            with open(checkpoint_file, "wb") as f:
+                pickle.dump(checkpoint_data, f)
+            print(f"Checkpoint saved at epoch {epoch + 1}")
+
     print("Training completed")
     return params, reward_params, {
         "final_loss": train_loss,
@@ -697,7 +779,7 @@ def compare_real_vs_model(
     actions=None,
     normalization_stats=None,
     steps_into_future: int = 20,
-    clock_speed=50,
+    clock_speed=20,
     boundaries=None,
     env=None,
     starting_step: int = 0,
@@ -722,16 +804,16 @@ def compare_real_vs_model(
         action,
     ):
         error = jnp.mean((real_obs - pred_obs[0]) ** 2)
-        # print(
-        #     f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f} Extracted Reward : {real_obs[-5]-real_obs[-1]}"
-        # )
-        #print the reward model prediction
-        if reward_predictor_params is not None:
-            reward_model = RewardPredictorMLP(model_scale_factor)
-            predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[0][None, :])
-            rounded_reward = jnp.round(predicted_reward * 2)
-            if rounded_reward != 0:
-                print(f"Step {step}, Reward Model Prediction: {rounded_reward}")
+        print(
+            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f} Extracted Reward : {real_obs[-5]-real_obs[-1]}"
+        )
+        # print the reward model prediction
+        # if reward_predictor_params is not None:
+        #     reward_model = RewardPredictorMLP(model_scale_factor)
+        #     predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[0][None, :])
+        #     rounded_reward = jnp.round(predicted_reward * 2)
+        #     if rounded_reward != 0:
+        #         print(f"Step {step}, Reward Model Prediction: {rounded_reward}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -784,16 +866,28 @@ def compare_real_vs_model(
         if len(sys.argv) > 4 and sys.argv[4].startswith("check"):
             model_path = sys.argv[4]
         else:
-            if os.path.exists(f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"):
-                model_path = f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"
+            # Try final model first
+            final_model = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
+            checkpoint_model = f"world_model_{MODEL_ARCHITECTURE.__name__}_checkpoint.pkl"
+
+            if os.path.exists(final_model):
+                model_path = final_model
+            elif os.path.exists(checkpoint_model):
+                model_path = checkpoint_model
             else:
                 model_path = "model_pong.pkl"
 
     if steps_into_future != 0:
         with open(model_path, "rb") as f:
             model_data = pickle.load(f)
-            dynamics_params = model_data["dynamics_params"]
-            normalization_stats = model_data.get("normalization_stats", None)
+            # Check if it's a checkpoint or final model
+            if "dynamics_params" in model_data:
+                dynamics_params = model_data["dynamics_params"]
+                normalization_stats = model_data.get("normalization_stats", None)
+            else:
+                # It's a checkpoint
+                dynamics_params = model_data["params"]
+                normalization_stats = model_data.get("normalization_stats", None)
         world_model = MODEL_ARCHITECTURE(model_scale_factor)
 
     pygame.init()
@@ -946,7 +1040,7 @@ def main():
     )
     env = FlattenObservationWrapper(env)
 
-    save_path = f"world_model_{MODEL_ARCHITECTURE.__name__}_pong.pkl"
+    save_path = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
     experience_data_path = "experience_data_LSTM_pong.pkl"
     model = MODEL_ARCHITECTURE(model_scale_factor)
     normalization_stats = None
@@ -993,16 +1087,33 @@ def main():
     rewards = []
     boundaries = []
 
-    if os.path.exists(save_path):
-        print(f"Loading existing model from {save_path}...")
-        with open(save_path, "rb") as f:
-            saved_data = pickle.load(f)
-            dynamics_params = saved_data["dynamics_params"]
-            reward_predictor_params = saved_data.get("reward_predictor_params", None)
-            normalization_stats = saved_data.get("normalization_stats", None)
-    else:
-        print("No existing model found. Training a new model...")
+    # Check if we should skip training (for rendering only)
+    skip_training = len(sys.argv) > 1 and sys.argv[1] in ["render", "renderonce"]
 
+    if skip_training:
+        checkpoint_file = save_path.replace(".pkl", "_checkpoint.pkl")
+
+        # Try final model first, then checkpoint
+        if os.path.exists(save_path):
+            print(f"Loading existing model from {save_path} (training skipped)...")
+            with open(save_path, "rb") as f:
+                saved_data = pickle.load(f)
+                dynamics_params = saved_data["dynamics_params"]
+                reward_predictor_params = saved_data.get("reward_predictor_params", None)
+                normalization_stats = saved_data.get("normalization_stats", None)
+        elif os.path.exists(checkpoint_file):
+            print(f"Loading checkpoint from {checkpoint_file} (training skipped)...")
+            with open(checkpoint_file, "rb") as f:
+                checkpoint_data = pickle.load(f)
+                dynamics_params = checkpoint_data["params"]
+                reward_predictor_params = checkpoint_data["reward_params"]
+                normalization_stats = checkpoint_data.get("normalization_stats", None)
+        else:
+            print(f"Error: No model found. Looked for {save_path} and {checkpoint_file}")
+            print("Please train first.")
+            sys.exit(1)
+    else:
+        # Load experience data for training
         for i in range(0, experience_its):
             experience_path = "experience_data_LSTM_pong" + "_" + str(i) + ".pkl"
             with open(experience_path, "rb") as f:
@@ -1022,6 +1133,12 @@ def main():
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
 
+        # Train or continue training
+        if os.path.exists(save_path):
+            print(f"Existing model found. Continuing training from checkpoint...")
+        else:
+            print("No existing model found. Training a new model...")
+
         dynamics_params, reward_predictor_params, training_info = train_world_model(
             obs_array,
             actions_array,
@@ -1030,6 +1147,8 @@ def main():
             episode_boundaries=boundaries,
             frame_stack_size=frame_stack_size,
             model_scale_factor=model_scale_factor,
+            checkpoint_path=save_path,
+            save_every=10,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
@@ -1088,7 +1207,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=20,
+                steps_into_future=10,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
@@ -1097,5 +1216,7 @@ def main():
 
 
 if __name__ == "__main__":
+    rtpt = RTPT(name_initials="FH", experiment_name="WorldModelTraining", max_iterations=3)
 
+    rtpt.start()
     main()
