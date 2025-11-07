@@ -1,6 +1,7 @@
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import pygame
 import time
 import jax
