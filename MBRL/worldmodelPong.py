@@ -701,9 +701,12 @@ def train_world_model(
             )
 
             current_lr = lr_schedule(epoch)
-            print(
-                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
-            )
+            log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
+            print(log_message)
+
+            # Write to log file
+            with open("world_model_training_log", "a") as log_file:
+                log_file.write(log_message + "\n")
 
         # Save checkpoint every save_every epochs
         if checkpoint_file and (epoch + 1) % save_every == 0:
