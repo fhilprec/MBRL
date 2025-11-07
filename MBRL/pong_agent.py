@@ -522,7 +522,7 @@ def generate_imagined_rollouts(
 
     state_mean = 0
     state_std = 1
-    world_model = PongLSTM(2)
+    world_model = PongLSTM(10)
 
     num_trajectories = initial_observations.shape[0]
 
@@ -1350,7 +1350,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 def main():
 
     training_runs = 1000
-    model_scale_factor = 2  # Same as in worldmodelPong.py
+    model_scale_factor = 10  # Same as in worldmodelPong.py
 
     training_params = {
         "action_dim": 6,
@@ -1396,11 +1396,11 @@ def main():
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
 
-        if os.path.exists("world_model_PongLSTM_pong.pkl"):
-            with open("world_model_PongLSTM_pong.pkl", "rb") as f:
+        if os.path.exists("world_model_PongLSTM_checkpoint.pkl"):
+            with open("world_model_PongLSTM_checkpoint.pkl", "rb") as f:
                 saved_data = pickle.load(f)
-                dynamics_params = saved_data["dynamics_params"]
-                reward_predictor_params = saved_data.get("reward_predictor_params", None)
+                dynamics_params = saved_data["params"]
+                reward_predictor_params = saved_data.get("reward_params", None)
                 normalization_stats = saved_data.get("normalization_stats", None)
                 model_exists = True
                 del saved_data
@@ -1474,11 +1474,11 @@ def main():
 
 
         #stuff to make it run without a model
-        if not model_exists:
-            obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
-            dynamics_params = None
-            reward_predictor_params = None
-            normalization_stats = None
+        # if not model_exists:
+        #     obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
+        #     dynamics_params = None
+        #     reward_predictor_params = None
+        #     normalization_stats = None
         shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
 
         # Free the original obs array, we only need shuffled_obs
