@@ -23,7 +23,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 2
+model_scale_factor = 10
 
 
 def get_reward_from_observation_score(obs):
@@ -1141,7 +1141,7 @@ def main():
             shuffled_obs = jax.random.permutation(jax.random.PRNGKey(i), obs)
             compare_real_vs_model(
                 num_steps=1000,
-                render_scale=6,
+                render_scale=2,
                 obs=shuffled_obs,
                 actions=actions,
                 normalization_stats=normalization_stats,
