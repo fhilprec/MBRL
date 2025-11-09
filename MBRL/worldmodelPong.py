@@ -374,7 +374,8 @@ def train_world_model(
     save_every=10,
 ):
 
-    gpu_batch_size = 250
+    # Increased batch size for better GPU utilization and faster training
+    gpu_batch_size = 500
 
     gpu_batch_size = gpu_batch_size // frame_stack_size
 
@@ -462,6 +463,7 @@ def train_world_model(
     )
 
     rng = jax.random.PRNGKey(42)
+    reward_rng = jax.random.PRNGKey(43)
     dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
 
@@ -514,7 +516,7 @@ def train_world_model(
                 params, rng, current_state[None, :], current_action[None], rssm_state
             )
             pred_next_state = pred_next_state.squeeze()
-            single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            single_step_loss = (target_next_state - pred_next_state) ** 2
 
             return new_rssm_state, single_step_loss
 
@@ -601,30 +603,37 @@ def train_world_model(
         new_reward_params = optax.apply_updates(reward_params, updates)
         return new_reward_params, new_reward_opt_state, loss
 
-    train_batch_states = jnp.stack([batch[0] for batch in train_batches])
-    train_batch_actions = jnp.stack([batch[1] for batch in train_batches])
-    train_batch_next_states = jnp.stack([batch[2] for batch in train_batches])
-
-    val_batch_states = jnp.stack([batch[0] for batch in val_batches])
-    val_batch_actions = jnp.stack([batch[1] for batch in val_batches])
-    val_batch_next_states = jnp.stack([batch[2] for batch in val_batches])
-
+    # Don't stack all batches upfront - keep as list and stack on-demand
+    # This saves massive memory and startup time
     rng_shuffle = jax.random.PRNGKey(123)
 
     patience = 50
     no_improve_count = 0
 
-    for epoch in range(start_epoch, num_epochs):
+    # Warm up JIT compilation with a small batch
+    print("Warming up JIT compilation...")
+    warmup_states = jnp.stack([train_batches[0][0]])
+    warmup_actions = jnp.stack([train_batches[0][1]])
+    warmup_next = jnp.stack([train_batches[0][2]])
+    _, _, _ = update_step_batched(
+        params, opt_state, warmup_states, warmup_actions, warmup_next,
+        lstm_state_template, 0, num_epochs
+    )
+    print("JIT warmup complete")
+
+    # Use tqdm for progress tracking
+    pbar = tqdm(range(start_epoch, num_epochs), desc="Training", initial=start_epoch, total=num_epochs)
+
+    for epoch in pbar:
 
         epoch_shuffle_key = jax.random.fold_in(rng_shuffle, epoch)
         epoch_indices = jax.random.permutation(epoch_shuffle_key, len(train_batches))
 
-        shuffled_train_states = train_batch_states[epoch_indices]
-        shuffled_train_actions = train_batch_actions[epoch_indices]
-        shuffled_train_next_states = train_batch_next_states[epoch_indices]
+        # Shuffle batch indices, not the data itself (more efficient)
+        shuffled_train_batches = [train_batches[i] for i in epoch_indices]
 
         # Process all training data in chunks to improve stability
-        num_train_batches = shuffled_train_states.shape[0]
+        num_train_batches = len(shuffled_train_batches)
         num_chunks = (num_train_batches + gpu_batch_size - 1) // gpu_batch_size
 
         epoch_train_losses = []
@@ -634,9 +643,11 @@ def train_world_model(
             chunk_start = chunk_idx * gpu_batch_size
             chunk_end = min((chunk_idx + 1) * gpu_batch_size, num_train_batches)
 
-            chunk_states = shuffled_train_states[chunk_start:chunk_end]
-            chunk_actions = shuffled_train_actions[chunk_start:chunk_end]
-            chunk_next_states = shuffled_train_next_states[chunk_start:chunk_end]
+            # Stack batches on-demand only for this chunk
+            chunk_batch_slice = shuffled_train_batches[chunk_start:chunk_end]
+            chunk_states = jnp.stack([b[0] for b in chunk_batch_slice])
+            chunk_actions = jnp.stack([b[1] for b in chunk_batch_slice])
+            chunk_next_states = jnp.stack([b[2] for b in chunk_batch_slice])
 
             params, opt_state, chunk_train_loss = update_step_batched(
                 params,
@@ -691,23 +702,37 @@ def train_world_model(
             break
 
         if VERBOSE and (epoch + 1) % 10 == 0:
-            val_loss = compute_validation_loss(
-                params,
-                val_batch_states,
-                val_batch_actions,
-                val_batch_next_states,
-                lstm_state_template,
-                epoch,
-                num_epochs,
-            )
+            # Compute validation less frequently to save time (every 50 epochs instead of 10)
+            if (epoch + 1) % 50 == 0:
+                # Stack validation batches on-demand only when needed
+                val_batch_states = jnp.stack([batch[0] for batch in val_batches])
+                val_batch_actions = jnp.stack([batch[1] for batch in val_batches])
+                val_batch_next_states = jnp.stack([batch[2] for batch in val_batches])
 
-            current_lr = lr_schedule(epoch)
-            log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
+                val_loss = compute_validation_loss(
+                    params,
+                    val_batch_states,
+                    val_batch_actions,
+                    val_batch_next_states,
+                    lstm_state_template,
+                    epoch,
+                    num_epochs,
+                )
+                current_lr = lr_schedule(epoch)
+                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
+            else:
+                # Just print training loss without validation
+                current_lr = lr_schedule(epoch)
+                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
+
             print(log_message)
 
             # Write to log file
             with open("world_model_training_log", "a") as log_file:
                 log_file.write(log_message + "\n")
+
+            # Update progress bar
+            pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "reward_loss": f"{reward_loss:.6f}"})
 
         # Save checkpoint every save_every epochs
         if checkpoint_file and (epoch + 1) % save_every == 0:
@@ -722,8 +747,9 @@ def train_world_model(
             }
             with open(checkpoint_file, "wb") as f:
                 pickle.dump(checkpoint_data, f)
-            print(f"Checkpoint saved at epoch {epoch + 1}")
 
+
+    pbar.close()
     print("Training completed")
     return params, reward_params, {
         "final_loss": train_loss,
