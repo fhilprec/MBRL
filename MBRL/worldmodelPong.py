@@ -24,7 +24,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 0.1
+model_scale_factor = 10
 
 
 def get_reward_from_observation_score(obs):
@@ -1044,7 +1044,7 @@ def main():
     model = MODEL_ARCHITECTURE(model_scale_factor)
     normalization_stats = None
 
-    experience_its = 1
+    experience_its = 5
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
@@ -1052,7 +1052,7 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, states, boundaries = collect_experience_sequential(
-                env, num_episodes=2, max_steps_per_episode=10000, seed=i
+                env, num_episodes=40, max_steps_per_episode=10000, seed=i
             )
 
             
