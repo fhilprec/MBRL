@@ -24,7 +24,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 10
+model_scale_factor = 1
 
 
 def get_reward_from_observation_score(obs):
@@ -1006,7 +1006,7 @@ def main():
     model = MODEL_ARCHITECTURE(model_scale_factor)
     normalization_stats = None
 
-    experience_its = 4
+    experience_its = 1
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
