@@ -24,7 +24,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 10
+model_scale_factor = 1
 
 
 def get_reward_from_observation_score(obs):
@@ -602,7 +602,7 @@ def train_world_model(
             target_rewards = calculate_score_based_reward(unnorm_obs, unnorm_next_obs)
             # Use jax.debug.print with formatting to avoid trace-time stringification
             # 'summarize' controls how many elements are printed
-            jax.debug.print("target_rewards (shape {s}): {r}", s=target_rewards.shape, r=target_rewards)
+            # jax.debug.print("target_rewards (shape {s}): {r}", s=target_rewards.shape, r=target_rewards)
             # Predict rewards - use UNNORMALIZED observations so inference matches training
             predicted_rewards = reward_model.apply(r_params, reward_rng, unnorm_next_obs)
 
@@ -802,25 +802,26 @@ def compare_real_vs_model(
         pred_obs,
         action,
     ):
-        error = jnp.mean((real_obs - pred_obs[0]) ** 2)
+        # pred_obs is now squeezed, so it's 1D
+        error = jnp.mean((real_obs - pred_obs) ** 2)
         print(
-            f"Step {step}, Unnormalized Error: {error:.2f} | Action: {action_map.get(int(action), action)} Reward : {improved_pong_reward(real_obs, action, frame_stack_size=frame_stack_size):.2f} Extracted Reward : {real_obs[-5]-real_obs[-1]}"
+            f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)}"
         )
         # print the reward model prediction
-        # if reward_predictor_params is not None:
-        #     reward_model = RewardPredictorMLP(model_scale_factor)
-        #     predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[0][None, :])
-        #     rounded_reward = jnp.round(predicted_reward * 2)
-        #     if rounded_reward != 0:
-        #         print(f"Step {step}, Reward Model Prediction: {rounded_reward}")
+        if reward_predictor_params is not None:
+            reward_model = RewardPredictorMLP(model_scale_factor)
+            predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[None, :])
+            rounded_reward = jnp.round(predicted_reward * 2) / 2
+            if rounded_reward != 0:
+                print(f"Step {step}, Reward Model Prediction: {rounded_reward[0]:.2f}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
             print("Indexes where difference > 1:")
-            for j in range(len(pred_obs[0])):
-                if jnp.abs(pred_obs[0][j] - real_obs[j]) > 10:
+            for j in range(len(pred_obs)):
+                if jnp.abs(pred_obs[j] - real_obs[j]) > 10:
                     print(
-                        f"Index {j}: Predicted {pred_obs[0][j]:.2f} vs Real {real_obs[j]:.2f}"
+                        f"Index {j}: Predicted {pred_obs[j]:.2f} vs Real {real_obs[j]:.2f}"
                     )
             print("-" * 100)
 
@@ -921,6 +922,11 @@ def compare_real_vs_model(
 
     model_base_state = None
 
+    # Verify initial shapes
+    print(f"Initial obs shape: {obs[0].shape}")
+    print(f"State mean shape: {state_mean.shape}")
+    print(f"State std shape: {state_std.shape}")
+
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
@@ -952,14 +958,15 @@ def compare_real_vs_model(
         else:
             normalized_model_prediction = normalized_flattened_model_obs
 
-        unnormalized_model_prediction = jnp.round(
-            normalized_model_prediction * state_std + state_mean
-        )
+        # Denormalize WITHOUT rounding to avoid error accumulation
+        # The model was trained on continuous values, not quantized ones
+        unnormalized_model_prediction = normalized_model_prediction * state_std + state_mean
 
-        model_obs = unnormalized_model_prediction
+        # Squeeze batch dimension to maintain shape consistency (feature_dim,)
+        model_obs = unnormalized_model_prediction.squeeze()
 
         if steps_into_future > 0:
-            debug_obs(step_count, next_real_obs, unnormalized_model_prediction, action)
+            debug_obs(step_count, next_real_obs, model_obs, action)
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size
