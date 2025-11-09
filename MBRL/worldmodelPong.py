@@ -24,7 +24,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 10
+model_scale_factor = 0.1
 
 
 def get_reward_from_observation_score(obs):
@@ -49,13 +49,19 @@ def calculate_score_based_reward(flat_obs, next_flat_obs):
     """
     # Extract scores from observations
     # flat_obs[-5] is player score, flat_obs[-1] is enemy score
-    old_score = flat_obs[..., -5] - flat_obs[..., -1]
-    new_score = next_flat_obs[..., -5] - next_flat_obs[..., -1]
+    player_score_old = flat_obs[..., -5]
+    enemy_score_old = flat_obs[..., -1]
+    player_score_new = next_flat_obs[..., -5]
+    enemy_score_new = next_flat_obs[..., -1]
 
-    # Calculate score change
-    score_reward = new_score - old_score
+    # Calculate score changes
+    player_scored = player_score_new - player_score_old  # Should be 0 or 1
+    enemy_scored = enemy_score_new - enemy_score_old    # Should be 0 or 1
 
-    # Filter out rewards where abs > 1 (set them to 0)
+    # Reward is +1 if player scored, -1 if enemy scored, 0 otherwise
+    score_reward = player_scored - enemy_scored
+
+    # Filter out rewards where abs > 1 (safety check for corrupted data)
     score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
 
     return score_reward
@@ -588,11 +594,17 @@ def train_world_model(
             flat_obs = batch_obs.reshape(-1, batch_obs.shape[-1])
             flat_next_obs = batch_next_obs.reshape(-1, batch_next_obs.shape[-1])
 
+            # Denormalize observations to get raw scores
+            unnorm_obs = flat_obs * state_std + state_mean
+            unnorm_next_obs = flat_next_obs * state_std + state_mean
+
             # Calculate target rewards based on score difference
-            target_rewards = calculate_score_based_reward(flat_obs, flat_next_obs)
-            
-            # Predict rewards
-            predicted_rewards = reward_model.apply(r_params, reward_rng, flat_next_obs)
+            target_rewards = calculate_score_based_reward(unnorm_obs, unnorm_next_obs)
+            # Use jax.debug.print with formatting to avoid trace-time stringification
+            # 'summarize' controls how many elements are printed
+            jax.debug.print("target_rewards (shape {s}): {r}", s=target_rewards.shape, r=target_rewards)
+            # Predict rewards - use UNNORMALIZED observations so inference matches training
+            predicted_rewards = reward_model.apply(r_params, reward_rng, unnorm_next_obs)
 
             # MSE loss
             loss = jnp.mean((predicted_rewards - target_rewards) ** 2)
@@ -1032,7 +1044,7 @@ def main():
     model = MODEL_ARCHITECTURE(model_scale_factor)
     normalization_stats = None
 
-    experience_its = 5
+    experience_its = 1
 
     if not os.path.exists("experience_data_LSTM_pong_0.pkl"):
         print("No existing experience data found. Collecting new experience data...")
@@ -1040,7 +1052,7 @@ def main():
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
             obs, actions, rewards, _, states, boundaries = collect_experience_sequential(
-                env, num_episodes=40, max_steps_per_episode=10000, seed=i
+                env, num_episodes=2, max_steps_per_episode=10000, seed=i
             )
 
             
