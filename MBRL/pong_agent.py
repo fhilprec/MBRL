@@ -813,7 +813,7 @@ def generate_real_rollouts(
         lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor),
         in_axes=0
     )
-    
+
     # After getting the vmapped results
     observations, actions, rewards, valid_mask, states, episode_length = vmapped_episode_fn(episode_keys)
 
@@ -1511,10 +1511,7 @@ def main():
             model_scale_factor=model_scale_factor,
         )
 
-      
-
-        # print(jnp.sum(dones_seq))
-        # exit()
+    
 
 
 
@@ -1523,13 +1520,32 @@ def main():
 
         if args.render:
             visualization_offset = 0
-            for i in range(int(args.render)):
+
+            # Render multiple imagined rollouts sequentially (one rollout after another)
+            n_rollouts = int(args.render)
+            n_rollouts = min(n_rollouts, imagined_obs.shape[1])
+            if n_rollouts <= 0:
+                print("No rollouts selected for rendering (args.render <= 0)")
+            else:
+                # imagined_obs has shape (T, B, F). Select first n_rollouts -> (T, B_sel, F)
+                sel_obs = imagined_obs[:, :n_rollouts, :]
+
+                # Reorder to (B_sel, T, F) so frames of each rollout are contiguous when flattened
+                sel_obs = jnp.transpose(sel_obs, (1, 0, 2))
+
+                # Flatten to (B_sel * T, F): rollout0 frames, then rollout1 frames, ...
+                obs = sel_obs.reshape(sel_obs.shape[0] * sel_obs.shape[1], sel_obs.shape[2])
+
+                # Prepare matching actions: imagined_actions has shape (T, B)
+                sel_actions = imagined_actions[:, :n_rollouts]  # (T, B_sel)
+                sel_actions = jnp.transpose(sel_actions, (1, 0)).reshape(-1)  # (B_sel * T,)
 
                 compare_real_vs_model(
                     steps_into_future=0,
-                    obs=imagined_obs[:, i, :],
-                    actions=imagined_actions[:, i],
+                    obs=obs,
+                    actions=sel_actions,
                     frame_stack_size=4,
+                    clock_speed=5,
                 )
 
         print(

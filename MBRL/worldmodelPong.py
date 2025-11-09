@@ -588,7 +588,7 @@ def train_world_model(
 
             # Calculate target rewards based on score difference
             target_rewards = calculate_score_based_reward(flat_obs, flat_next_obs)
-
+            
             # Predict rewards
             predicted_rewards = reward_model.apply(r_params, reward_rng, flat_next_obs)
 
