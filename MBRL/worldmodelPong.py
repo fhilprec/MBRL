@@ -514,22 +514,44 @@ def train_world_model(
         epoch,
         max_epochs,
     ):
-        def scan_fn(rssm_state, inputs):
-            current_state, current_action, target_next_state = inputs
+        # Teacher forcing probability (start at 1.0, decay to 0.3 over training)
+        teacher_forcing_prob = jnp.maximum(
+            0.3,
+            1.0 - 0.7 * (epoch / max_epochs)
+        )
 
-            # Single-step prediction loss
+        def scan_fn(carry, inputs):
+            rssm_state, prev_prediction = carry
+            current_state, current_action, target_next_state, step_idx = inputs
+
+            # Decide whether to use teacher forcing (ground truth) or model prediction
+            # For step 0, always use ground truth
+            use_teacher = (step_idx == 0) | (jax.random.uniform(jax.random.fold_in(rng, step_idx)) < teacher_forcing_prob)
+            input_state = jnp.where(use_teacher, current_state, prev_prediction)
+
+            # Single-step prediction
             pred_next_state, new_rssm_state = model.apply(
-                params, rng, current_state[None, :], current_action[None], rssm_state
+                params, rng, input_state[None, :], current_action[None], rssm_state
             )
             pred_next_state = pred_next_state.squeeze()
-            single_step_loss = (target_next_state - pred_next_state) ** 2
 
-            return new_rssm_state, single_step_loss
+            # Single-step loss
+            single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
 
-        scan_inputs = (state_batch, action_batch, next_state_batch)
-        _, step_losses = lax.scan(scan_fn, lstm_template, scan_inputs)
+            return (new_rssm_state, pred_next_state), single_step_loss
 
-        return jnp.mean(step_losses)
+        # Add step indices for teacher forcing decision
+        step_indices = jnp.arange(state_batch.shape[0])
+        scan_inputs = (state_batch, action_batch, next_state_batch, step_indices)
+
+        # Initialize with zero prediction (will use teacher forcing for first step)
+        initial_carry = (lstm_template, jnp.zeros_like(state_batch[0]))
+        _, step_losses = lax.scan(scan_fn, initial_carry, scan_inputs)
+
+        # Just use mean single-step loss (multi-step causes slow JIT compilation)
+        total_loss = jnp.mean(step_losses)
+
+        return total_loss
 
     batched_loss_fn = jax.vmap(
         single_sequence_loss, in_axes=(None, 0, 0, 0, None, None, None)
@@ -585,6 +607,40 @@ def train_world_model(
             num_epochs,
         )
         return jnp.mean(losses)
+
+    @jax.jit
+    def compute_multistep_validation_metric(
+        params,
+        batch_states,
+        batch_actions,
+        batch_next_states,
+        lstm_template,
+        horizon=10,
+    ):
+        """Compute multi-step prediction error for validation"""
+        def single_sequence_multistep(state_seq, action_seq, target_seq):
+            def rollout_fn(carry, action):
+                state, rssm_state = carry
+                pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm_state)
+                return (pred.squeeze(), new_rssm), pred.squeeze()
+
+            # Take first state as initial condition
+            init_state = state_seq[0]
+            # Rollout for horizon steps
+            actions_to_use = action_seq[:horizon]
+            _, predictions = lax.scan(rollout_fn, (init_state, lstm_template), actions_to_use)
+
+            # Compare to ground truth
+            targets = target_seq[:horizon]
+            errors = jnp.mean((predictions - targets) ** 2, axis=-1)  # MSE per step
+            return errors
+
+        # Vmap over batch
+        vmapped_fn = jax.vmap(single_sequence_multistep, in_axes=(0, 0, 0))
+        all_errors = vmapped_fn(batch_states, batch_actions, batch_next_states)
+
+        # Return mean error per step (shape: [horizon])
+        return jnp.mean(all_errors, axis=0)
 
     @jax.jit
     def reward_update_step(reward_params, reward_opt_state, batch_obs, batch_next_obs):
@@ -730,8 +786,21 @@ def train_world_model(
                     epoch,
                     num_epochs,
                 )
+
+                # Compute 10-step prediction metric
+                multistep_errors = compute_multistep_validation_metric(
+                    params,
+                    val_batch_states,
+                    val_batch_actions,
+                    val_batch_next_states,
+                    lstm_state_template,
+                    horizon=10,
+                )
+                # Report the 10th step error (most important for your use case)
+                step_10_error = multistep_errors[9] if len(multistep_errors) >= 10 else multistep_errors[-1]
+
                 current_lr = lr_schedule(epoch)
-                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
+                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, 10-Step MSE: {step_10_error:.6f}, LR: {current_lr:.2e}"
             else:
                 # Just print training loss without validation
                 current_lr = lr_schedule(epoch)
@@ -744,7 +813,10 @@ def train_world_model(
                 log_file.write(log_message + "\n")
 
             # Update progress bar
-            pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "reward_loss": f"{reward_loss:.6f}"})
+            if (epoch + 1) % 50 == 0:
+                pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "reward_loss": f"{reward_loss:.6f}", "10-step": f"{step_10_error:.6f}"})
+            else:
+                pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "reward_loss": f"{reward_loss:.6f}"})
 
         # Save checkpoint every save_every epochs
         if checkpoint_file and (epoch + 1) % save_every == 0:
