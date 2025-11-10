@@ -930,7 +930,7 @@ def compare_real_vs_model(
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
-        action = jnp.array(4) #overwrite for testing
+        # action = jnp.array(4) #overwrite for testing
 
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
