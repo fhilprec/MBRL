@@ -520,14 +520,20 @@ def train_world_model(
             1.0 - 0.7 * (epoch / max_epochs)
         )
 
+        # Decide ONCE per sequence whether to use teacher forcing (per-sequence, not per-step)
+        use_teacher_forcing = jax.random.uniform(jax.random.fold_in(rng, 0)) < teacher_forcing_prob
+
         def scan_fn(carry, inputs):
             rssm_state, prev_prediction = carry
             current_state, current_action, target_next_state, step_idx = inputs
 
-            # Decide whether to use teacher forcing (ground truth) or model prediction
-            # For step 0, always use ground truth
-            use_teacher = (step_idx == 0) | (jax.random.uniform(jax.random.fold_in(rng, step_idx)) < teacher_forcing_prob)
-            input_state = jnp.where(use_teacher, current_state, prev_prediction)
+            # Use teacher forcing decision for whole sequence
+            # Only first step gets ground truth when NOT using teacher forcing
+            input_state = jnp.where(
+                use_teacher_forcing | (step_idx == 0),
+                current_state,
+                prev_prediction
+            )
 
             # Single-step prediction
             pred_next_state, new_rssm_state = model.apply(
@@ -538,7 +544,20 @@ def train_world_model(
             # Single-step loss
             single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
 
-            return (new_rssm_state, pred_next_state), single_step_loss
+            # LSTM state regularization - prevent explosion/vanishing
+            # Use tree_map to compute norms for all arrays in the LSTM state
+            def compute_state_penalty(arr):
+                """Compute penalty for a single state array"""
+                norm = jnp.linalg.norm(arr)
+                # Penalize norms outside healthy range [0.5, 3.0]
+                penalty = jnp.maximum(0.0, norm - 3.0) ** 2 + jnp.maximum(0.0, 0.5 - norm) ** 2
+                return penalty
+
+            # Apply to all arrays in LSTM state and sum
+            penalties = jax.tree.map(compute_state_penalty, new_rssm_state)
+            lstm_penalty = 0.001 * jnp.sum(jnp.array(jax.tree_util.tree_leaves(penalties)))
+
+            return (new_rssm_state, pred_next_state), (single_step_loss, lstm_penalty)
 
         # Add step indices for teacher forcing decision
         step_indices = jnp.arange(state_batch.shape[0])
@@ -546,10 +565,113 @@ def train_world_model(
 
         # Initialize with zero prediction (will use teacher forcing for first step)
         initial_carry = (lstm_template, jnp.zeros_like(state_batch[0]))
-        _, step_losses = lax.scan(scan_fn, initial_carry, scan_inputs)
+        (final_rssm_state, _), (step_losses, lstm_penalties) = lax.scan(scan_fn, initial_carry, scan_inputs)
 
-        # Just use mean single-step loss (multi-step causes slow JIT compilation)
-        total_loss = jnp.mean(step_losses)
+        # Single-step loss component
+        single_step_loss = jnp.mean(step_losses)
+        lstm_regularization = jnp.mean(lstm_penalties)
+
+        # ========== MULTI-STEP ROLLOUT LOSS ==========
+        # Curriculum learning: gradually increase horizon from 1 to 10 over training
+        max_horizon = 10
+        current_horizon = 1.0 + jnp.minimum(9.0, jnp.floor(9.0 * epoch / max_epochs))
+
+        # Compute multi-step losses for different horizons
+        def compute_multistep_loss(horizon):
+            """Rollout for 'horizon' steps and compute loss at final state"""
+            def rollout_fn(carry, action):
+                state, rssm = carry
+                pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
+                return (pred.squeeze(), new_rssm), None
+
+            # Check if we have enough sequence length
+            seq_length = state_batch.shape[0]
+            has_enough_length = horizon <= seq_length
+
+            # Initial state and LSTM state
+            init_state = state_batch[0]
+            init_rssm = lstm_template
+
+            # Use lax.dynamic_slice for dynamic indexing
+            # Take 'horizon' actions starting from index 0
+            # We need to pad to max_horizon if necessary
+            max_seq_len = state_batch.shape[0]
+            safe_horizon = jnp.minimum(horizon, max_seq_len)
+
+            # Use static slicing since we know the max is 10
+            # We'll slice up to horizon 10 and mask inactive steps
+            actions_slice = action_batch[:10]  # Static slice to horizon 10
+
+            # Rollout for exactly 'horizon' steps, masking if needed
+            def masked_rollout_fn(carry, inputs):
+                state, rssm, step = carry
+                action = inputs
+
+                # Only apply model if step < horizon, else return carry unchanged
+                def do_step(_):
+                    pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
+                    return pred.squeeze(), new_rssm
+
+                def skip_step(_):
+                    return state, rssm
+
+                new_state, new_rssm = lax.cond(
+                    step < horizon,
+                    do_step,
+                    skip_step,
+                    None
+                )
+
+                return (new_state, new_rssm, step + 1), None
+
+            # Run for exactly 10 steps (max horizon) with masking
+            step_indices = jnp.arange(10)
+            (final_pred, _, _), _ = lax.scan(
+                masked_rollout_fn,
+                (init_state, init_rssm, 0),
+                actions_slice
+            )
+
+            # Get target at the horizon position (safe indexing)
+            # Use lax.dynamic_index_in_dim for dynamic indexing
+            target_idx = jnp.minimum(horizon - 1, seq_length - 1)
+            target = lax.dynamic_index_in_dim(next_state_batch, target_idx, axis=0, keepdims=False)
+
+            # MSE loss
+            loss = jnp.mean((final_pred - target) ** 2)
+
+            # Only include this loss if:
+            # 1. We have enough sequence length
+            # 2. This horizon is within the current curriculum horizon
+            horizon_active = (horizon <= current_horizon) & has_enough_length
+
+            return jnp.where(horizon_active, loss, 0.0)
+
+        # Compute losses for horizons 2-10 (horizon 1 is already covered by single-step loss)
+        # Use static list to avoid JAX tracer issues
+        horizon_losses = jnp.array([
+            compute_multistep_loss(2),
+            compute_multistep_loss(3),
+            compute_multistep_loss(4),
+            compute_multistep_loss(5),
+            compute_multistep_loss(6),
+            compute_multistep_loss(7),
+            compute_multistep_loss(8),
+            compute_multistep_loss(9),
+            compute_multistep_loss(10),
+        ])
+
+        # Average over active horizons (zeros don't contribute)
+        num_active = jnp.sum(horizon_losses > 0.0)
+        multistep_loss = jnp.where(
+            num_active > 0,
+            jnp.sum(horizon_losses) / num_active,
+            0.0
+        )
+
+        # Combined loss: single-step + multi-step + LSTM regularization
+        # Weights: 1.0 for single-step, 0.3 for multi-step, already scaled lstm_regularization
+        total_loss = single_step_loss + 0.3 * multistep_loss + lstm_regularization
 
         return total_loss
 
@@ -608,7 +730,6 @@ def train_world_model(
         )
         return jnp.mean(losses)
 
-    @jax.jit
     def compute_multistep_validation_metric(
         params,
         batch_states,
@@ -617,7 +738,11 @@ def train_world_model(
         lstm_template,
         horizon=10,
     ):
-        """Compute multi-step prediction error for validation"""
+        """Compute multi-step prediction error for validation
+
+        Note: Not JIT compiled to allow dynamic horizon parameter.
+        Horizon must be static (not a traced value).
+        """
         def single_sequence_multistep(state_seq, action_seq, target_seq):
             def rollout_fn(carry, action):
                 state, rssm_state = carry
@@ -626,7 +751,7 @@ def train_world_model(
 
             # Take first state as initial condition
             init_state = state_seq[0]
-            # Rollout for horizon steps
+            # Rollout for horizon steps (horizon is static, so this is fine)
             actions_to_use = action_seq[:horizon]
             _, predictions = lax.scan(rollout_fn, (init_state, lstm_template), actions_to_use)
 
@@ -635,8 +760,8 @@ def train_world_model(
             errors = jnp.mean((predictions - targets) ** 2, axis=-1)  # MSE per step
             return errors
 
-        # Vmap over batch
-        vmapped_fn = jax.vmap(single_sequence_multistep, in_axes=(0, 0, 0))
+        # Vmap over batch - this is JIT compiled internally
+        vmapped_fn = jax.jit(jax.vmap(single_sequence_multistep, in_axes=(0, 0, 0)))
         all_errors = vmapped_fn(batch_states, batch_actions, batch_next_states)
 
         # Return mean error per step (shape: [horizon])
