@@ -555,7 +555,8 @@ def train_world_model(
 
             # Apply to all arrays in LSTM state and sum
             penalties = jax.tree.map(compute_state_penalty, new_rssm_state)
-            lstm_penalty = 0.001 * jnp.sum(jnp.array(jax.tree_util.tree_leaves(penalties)))
+            # Increased from 0.001 to 0.01 for stronger regularization
+            lstm_penalty = 0.01 * jnp.sum(jnp.array(jax.tree_util.tree_leaves(penalties)))
 
             return (new_rssm_state, pred_next_state), (single_step_loss, lstm_penalty)
 
@@ -669,9 +670,52 @@ def train_world_model(
             0.0
         )
 
-        # Combined loss: single-step + multi-step + LSTM regularization
-        # Weights: 1.0 for single-step, 0.3 for multi-step, already scaled lstm_regularization
-        total_loss = single_step_loss + 0.3 * multistep_loss + lstm_regularization
+        # ========== LSTM STATE CONTINUITY LOSS ==========
+        # This addresses the key problem: validation uses fresh LSTM states,
+        # but real rollouts use persistent states that accumulate errors.
+        # We need to train the model to handle LSTM state drift.
+
+        # Do a full-sequence rollout with persistent LSTM state
+        # (simulating what happens during actual rendering)
+        def full_sequence_rollout_loss():
+            """Rollout through entire sequence with persistent LSTM state"""
+            def persistent_rollout_fn(carry, inputs):
+                state, rssm = carry
+                action, target = inputs
+
+                pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
+                pred = pred.squeeze()
+
+                # Loss at this step
+                step_loss = jnp.mean((pred - target) ** 2)
+
+                return (pred, new_rssm), step_loss
+
+            # Start from first state with fresh LSTM
+            init_state = state_batch[0]
+            init_rssm = lstm_template
+
+            # Roll through entire sequence, feeding predictions back
+            inputs = (action_batch, next_state_batch)
+            _, step_losses = lax.scan(persistent_rollout_fn, (init_state, init_rssm), inputs)
+
+            # Weight later steps more heavily (they're harder and more important)
+            num_steps = step_losses.shape[0]
+            step_weights = jnp.linspace(1.0, 2.0, num_steps)  # 1.0 → 2.0
+            weighted_losses = step_losses * step_weights
+
+            return jnp.mean(weighted_losses)
+
+        # Compute this loss (it's expensive but crucial)
+        continuity_loss = full_sequence_rollout_loss()
+
+        # Combined loss: single-step + multi-step + continuity + LSTM regularization
+        # Weights:
+        # - 1.0 for single-step (basic accuracy)
+        # - 1.0 for multi-step (short-horizon stability)
+        # - 0.5 for continuity (long-horizon with persistent LSTM - expensive so lower weight)
+        # - lstm_regularization (already scaled)
+        total_loss = single_step_loss + 1.0 * multistep_loss + 0.5 * continuity_loss + lstm_regularization
 
         return total_loss
 
