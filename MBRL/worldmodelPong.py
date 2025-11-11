@@ -24,7 +24,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 1
+model_scale_factor = 5
 
 
 def get_reward_from_observation_score(obs):
