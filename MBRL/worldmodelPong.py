@@ -575,7 +575,9 @@ def train_world_model(
         # ========== MULTI-STEP ROLLOUT LOSS ==========
         # Curriculum learning: gradually increase horizon from 1 to 10 over training
         max_horizon = 10
-        current_horizon = 1.0 + jnp.minimum(9.0, jnp.floor(9.0 * epoch / max_epochs))
+        # Faster curriculum: reach horizon 10 by epoch 500 (was 889)
+        # This gives model more time to learn long rollouts
+        current_horizon = 1.0 + jnp.minimum(9.0, jnp.floor(9.0 * epoch / (max_epochs * 0.5)))
 
         # Compute multi-step losses for different horizons
         def compute_multistep_loss(horizon):
