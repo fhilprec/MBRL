@@ -541,8 +541,18 @@ def train_world_model(
             )
             pred_next_state = pred_next_state.squeeze()
 
-            # Single-step loss
-            single_step_loss = jnp.mean((target_next_state - pred_next_state) ** 2)
+            # Compute prediction error
+            step_error = (target_next_state - pred_next_state) ** 2
+            error_magnitude = jnp.mean(step_error)
+
+            # Adaptive loss weighting: automatically upweight hard predictions
+            # Hard predictions (large errors) get higher weight → model focuses on them
+            # This is GAME-AGNOSTIC: works for any sudden state transition
+            # Weight scales from 1.0 (easy) to 3.0 (hard) using tanh function
+            adaptive_weight = 1.0 + 2.0 * jnp.tanh(error_magnitude * 10.0)
+
+            # Apply adaptive weight to single-step loss
+            single_step_loss = jnp.mean(step_error) * adaptive_weight
 
             # LSTM state regularization - prevent explosion/vanishing
             # Use tree_map to compute norms for all arrays in the LSTM state
@@ -581,11 +591,31 @@ def train_world_model(
 
         # Compute multi-step losses for different horizons
         def compute_multistep_loss(horizon):
-            """Rollout for 'horizon' steps and compute loss at final state"""
-            def rollout_fn(carry, action):
-                state, rssm = carry
-                pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
-                return (pred.squeeze(), new_rssm), None
+            """Rollout for 'horizon' steps and compute CUMULATIVE loss at every step"""
+
+            def rollout_fn(carry, inputs):
+                state, rssm, step = carry
+                action, target = inputs
+
+                # Only apply model if step < horizon
+                def do_step(_):
+                    pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
+                    pred = pred.squeeze()
+                    # Compute loss at THIS step, not just at the end
+                    step_loss = jnp.mean((pred - target) ** 2)
+                    return pred, new_rssm, step_loss
+
+                def skip_step(_):
+                    return state, rssm, 0.0
+
+                new_state, new_rssm, step_loss = lax.cond(
+                    step < horizon,
+                    do_step,
+                    skip_step,
+                    None
+                )
+
+                return (new_state, new_rssm, step + 1), step_loss
 
             # Check if we have enough sequence length
             seq_length = state_batch.shape[0]
@@ -595,60 +625,27 @@ def train_world_model(
             init_state = state_batch[0]
             init_rssm = lstm_template
 
-            # Use lax.dynamic_slice for dynamic indexing
-            # Take 'horizon' actions starting from index 0
-            # We need to pad to max_horizon if necessary
-            max_seq_len = state_batch.shape[0]
-            safe_horizon = jnp.minimum(horizon, max_seq_len)
+            # Use static slicing to horizon 10 (max)
+            actions_slice = action_batch[:10]
+            targets_slice = next_state_batch[:10]
 
-            # Use static slicing since we know the max is 10
-            # We'll slice up to horizon 10 and mask inactive steps
-            actions_slice = action_batch[:10]  # Static slice to horizon 10
-
-            # Rollout for exactly 'horizon' steps, masking if needed
-            def masked_rollout_fn(carry, inputs):
-                state, rssm, step = carry
-                action = inputs
-
-                # Only apply model if step < horizon, else return carry unchanged
-                def do_step(_):
-                    pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
-                    return pred.squeeze(), new_rssm
-
-                def skip_step(_):
-                    return state, rssm
-
-                new_state, new_rssm = lax.cond(
-                    step < horizon,
-                    do_step,
-                    skip_step,
-                    None
-                )
-
-                return (new_state, new_rssm, step + 1), None
-
-            # Run for exactly 10 steps (max horizon) with masking
-            step_indices = jnp.arange(10)
-            (final_pred, _, _), _ = lax.scan(
-                masked_rollout_fn,
+            # Rollout and collect loss at EACH step
+            _, step_losses = lax.scan(
+                rollout_fn,
                 (init_state, init_rssm, 0),
-                actions_slice
+                (actions_slice, targets_slice)
             )
 
-            # Get target at the horizon position (safe indexing)
-            # Use lax.dynamic_index_in_dim for dynamic indexing
-            target_idx = jnp.minimum(horizon - 1, seq_length - 1)
-            target = lax.dynamic_index_in_dim(next_state_batch, target_idx, axis=0, keepdims=False)
-
-            # MSE loss
-            loss = jnp.mean((final_pred - target) ** 2)
+            # Average over all steps in this rollout (not just final step!)
+            # This is the KEY change: model now sees error at every intermediate step
+            avg_loss = jnp.mean(step_losses)
 
             # Only include this loss if:
             # 1. We have enough sequence length
             # 2. This horizon is within the current curriculum horizon
             horizon_active = (horizon <= current_horizon) & has_enough_length
 
-            return jnp.where(horizon_active, loss, 0.0)
+            return jnp.where(horizon_active, avg_loss, 0.0)
 
         # Compute losses for horizons 2-10 (horizon 1 is already covered by single-step loss)
         # Use static list to avoid JAX tracer issues
@@ -714,10 +711,10 @@ def train_world_model(
         # Combined loss: single-step + multi-step + continuity + LSTM regularization
         # Weights:
         # - 1.0 for single-step (basic accuracy)
-        # - 1.0 for multi-step (short-horizon stability)
-        # - 0.5 for continuity (long-horizon with persistent LSTM - expensive so lower weight)
+        # - 1.0 for multi-step (short-horizon stability with per-step errors)
+        # - 2.0 for continuity (long-horizon with persistent LSTM - CRITICAL for model-based RL!)
         # - lstm_regularization (already scaled)
-        total_loss = single_step_loss + 1.0 * multistep_loss + 0.5 * continuity_loss + lstm_regularization
+        total_loss = single_step_loss + 1.0 * multistep_loss + 2.0 * continuity_loss + lstm_regularization
 
         return total_loss
 
@@ -1165,15 +1162,12 @@ def compare_real_vs_model(
 
     model_base_state = None
 
-    # Verify initial shapes
-    print(f"Initial obs shape: {obs[0].shape}")
-    print(f"State mean shape: {state_mean.shape}")
-    print(f"State std shape: {state_std.shape}")
+
 
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
-        # action = jnp.array(4) #overwrite for testing
+        action = jnp.array(4) #overwrite for testing
 
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
@@ -1456,7 +1450,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=10,
+                steps_into_future=100,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,

@@ -522,7 +522,7 @@ def generate_imagined_rollouts(
 
     state_mean = 0
     state_std = 1
-    world_model = PongLSTM(10)
+    world_model = PongLSTM(5)
 
     num_trajectories = initial_observations.shape[0]
 
@@ -1350,7 +1350,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 def main():
 
     training_runs = 1000
-    model_scale_factor = 10  # Same as in worldmodelPong.py
+    model_scale_factor = 5  # Same as in worldmodelPong.py
 
     training_params = {
         "action_dim": 6,
