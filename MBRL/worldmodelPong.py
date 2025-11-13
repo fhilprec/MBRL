@@ -1045,15 +1045,17 @@ def compare_real_vs_model(
         # pred_obs is now squeezed, so it's 1D
         error = jnp.mean((real_obs - pred_obs) ** 2)
         print(
-            f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)}"
+            f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
         )
+
+        # print(pred_obs)
         # print the reward model prediction
-        if reward_predictor_params is not None:
-            reward_model = RewardPredictorMLP(model_scale_factor)
-            predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[None, :])
-            rounded_reward = jnp.round(predicted_reward * 2) / 2
-            if rounded_reward != 0:
-                print(f"Step {step}, Reward Model Prediction: {rounded_reward[0]:.2f}")
+        # if reward_predictor_params is not None:
+        #     reward_model = RewardPredictorMLP(model_scale_factor)
+        #     predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[None, :])
+        #     rounded_reward = jnp.round(predicted_reward * 2) / 2
+        #     if rounded_reward != 0:
+        #         print(f"Step {step}, Reward Model Prediction: {rounded_reward[0]:.2f}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -1178,7 +1180,7 @@ def compare_real_vs_model(
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
-            print("State reset")
+            # print("State reset")
             model_obs = obs[step_count]
 
         normalized_flattened_model_obs = (model_obs - state_mean) / state_std
@@ -1443,7 +1445,7 @@ def main():
     if len(args := sys.argv) > 1 and args[1] == "render":
         compare_real_vs_model(
                 num_steps=1000,
-                render_scale=6,
+                render_scale=2,
                 obs=obs,
                 actions=actions,
                 normalization_stats=normalization_stats,
