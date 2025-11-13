@@ -738,6 +738,8 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                 rng_reward = jax.random.PRNGKey(0)
                 predicted_reward = reward_model.apply(reward_predictor_params, rng_reward, next_flat_obs[None, :])
                 reward_predictor_reward = jnp.squeeze(predicted_reward)
+            else:
+                reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
             # Combine rewards: improved pong reward + predicted score reward
             reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
