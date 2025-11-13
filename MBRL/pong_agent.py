@@ -520,11 +520,28 @@ def generate_imagined_rollouts(
     if key is None:
         key = jax.random.PRNGKey(42)
 
-    state_mean = 0
-    state_std = 1
+    # CRITICAL FIX: Use normalization stats from world model training!
+    # The world model was trained on normalized data, so we must normalize during rollouts too
+    if normalization_stats:
+        state_mean = normalization_stats["mean"]
+        state_std = normalization_stats["std"]
+    else:
+        state_mean = 0
+        state_std = 1
+
     world_model = PongLSTM(5)
 
     num_trajectories = initial_observations.shape[0]
+
+    # DIAGNOSTIC: Check initial observations and normalization
+    print("\n=== INITIAL OBSERVATION DIAGNOSTIC ===")
+    print(f"Number of trajectories: {num_trajectories}")
+    print(f"First initial obs (raw): player_y={initial_observations[0][1::4][-1]:.2f}, ball_x={initial_observations[0][8::4][-1]:.2f}, ball_y={initial_observations[0][9::4][-1]:.2f}")
+    print(f"State mean sample: {state_mean if isinstance(state_mean, (int, float)) else state_mean[1::4][-1] if hasattr(state_mean, '__getitem__') else 'N/A'}")
+    print(f"State std sample: {state_std if isinstance(state_std, (int, float)) else state_std[1::4][-1] if hasattr(state_std, '__getitem__') else 'N/A'}")
+    normalized_test = (initial_observations[0] - state_mean) / state_std
+    print(f"After normalization: player_y={normalized_test[1::4][-1]:.4f}, ball_x={normalized_test[8::4][-1]:.4f}, ball_y={normalized_test[9::4][-1]:.4f}")
+    print("=" * 50)
 
     # Pre-compute initial LSTM states for all trajectories at once (OPTIMIZATION 1)
     print(f"Initializing LSTM states for {num_trajectories} trajectories...")

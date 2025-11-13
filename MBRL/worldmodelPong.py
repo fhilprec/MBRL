@@ -1130,7 +1130,9 @@ def compare_real_vs_model(
                 # It's a checkpoint
                 dynamics_params = model_data["params"]
                 normalization_stats = model_data.get("normalization_stats", None)
-        world_model = MODEL_ARCHITECTURE(model_scale_factor)
+
+    # Initialize world_model outside the if block so it's always available
+    world_model = MODEL_ARCHITECTURE(model_scale_factor)
 
     pygame.init()
     WIDTH = 160
@@ -1159,7 +1161,16 @@ def compare_real_vs_model(
     real_obs = obs[0]
     model_obs = obs[0]
 
-    lstm_state = None
+    # Initialize LSTM state (only if using model predictions)
+    if steps_into_future > 0:
+        dummy_action = jnp.zeros(1, dtype=jnp.int32)
+        normalized_init_obs = (obs[0] - state_mean) / state_std
+        _, lstm_state = world_model.apply(
+            dynamics_params, rng, normalized_init_obs, dummy_action, None
+        )
+    else:
+        lstm_state = None
+
     lstm_real_state = None
 
     model_base_state = None
@@ -1169,7 +1180,7 @@ def compare_real_vs_model(
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
-        action = jnp.array(4) #overwrite for testing
+        action = jnp.array(3) #overwrite for testing
 
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
