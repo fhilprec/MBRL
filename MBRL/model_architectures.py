@@ -315,7 +315,12 @@ def PongLSTM(model_scale_factor=1):
 
         action_one_hot = jax.nn.one_hot(action, num_classes=6)
 
-        action_embed = hk.Linear(32)(action_one_hot)
+        # Stronger action embedding with nonlinearity
+        action_embed = hk.Linear(64)(action_one_hot)
+        action_embed = jax.nn.relu(action_embed)
+        action_embed = hk.Linear(64)(action_embed)
+        action_embed = jax.nn.relu(action_embed)
+
         x = jnp.concatenate([flat_state, action_embed], axis=-1)
 
         x = hk.Linear(int(256 * model_scale_factor))(x)
