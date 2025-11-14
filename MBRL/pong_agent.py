@@ -1264,7 +1264,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False):
     """Evaluate the trained policy in the real Pong environment."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1279,6 +1279,10 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
     seed = np.random.randint(0, 2**31)
     rng = jax.random.PRNGKey(seed)
 
+    # Collect observations and actions for rendering if enabled
+    all_obs = []
+    all_actions = []
+
     for episode in range(num_episodes):
         rng, reset_key = jax.random.split(rng)
         print(rng)
@@ -1287,11 +1291,18 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
         done = False
         step_count = 0
 
+        episode_obs = []
+        episode_actions = []
+
         print(f"Episode {episode + 1}:")
 
-        while not done and step_count < 10000:
+        while not done:
 
             obs_tensor, _ = flatten_obs(obs, single_state=True)
+
+            # Store observation for rendering
+            if render:
+                episode_obs.append(obs_tensor)
 
             pi = actor_network.apply(actor_params, obs_tensor)
             temperature = 0.1
@@ -1300,6 +1311,11 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
             # Use rng for sampling to get different actions each episode
             rng, action_key = jax.random.split(rng)
             action = scaled_pi.sample(seed=action_key)
+
+            # Store action for rendering
+            if render:
+                episode_actions.append(action)
+
             if step_count % 100 == 0:
                 obs_flat, _ = flatten_obs(obs, single_state=True)
                 # training_reward = improved_pong_reward(
@@ -1327,12 +1343,32 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=5):
         total_rewards.append(episode_reward)
         print(f"  Final reward: {episode_reward:.3f}, Steps: {step_count}")
 
+        # Store episode data for rendering
+        if render and len(episode_obs) > 0:
+            all_obs.extend(episode_obs)
+            all_actions.extend(episode_actions)
+
     mean_reward = np.mean(total_rewards)
     std_reward = np.std(total_rewards)
 
     print(f"\nEvaluation Results:")
     print(f"Mean episode reward: {mean_reward:.3f} ± {std_reward:.3f}")
     print(f"Episode rewards: {total_rewards}")
+
+    # Render collected episodes if requested
+    if render and len(all_obs) > 0:
+        print(f"\nRendering {len(all_obs)} frames from {num_episodes} episodes...")
+        obs_array = jnp.stack(all_obs)
+        actions_array = jnp.array(all_actions)
+
+        compare_real_vs_model(
+            steps_into_future=0,
+            obs=obs_array,
+            num_steps=obs_array.shape[0],
+            actions=actions_array,
+            frame_stack_size=4,
+            clock_speed=50,
+        )
 
     return total_rewards
 
@@ -1488,7 +1524,9 @@ def main():
        
 
         if args.eval:
-            evaluate_real_performance(actor_network, actor_params,  num_episodes=5)
+            # Use render parameter if provided, otherwise default to False
+            render_eval = bool(args.render)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval)
             exit()
 
 
