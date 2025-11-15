@@ -27,6 +27,9 @@ from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_ful
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
+import random
+
+
 
 def lambda_return_dreamerv2(
     rewards: jnp.ndarray,
@@ -1444,9 +1447,11 @@ def main():
 
     model_exists = False
 
+    experience_its = 5 #same as in worldodel.py
+
     for i in range(training_runs):
         print(f"This is the {i}th iteration training the actor-critic")
-        
+        current_experience_it = random.randint(0, experience_its - 1)
 
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
@@ -1461,8 +1466,8 @@ def main():
                 del saved_data
                 gc.collect()
 
-            print(f"Loading existing model from experience_data_LSTM_pong_0.pkl...")
-            with open("experience_data_LSTM_pong_0.pkl", "rb") as f:
+            print(f"Loading existing model from experience_data_LSTM_pong_{current_experience_it}.pkl...")
+            with open(f"experience_data_LSTM_pong_{current_experience_it}.pkl", "rb") as f:
                 saved_data = pickle.load(f)
                 obs = saved_data["obs"]
                 del saved_data

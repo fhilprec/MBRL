@@ -1180,10 +1180,10 @@ def compare_real_vs_model(
     while step_count < min(num_steps, len(obs) - 1):
 
         action = actions[step_count]
-        if int(step_count / 50) % 2 == 0:
-            action = jnp.array(3) #overwrite for testing
-        else:
-            action = jnp.array(4) #overwrite for testing
+        # if int(step_count / 50) % 2 == 0:
+        #     action = jnp.array(3) #overwrite for testing
+        # else:
+        #     action = jnp.array(4) #overwrite for testing
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
         # )
@@ -1193,7 +1193,7 @@ def compare_real_vs_model(
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
-            # print("State reset")
+            print("State reset")
             model_obs = obs[step_count]
 
         normalized_flattened_model_obs = (model_obs - state_mean) / state_std
@@ -1465,7 +1465,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=100,
+                steps_into_future=10,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
