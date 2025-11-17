@@ -604,7 +604,8 @@ def generate_imagined_rollouts(
             if reward_predictor_params is not None:
                 reward_model = RewardPredictorMLP(model_scale_factor)
                 predicted_reward = reward_model.apply(reward_predictor_params, None, next_obs[None, :])
-                reward_predictor_reward = jnp.squeeze(predicted_reward)
+                # Clip and round to match real rollout behavior: {-1, 0, +1}
+                reward_predictor_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
 
             # Combine rewards: improved pong reward + predicted score reward
             reward = improved_reward + reward_predictor_reward * 2.0
@@ -757,7 +758,8 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                 # Use RNG key for apply (though not needed for deterministic forward pass)
                 rng_reward = jax.random.PRNGKey(0)
                 predicted_reward = reward_model.apply(reward_predictor_params, rng_reward, next_flat_obs[None, :])
-                reward_predictor_reward = jnp.squeeze(predicted_reward)
+                # Clip and round to match real rollout behavior: {-1, 0, +1}
+                reward_predictor_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
             else:
                 reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
@@ -1420,13 +1422,13 @@ def main():
         "rollout_length": 10,
         "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 8e-4,  # Reduced significantly for smaller policy updates
-        "critic_lr": 5e-3,  # Moderate critic learning rate
+        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
+        "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 10,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
