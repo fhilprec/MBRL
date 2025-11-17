@@ -607,7 +607,7 @@ def generate_imagined_rollouts(
                 reward_predictor_reward = jnp.squeeze(predicted_reward)
 
             # Combine rewards: improved pong reward + predicted score reward
-            reward = reward_predictor_reward * 2.0
+            reward = improved_reward + reward_predictor_reward * 2.0
 
             discount_factor = jnp.array(discount)
 
@@ -1426,7 +1426,7 @@ def main():
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 10,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
