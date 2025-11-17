@@ -1,7 +1,7 @@
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import pygame
 import time
 import jax
@@ -1044,18 +1044,18 @@ def compare_real_vs_model(
     ):
         # pred_obs is now squeezed, so it's 1D
         error = jnp.mean((real_obs - pred_obs) ** 2)
-        print(
-            f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
-        )
+        # print(
+        #     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
+        # )
 
         # print(pred_obs)
         # print the reward model prediction
-        # if reward_predictor_params is not None:
-        #     reward_model = RewardPredictorMLP(model_scale_factor)
-        #     predicted_reward = reward_model.apply(reward_predictor_params, rng, pred_obs[None, :])
-        #     rounded_reward = jnp.round(predicted_reward * 2) / 2
-        #     if rounded_reward != 0:
-        #         print(f"Step {step}, Reward Model Prediction: {rounded_reward[0]:.2f}")
+        if reward_predictor_params is not None:
+            reward_model = RewardPredictorMLP(model_scale_factor)
+            predicted_reward = reward_model.apply(reward_predictor_params, rng, real_obs)
+            # rounded_reward = jnp.round(predicted_reward * 2) / 2
+            if abs(predicted_reward) > 0.3:
+                print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -1217,8 +1217,8 @@ def compare_real_vs_model(
         # Squeeze batch dimension to maintain shape consistency (feature_dim,)
         model_obs = unnormalized_model_prediction.squeeze()
 
-        if steps_into_future > 0:
-            debug_obs(step_count, next_real_obs, model_obs, action)
+        # if steps_into_future > 0:
+        debug_obs(step_count, next_real_obs, model_obs, action)
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size

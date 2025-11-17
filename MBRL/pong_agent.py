@@ -607,7 +607,7 @@ def generate_imagined_rollouts(
                 reward_predictor_reward = jnp.squeeze(predicted_reward)
 
             # Combine rewards: improved pong reward + predicted score reward
-            reward = improved_reward + reward_predictor_reward * 2.0
+            reward = reward_predictor_reward * 2.0
 
             discount_factor = jnp.array(discount)
 
@@ -1267,7 +1267,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False, reward_predictor_params=None):
     """Evaluate the trained policy in the real Pong environment."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1364,6 +1364,9 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
         obs_array = jnp.stack(all_obs)
         actions_array = jnp.array(all_actions)
 
+       #load the reward predictor params here
+
+
         compare_real_vs_model(
             steps_into_future=0,
             obs=obs_array,
@@ -1371,6 +1374,8 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
             actions=actions_array,
             frame_stack_size=4,
             clock_speed=50,
+            model_scale_factor=5,
+            reward_predictor_params=reward_predictor_params,
         )
 
     return total_rewards
@@ -1415,8 +1420,8 @@ def main():
         "rollout_length": 10,
         "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
-        "critic_lr": 5e-4,  # Moderate critic learning rate
+        "actor_lr": 8e-4,  # Reduced significantly for smaller policy updates
+        "critic_lr": 5e-3,  # Moderate critic learning rate
         "lambda_": 0.95,
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
@@ -1531,7 +1536,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params)
             exit()
 
 
