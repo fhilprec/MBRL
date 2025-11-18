@@ -494,8 +494,13 @@ def train_world_model(
             checkpoint_data = pickle.load(f)
             params = checkpoint_data["params"]
             opt_state = checkpoint_data["opt_state"]
-            reward_params = checkpoint_data["reward_params"]
-            reward_opt_state = checkpoint_data["reward_opt_state"]
+            # TODO_TRANSITION_CLEANUP: Remove this block after transition to new reward model is complete
+            # Reinitialize reward model from scratch (ignoring old checkpoint params)
+            # This is needed because the reward model architecture changed (old: 56 input dim, new: 118)
+            rng, reward_rng = jax.random.split(rng)
+            reward_params = reward_model.init(reward_rng, dummy_state, dummy_action, dummy_next_state)
+            reward_opt_state = reward_optimizer.init(reward_params)
+            print("Note: Reward model reinitialized from scratch (ignoring checkpoint params due to architecture change)")
             start_epoch = checkpoint_data["epoch"] + 1
             best_loss = checkpoint_data.get("best_loss", float("inf"))
             normalization_stats = checkpoint_data.get("normalization_stats", normalization_stats)
