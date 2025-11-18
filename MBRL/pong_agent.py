@@ -577,7 +577,7 @@ def generate_imagined_rollouts(
 
             # action = pi_exploratory.sample(seed=action_key)
             action = pi.sample(seed=action_key)
-
+            # action = jnp.asarray(4, dtype=jnp.int32) #overwrite for testing out
             log_prob = pi.log_prob(action)
 
             value_dist = critic_network.apply(critic_params, obs)
@@ -602,8 +602,15 @@ def generate_imagined_rollouts(
             # Compute reward predictor reward if available
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLP(model_scale_factor)
-                predicted_reward = reward_model.apply(reward_predictor_params, None, next_obs[None, :])
+                reward_model = RewardPredictorMLPTransition(model_scale_factor)
+                # RewardPredictorMLPTransition expects (current_state, action, next_state)
+                predicted_reward = reward_model.apply(
+                    reward_predictor_params,
+                    None,
+                    obs[None, :],      # current state
+                    jnp.array([action]),  # action (needs to be array)
+                    next_obs[None, :]  # next state
+                )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
                 reward_predictor_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
 
@@ -754,10 +761,16 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Compute reward predictor reward if available
             reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLP(model_scale_factor)
-                # Use RNG key for apply (though not needed for deterministic forward pass)
+                reward_model = RewardPredictorMLPTransition(model_scale_factor)
+                # RewardPredictorMLPTransition expects (current_state, action, next_state)
                 rng_reward = jax.random.PRNGKey(0)
-                predicted_reward = reward_model.apply(reward_predictor_params, rng_reward, next_flat_obs[None, :])
+                predicted_reward = reward_model.apply(
+                    reward_predictor_params,
+                    rng_reward,
+                    flat_obs[None, :],       # current state
+                    jnp.array([action]),     # action (needs to be array)
+                    next_flat_obs[None, :]   # next state
+                )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
                 reward_predictor_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
             else:
@@ -1615,6 +1628,8 @@ def main():
                     actions=sel_actions,
                     frame_stack_size=4,
                     clock_speed=5,
+                    model_scale_factor=model_scale_factor,
+                    reward_predictor_params=reward_predictor_params,
                 )
 
         print(

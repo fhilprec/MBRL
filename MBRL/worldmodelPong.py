@@ -1102,8 +1102,9 @@ def compare_real_vs_model(
                 predicted_reward = reward_model_viz.apply(
                     reward_predictor_params, rng, prev_real_obs, action, real_obs
                 )
+                predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
                 # rounded_reward = jnp.round(predicted_reward * 2) / 2
-                if abs(predicted_reward) > 0.3:
+                if abs(predicted_reward) > 0.0:
                     print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
 
         if error > 20 and render_debugging:
