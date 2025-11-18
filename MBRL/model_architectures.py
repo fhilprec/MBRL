@@ -984,7 +984,9 @@ def get_enhanced_reward(obs, action, frame_stack_size=4):
 
 def RewardPredictorMLP(model_scale_factor=1):
     """
-    Simple MLP that predicts reward from a single observation.
+    DEPRECATED: Simple MLP that predicts reward from a single observation.
+    Use RewardPredictorMLPTransition instead for better performance.
+
     Takes only observations (no LSTM state) and outputs a scalar reward.
     """
     def forward(state):
@@ -995,6 +997,55 @@ def RewardPredictorMLP(model_scale_factor=1):
 
         # Simple MLP architecture
         x = hk.Linear(int(256 * model_scale_factor))(state)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(128 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(64 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+
+        # Output layer - single scalar reward
+        reward = hk.Linear(1)(x)
+        reward = jnp.squeeze(reward, axis=-1)  # Remove last dimension to get scalar per batch
+
+        return reward
+
+    return hk.transform(forward)
+
+
+def RewardPredictorMLPTransition(model_scale_factor=1):
+    """
+    Transition-based reward predictor that takes (current_state, action, next_state).
+
+    This provides temporal context about the transition, making it more robust to
+    world model errors. Based on successful PyTorch world model reference.
+
+    Args:
+        current_state: Current observation
+        action: Action taken
+        next_state: Next observation
+
+    Returns:
+        Predicted scalar reward for the transition
+    """
+    def forward(current_state, action, next_state):
+        batch_size = current_state.shape[0] if len(current_state.shape) > 1 else 1
+
+        # Ensure states are 2D
+        if len(current_state.shape) == 1:
+            current_state = current_state.reshape(1, -1)
+        if len(next_state.shape) == 1:
+            next_state = next_state.reshape(1, -1)
+
+        # One-hot encode action
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+        if len(action_one_hot.shape) == 1:
+            action_one_hot = action_one_hot.reshape(1, -1)
+
+        # Concatenate all inputs: [current_state, action, next_state]
+        x = jnp.concatenate([current_state, action_one_hot, next_state], axis=-1)
+
+        # MLP architecture - memory-efficient version
+        x = hk.Linear(int(256 * model_scale_factor))(x)
         x = jax.nn.relu(x)
         x = hk.Linear(int(128 * model_scale_factor))(x)
         x = jax.nn.relu(x)

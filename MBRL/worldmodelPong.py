@@ -24,7 +24,7 @@ from obs_state_converter import pong_flat_observation_to_state
 from model_architectures import *
 
 MODEL_ARCHITECTURE = PongLSTM
-model_scale_factor = 5
+model_scale_factor = 2
 
 
 def get_reward_from_observation_score(obs):
@@ -378,6 +378,9 @@ def train_world_model(
     model_scale_factor=1,
     checkpoint_path=None,
     save_every=10,
+    # TEMPORARY: Flag to only train reward predictor while freezing world model
+    # TODO_CLEANUP: This will be useful for memory-constrained environments
+    train_reward_only=False,
 ):
 
     # Increased batch size for better GPU utilization and faster training
@@ -450,7 +453,9 @@ def train_world_model(
     )
 
     model = MODEL_ARCHITECTURE(model_scale_factor)
-    reward_model = RewardPredictorMLP(model_scale_factor)
+    # TEMPORARY: Using transition-based reward predictor during migration
+    # TODO_CLEANUP: Once migration is complete, this will be the standard approach
+    reward_model = RewardPredictorMLPTransition(model_scale_factor)
 
     lr_schedule = optax.cosine_decay_schedule(
         init_value=learning_rate,
@@ -472,6 +477,9 @@ def train_world_model(
     reward_rng = jax.random.PRNGKey(43)
     dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
+    # TEMPORARY: Dummy inputs for transition-based reward predictor
+    # TODO_CLEANUP: This initialization will become standard
+    dummy_next_state = normalized_next_obs[:1]
 
 
     start_epoch = 0
@@ -496,9 +504,10 @@ def train_world_model(
         params = model.init(rng, dummy_state, dummy_action, None)
         opt_state = optimizer.init(params)
 
-        # Initialize reward predictor
+        # TEMPORARY: Initialize transition-based reward predictor
+        # TODO_CLEANUP: Update to use (current_state, action, next_state) signature
         rng, reward_rng = jax.random.split(rng)
-        reward_params = reward_model.init(reward_rng, dummy_state)
+        reward_params = reward_model.init(reward_rng, dummy_state, dummy_action, dummy_next_state)
         reward_opt_state = reward_optimizer.init(reward_params)
         best_loss = float("inf")
 
@@ -811,11 +820,16 @@ def train_world_model(
         return jnp.mean(all_errors, axis=0)
 
     @jax.jit
-    def reward_update_step(reward_params, reward_opt_state, batch_obs, batch_next_obs):
-        """Update reward predictor parameters"""
+    def reward_update_step(reward_params, reward_opt_state, batch_obs, batch_actions, batch_next_obs):
+        """Update reward predictor parameters
+
+        TEMPORARY: Updated to use transition-based reward predictor
+        TODO_CLEANUP: This signature will become standard
+        """
         def reward_loss_fn(r_params):
             # Flatten batch dimensions for processing
             flat_obs = batch_obs.reshape(-1, batch_obs.shape[-1])
+            flat_actions = batch_actions.reshape(-1)
             flat_next_obs = batch_next_obs.reshape(-1, batch_next_obs.shape[-1])
 
             # Denormalize observations to get raw scores
@@ -824,11 +838,13 @@ def train_world_model(
 
             # Calculate target rewards based on score difference
             target_rewards = calculate_score_based_reward(unnorm_obs, unnorm_next_obs)
-            # Use jax.debug.print with formatting to avoid trace-time stringification
-            # 'summarize' controls how many elements are printed
-            # jax.debug.print("target_rewards (shape {s}): {r}", s=target_rewards.shape, r=target_rewards)
-            # Predict rewards - use UNNORMALIZED observations so inference matches training
-            predicted_rewards = reward_model.apply(r_params, reward_rng, unnorm_next_obs)
+
+            # TEMPORARY: Predict rewards using transition-based approach
+            # TODO_CLEANUP: This will become the standard reward prediction method
+            # Use UNNORMALIZED observations so inference matches training
+            predicted_rewards = reward_model.apply(
+                r_params, reward_rng, unnorm_obs, flat_actions, unnorm_next_obs
+            )
 
             # MSE loss
             loss = jnp.mean((predicted_rewards - target_rewards) ** 2)
@@ -846,16 +862,29 @@ def train_world_model(
     patience = 50
     no_improve_count = 0
 
-    # Warm up JIT compilation with a small batch
-    print("Warming up JIT compilation...")
-    warmup_states = jnp.stack([train_batches[0][0]])
-    warmup_actions = jnp.stack([train_batches[0][1]])
-    warmup_next = jnp.stack([train_batches[0][2]])
-    _, _, _ = update_step_batched(
-        params, opt_state, warmup_states, warmup_actions, warmup_next,
-        lstm_state_template, 0, num_epochs
-    )
-    print("JIT warmup complete")
+    # TEMPORARY: Conditional JIT warmup based on training mode
+    # TODO_CLEANUP: This optimization will become standard
+    if train_reward_only:
+        print("Training reward predictor only (world model frozen)...")
+        print("Warming up reward predictor JIT compilation...")
+        warmup_states = jnp.stack([train_batches[0][0]])
+        warmup_actions = jnp.stack([train_batches[0][1]])
+        warmup_next = jnp.stack([train_batches[0][2]])
+        _, _, _ = reward_update_step(
+            reward_params, reward_opt_state, warmup_states, warmup_actions, warmup_next
+        )
+        print("Reward predictor JIT warmup complete")
+    else:
+        print("Training both world model and reward predictor...")
+        print("Warming up JIT compilation...")
+        warmup_states = jnp.stack([train_batches[0][0]])
+        warmup_actions = jnp.stack([train_batches[0][1]])
+        warmup_next = jnp.stack([train_batches[0][2]])
+        _, _, _ = update_step_batched(
+            params, opt_state, warmup_states, warmup_actions, warmup_next,
+            lstm_state_template, 0, num_epochs
+        )
+        print("JIT warmup complete")
 
     # Use tqdm for progress tracking
     pbar = tqdm(range(start_epoch, num_epochs), desc="Training", initial=start_epoch, total=num_epochs)
@@ -885,26 +914,35 @@ def train_world_model(
             chunk_actions = jnp.stack([b[1] for b in chunk_batch_slice])
             chunk_next_states = jnp.stack([b[2] for b in chunk_batch_slice])
 
-            params, opt_state, chunk_train_loss = update_step_batched(
-                params,
-                opt_state,
-                chunk_states,
-                chunk_actions,
-                chunk_next_states,
-                lstm_state_template,
-                epoch,
-                num_epochs,
-            )
+            # TEMPORARY: Only update world model if not in reward-only training mode
+            # TODO_CLEANUP: This allows training reward predictor separately when memory is limited
+            if not train_reward_only:
+                params, opt_state, chunk_train_loss = update_step_batched(
+                    params,
+                    opt_state,
+                    chunk_states,
+                    chunk_actions,
+                    chunk_next_states,
+                    lstm_state_template,
+                    epoch,
+                    num_epochs,
+                )
+                epoch_train_losses.append(chunk_train_loss)
+            else:
+                # Use dummy loss when world model is frozen
+                chunk_train_loss = 0.0
+                epoch_train_losses.append(chunk_train_loss)
 
-            # Train reward predictor
+            # TEMPORARY: Train reward predictor with transition-based approach
+            # TODO_CLEANUP: This will become standard once migration is complete
             reward_params, reward_opt_state, chunk_reward_loss = reward_update_step(
                 reward_params,
                 reward_opt_state,
                 chunk_states,
+                chunk_actions,
                 chunk_next_states,
             )
 
-            epoch_train_losses.append(chunk_train_loss)
             epoch_reward_losses.append(chunk_reward_loss)
 
         # Average losses over all chunks
@@ -1049,13 +1087,19 @@ def compare_real_vs_model(
         # )
 
         # print(pred_obs)
-        # print the reward model prediction
+        # TEMPORARY: Using transition-based reward predictor for visualization
+        # TODO_CLEANUP: This will become standard once migration is complete
         if reward_predictor_params is not None:
-            reward_model = RewardPredictorMLP(model_scale_factor)
-            predicted_reward = reward_model.apply(reward_predictor_params, rng, real_obs)
-            # rounded_reward = jnp.round(predicted_reward * 2) / 2
-            if abs(predicted_reward) > 0.3:
-                print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
+            reward_model_viz = RewardPredictorMLPTransition(model_scale_factor)
+            # Need previous observation for transition-based prediction
+            if step > 0:
+                prev_real_obs = obs[step - 1] if step > 0 else real_obs
+                predicted_reward = reward_model_viz.apply(
+                    reward_predictor_params, rng, prev_real_obs, action, real_obs
+                )
+                # rounded_reward = jnp.round(predicted_reward * 2) / 2
+                if abs(predicted_reward) > 0.3:
+                    print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -1391,6 +1435,10 @@ def main():
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
 
+        # TEMPORARY: Check if we should only train reward predictor
+        # TODO_CLEANUP: This flag will be useful for memory-constrained training
+        train_reward_only = len(sys.argv) > 1 and sys.argv[1] == "train_reward"
+
         # Train or continue training
         if os.path.exists(save_path):
             print(f"Existing model found. Continuing training from checkpoint...")
@@ -1407,6 +1455,7 @@ def main():
             model_scale_factor=model_scale_factor,
             checkpoint_path=save_path,
             save_every=10,
+            train_reward_only=train_reward_only,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
