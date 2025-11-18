@@ -9,7 +9,8 @@ results/
 .DS_Store
 docs/build/
 *.pkl
-
+*training_log
+IMPLEMENTATION_NOTES.md
 *.aux
 *.bbl
 *.bcf
