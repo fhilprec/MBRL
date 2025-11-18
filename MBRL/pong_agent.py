@@ -564,7 +564,7 @@ def generate_imagined_rollouts(
     def single_trajectory_rollout(cur_obs, subkey, initial_lstm_state):
         """Generate a single trajectory starting from cur_obs."""
 
-        def rollout_step(carry, x):
+        def rollout_step(carry, step_idx):
             key, obs, lstm_state = carry
 
             key, action_key = jax.random.split(key)
@@ -596,10 +596,16 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            # Compute improved pong reward
+            # Compute improved pong reward (hand-crafted, always reliable)
             improved_reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
-            # Compute reward predictor reward if available
+            # HYBRID REWARD: Confidence-weighted blending of hand-crafted + predicted rewards
+            # Confidence decreases as we get further into the rollout (world model accumulates errors)
+            # Early steps (0-2): confidence = 0.9-0.7  (trust predictor more)
+            # Mid steps (3-4):   confidence = 0.5-0.3  (trust both equally)
+            # Late steps (5+):   confidence = 0.2      (trust hand-crafted more)
+            confidence = jnp.maximum(0.2, 1.0 - (step_idx / rollout_length) * 0.8)
+
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
                 reward_model = RewardPredictorMLPTransition(model_scale_factor)
@@ -609,12 +615,17 @@ def generate_imagined_rollouts(
                     None,
                     obs[None, :],      # current state
                     jnp.array([action]),  # action (needs to be array)
-                    next_obs[None, :]  # next state
+                    next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                reward_predictor_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
+                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
 
-            # Combine rewards: improved pong reward + predicted score reward
+                # Apply confidence weighting: lower confidence for later steps
+                reward_predictor_reward = predicted_reward_clipped * confidence
+
+            # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
+            # Hand-crafted reward provides stable gradient signal throughout
+            # Predicted reward adds sparse score information when confident
             reward = improved_reward + reward_predictor_reward * 2.0
 
             discount_factor = jnp.array(discount)
@@ -627,8 +638,10 @@ def generate_imagined_rollouts(
         cur_obs = cur_obs.astype(jnp.float32)
         init_carry = (subkey, cur_obs, initial_lstm_state)
 
+        # Pass step indices to rollout_step for confidence weighting
+        step_indices = jnp.arange(rollout_length)
         _, trajectory_data = lax.scan(
-            rollout_step, init_carry, None, length=rollout_length
+            rollout_step, init_carry, step_indices
         )
 
         (
@@ -755,10 +768,12 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
 
 
-            # Compute improved pong reward
+            # Compute improved pong reward (hand-crafted, always reliable)
             improved_reward = improved_pong_reward(next_flat_obs, action, frame_stack_size=4)
 
-            # Compute reward predictor reward if available
+            # HYBRID REWARD: For real rollouts, we can trust the predictor more since
+            # next_state comes from the REAL environment (no compounding errors)
+            # Still apply slight confidence weighting for consistency, but higher baseline
             reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
             if reward_predictor_params is not None:
                 reward_model = RewardPredictorMLPTransition(model_scale_factor)
@@ -769,14 +784,19 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                     rng_reward,
                     flat_obs[None, :],       # current state
                     jnp.array([action]),     # action (needs to be array)
-                    next_flat_obs[None, :]   # next state
+                    next_flat_obs[None, :]   # next state (REAL - no model errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                reward_predictor_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
+                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
+
+                # For real rollouts, use high confidence (0.9) since next_state is accurate
+                # This helps the reward predictor contribute more to policy learning
+                confidence_real = 0.9
+                reward_predictor_reward = predicted_reward_clipped * confidence_real
             else:
                 reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
-            # Combine rewards: improved pong reward + predicted score reward
+            # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
             reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
@@ -1432,7 +1452,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 10,
+        "rollout_length": 6,  # Reduced from 10 to 6 to minimize compounding world model errors
         "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
