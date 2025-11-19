@@ -1091,10 +1091,25 @@ def compare_real_vs_model(
         #     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
         # )
 
+
+        #for debugging purposes
+        if calc_score_reward:
+            prev_real_obs = obs[step - 1] if step > 0 else real_obs
+
+            old_score =  prev_real_obs[-5]-prev_real_obs[-1]
+            new_score =  real_obs[-5]-real_obs[-1]
+
+            score_reward = new_score - old_score
+            score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
+
+            if score_reward != 0:
+                print(f"Step {step}, Score Reward: {score_reward}")
+
         # print(pred_obs)
-        # Position-only reward predictor for visualization
+        # TEMPORARY: Using transition-based reward predictor for visualization
+        # TODO_CLEANUP: This will become standard once migration is complete
         if reward_predictor_params is not None:
-            reward_model_viz = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size)
+            reward_model_viz = RewardPredictorMLPTransition(model_scale_factor)
             # Need previous observation for transition-based prediction
             if step > 0:
                 prev_real_obs = obs[step - 1] if step > 0 else real_obs
@@ -1102,17 +1117,9 @@ def compare_real_vs_model(
                     reward_predictor_params, rng, prev_real_obs, action, real_obs
                 )
                 predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
-                # Convert to python float for comparison/printing
-                pr = float(predicted_reward)
-                if abs(pr) > 0.0:
-                    if pr == 1.0:
-                        color = "\033[92m"  # green
-                    elif pr == -1.0:
-                        color = "\033[91m"  # red
-                    else:
-                        color = "\033[0m"
-                    reset = "\033[0m"
-                    print(f"Step {step}, Reward Model Prediction: {color}{pr}{reset}")
+                # rounded_reward = jnp.round(predicted_reward * 2) / 2
+                if abs(predicted_reward) > 0.0:
+                    print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
