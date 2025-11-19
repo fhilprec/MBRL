@@ -1105,14 +1105,10 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
         current_positions = extract_position_features(current_state)
         next_positions = extract_position_features(next_state)
 
-        # One-hot encode action
-        action_one_hot = jax.nn.one_hot(action, num_classes=6)
-        if len(action_one_hot.shape) == 1:
-            action_one_hot = action_one_hot.reshape(1, -1)
 
         # Concatenate position features and action: [current_positions, action, next_positions]
         # Total: 4 + 6 + 4 = 14 features
-        x = jnp.concatenate([current_positions, action_one_hot, next_positions], axis=-1)
+        x = jnp.concatenate([current_positions, next_positions], axis=-1)
 
         # Small MLP architecture for simple position-based prediction
         x = hk.Linear(int(32))(x)
