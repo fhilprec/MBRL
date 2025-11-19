@@ -23,7 +23,7 @@ import gc
 
 
 
-from worldmodelPong import compare_real_vs_model, get_enhanced_reward, print_full_array, collect_experience_sequential, calculate_score_based_reward
+from worldmodelPong import compare_real_vs_model, print_full_array, collect_experience_sequential, calculate_score_based_reward
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
 
@@ -1500,11 +1500,21 @@ def main():
             with open("world_model_PongLSTM_checkpoint.pkl", "rb") as f:
                 saved_data = pickle.load(f)
                 dynamics_params = saved_data["params"]
-                reward_predictor_params = saved_data.get("reward_params", None)
                 normalization_stats = saved_data.get("normalization_stats", None)
                 model_exists = True
                 del saved_data
                 gc.collect()
+
+            # Load standalone reward predictor
+            reward_predictor_path = "reward_predictor_standalone.pkl"
+            if os.path.exists(reward_predictor_path):
+                print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+                with open(reward_predictor_path, "rb") as f:
+                    reward_data = pickle.load(f)
+                    reward_predictor_params = reward_data["params"]
+            else:
+                print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+                reward_predictor_params = None
 
             print(f"Loading existing model from experience_data_LSTM_pong_{current_experience_it}.pkl...")
             with open(f"experience_data_LSTM_pong_{current_experience_it}.pkl", "rb") as f:

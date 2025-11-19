@@ -378,9 +378,6 @@ def train_world_model(
     model_scale_factor=1,
     checkpoint_path=None,
     save_every=10,
-    # TEMPORARY: Flag to only train reward predictor while freezing world model
-    # TODO_CLEANUP: This will be useful for memory-constrained environments
-    train_reward_only=False,
 ):
 
     # Increased batch size for better GPU utilization and faster training
@@ -453,9 +450,6 @@ def train_world_model(
     )
 
     model = MODEL_ARCHITECTURE(model_scale_factor)
-    # Position-only reward predictor that uses only player/enemy/ball positions
-    # This avoids using score features which are not well predicted by the world model
-    reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size)
 
     lr_schedule = optax.cosine_decay_schedule(
         init_value=learning_rate,
@@ -467,19 +461,9 @@ def train_world_model(
         optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
     )
 
-    # Separate optimizer for reward predictor
-    reward_optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
-    )
-
     rng = jax.random.PRNGKey(42)
-    reward_rng = jax.random.PRNGKey(43)
     dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
-    # TEMPORARY: Dummy inputs for transition-based reward predictor
-    # TODO_CLEANUP: This initialization will become standard
-    dummy_next_state = normalized_next_obs[:1]
 
 
     start_epoch = 0
@@ -494,13 +478,6 @@ def train_world_model(
             checkpoint_data = pickle.load(f)
             params = checkpoint_data["params"]
             opt_state = checkpoint_data["opt_state"]
-            # Reinitialize reward model from scratch (ignoring old checkpoint params)
-            # This is needed because the reward model architecture changed to position-only inputs
-            # (old: full 56 features per state, new: only 16 position features per state)
-            rng, reward_rng = jax.random.split(rng)
-            reward_params = reward_model.init(reward_rng, dummy_state, dummy_action, dummy_next_state)
-            reward_opt_state = reward_optimizer.init(reward_params)
-            print("Note: Reward model reinitialized from scratch (position-only architecture, ignoring old checkpoint params)")
             start_epoch = checkpoint_data["epoch"] + 1
             best_loss = checkpoint_data.get("best_loss", float("inf"))
             normalization_stats = checkpoint_data.get("normalization_stats", normalization_stats)
@@ -508,12 +485,6 @@ def train_world_model(
     else:
         params = model.init(rng, dummy_state, dummy_action, None)
         opt_state = optimizer.init(params)
-
-        # TEMPORARY: Initialize transition-based reward predictor
-        # TODO_CLEANUP: Update to use (current_state, action, next_state) signature
-        rng, reward_rng = jax.random.split(rng)
-        reward_params = reward_model.init(reward_rng, dummy_state, dummy_action, dummy_next_state)
-        reward_opt_state = reward_optimizer.init(reward_params)
         best_loss = float("inf")
 
     _, lstm_state_template = model.apply(params, rng, dummy_state, dummy_action, None)
@@ -824,42 +795,6 @@ def train_world_model(
         # Return mean error per step (shape: [horizon])
         return jnp.mean(all_errors, axis=0)
 
-    @jax.jit
-    def reward_update_step(reward_params, reward_opt_state, batch_obs, batch_actions, batch_next_obs):
-        """Update reward predictor parameters
-
-        TEMPORARY: Updated to use transition-based reward predictor
-        TODO_CLEANUP: This signature will become standard
-        """
-        def reward_loss_fn(r_params):
-            # Flatten batch dimensions for processing
-            flat_obs = batch_obs.reshape(-1, batch_obs.shape[-1])
-            flat_actions = batch_actions.reshape(-1)
-            flat_next_obs = batch_next_obs.reshape(-1, batch_next_obs.shape[-1])
-
-            # Denormalize observations to get raw scores
-            unnorm_obs = flat_obs * state_std + state_mean
-            unnorm_next_obs = flat_next_obs * state_std + state_mean
-
-            # Calculate target rewards based on score difference
-            target_rewards = calculate_score_based_reward(unnorm_obs, unnorm_next_obs)
-
-            # TEMPORARY: Predict rewards using transition-based approach
-            # TODO_CLEANUP: This will become the standard reward prediction method
-            # Use UNNORMALIZED observations so inference matches training
-            predicted_rewards = reward_model.apply(
-                r_params, reward_rng, unnorm_obs, flat_actions, unnorm_next_obs
-            )
-
-            # MSE loss
-            loss = jnp.mean((predicted_rewards - target_rewards) ** 2)
-            return loss
-
-        loss, grads = jax.value_and_grad(reward_loss_fn)(reward_params)
-        updates, new_reward_opt_state = reward_optimizer.update(grads, reward_opt_state, reward_params)
-        new_reward_params = optax.apply_updates(reward_params, updates)
-        return new_reward_params, new_reward_opt_state, loss
-
     # Don't stack all batches upfront - keep as list and stack on-demand
     # This saves massive memory and startup time
     rng_shuffle = jax.random.PRNGKey(123)
@@ -867,29 +802,16 @@ def train_world_model(
     patience = 50
     no_improve_count = 0
 
-    # TEMPORARY: Conditional JIT warmup based on training mode
-    # TODO_CLEANUP: This optimization will become standard
-    if train_reward_only:
-        print("Training reward predictor only (world model frozen)...")
-        print("Warming up reward predictor JIT compilation...")
-        warmup_states = jnp.stack([train_batches[0][0]])
-        warmup_actions = jnp.stack([train_batches[0][1]])
-        warmup_next = jnp.stack([train_batches[0][2]])
-        _, _, _ = reward_update_step(
-            reward_params, reward_opt_state, warmup_states, warmup_actions, warmup_next
-        )
-        print("Reward predictor JIT warmup complete")
-    else:
-        print("Training both world model and reward predictor...")
-        print("Warming up JIT compilation...")
-        warmup_states = jnp.stack([train_batches[0][0]])
-        warmup_actions = jnp.stack([train_batches[0][1]])
-        warmup_next = jnp.stack([train_batches[0][2]])
-        _, _, _ = update_step_batched(
-            params, opt_state, warmup_states, warmup_actions, warmup_next,
-            lstm_state_template, 0, num_epochs
-        )
-        print("JIT warmup complete")
+    print("Training world model...")
+    print("Warming up JIT compilation...")
+    warmup_states = jnp.stack([train_batches[0][0]])
+    warmup_actions = jnp.stack([train_batches[0][1]])
+    warmup_next = jnp.stack([train_batches[0][2]])
+    _, _, _ = update_step_batched(
+        params, opt_state, warmup_states, warmup_actions, warmup_next,
+        lstm_state_template, 0, num_epochs
+    )
+    print("JIT warmup complete")
 
     # Use tqdm for progress tracking
     pbar = tqdm(range(start_epoch, num_epochs), desc="Training", initial=start_epoch, total=num_epochs)
@@ -907,7 +829,6 @@ def train_world_model(
         num_chunks = (num_train_batches + gpu_batch_size - 1) // gpu_batch_size
 
         epoch_train_losses = []
-        epoch_reward_losses = []
 
         for chunk_idx in range(num_chunks):
             chunk_start = chunk_idx * gpu_batch_size
@@ -919,40 +840,20 @@ def train_world_model(
             chunk_actions = jnp.stack([b[1] for b in chunk_batch_slice])
             chunk_next_states = jnp.stack([b[2] for b in chunk_batch_slice])
 
-            # TEMPORARY: Only update world model if not in reward-only training mode
-            # TODO_CLEANUP: This allows training reward predictor separately when memory is limited
-            if not train_reward_only:
-                params, opt_state, chunk_train_loss = update_step_batched(
-                    params,
-                    opt_state,
-                    chunk_states,
-                    chunk_actions,
-                    chunk_next_states,
-                    lstm_state_template,
-                    epoch,
-                    num_epochs,
-                )
-                epoch_train_losses.append(chunk_train_loss)
-            else:
-                # Use dummy loss when world model is frozen
-                chunk_train_loss = 0.0
-                epoch_train_losses.append(chunk_train_loss)
-
-            # TEMPORARY: Train reward predictor with transition-based approach
-            # TODO_CLEANUP: This will become standard once migration is complete
-            reward_params, reward_opt_state, chunk_reward_loss = reward_update_step(
-                reward_params,
-                reward_opt_state,
+            params, opt_state, chunk_train_loss = update_step_batched(
+                params,
+                opt_state,
                 chunk_states,
                 chunk_actions,
                 chunk_next_states,
+                lstm_state_template,
+                epoch,
+                num_epochs,
             )
-
-            epoch_reward_losses.append(chunk_reward_loss)
+            epoch_train_losses.append(chunk_train_loss)
 
         # Average losses over all chunks
         train_loss = jnp.mean(jnp.array(epoch_train_losses))
-        reward_loss = jnp.mean(jnp.array(epoch_reward_losses))
 
         if train_loss < best_loss:
             best_loss = train_loss
@@ -1011,11 +912,11 @@ def train_world_model(
                 step_10_error = multistep_errors[9] if len(multistep_errors) >= 10 else multistep_errors[-1]
 
                 current_lr = lr_schedule(epoch)
-                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, Reward Loss: {reward_loss:.6f}, 10-Step MSE: {step_10_error:.6f}, LR: {current_lr:.2e}"
+                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, 10-Step MSE: {step_10_error:.6f}, LR: {current_lr:.2e}"
             else:
                 # Just print training loss without validation
                 current_lr = lr_schedule(epoch)
-                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Reward Loss: {reward_loss:.6f}, LR: {current_lr:.2e}"
+                log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, LR: {current_lr:.2e}"
 
             print(log_message)
 
@@ -1025,17 +926,15 @@ def train_world_model(
 
             # Update progress bar
             if (epoch + 1) % 50 == 0:
-                pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "reward_loss": f"{reward_loss:.6f}", "10-step": f"{step_10_error:.6f}"})
+                pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "10-step": f"{step_10_error:.6f}"})
             else:
-                pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "reward_loss": f"{reward_loss:.6f}"})
+                pbar.set_postfix({"train_loss": f"{train_loss:.6f}"})
 
         # Save checkpoint every save_every epochs
         if checkpoint_file and (epoch + 1) % save_every == 0:
             checkpoint_data = {
                 "params": params,
                 "opt_state": opt_state,
-                "reward_params": reward_params,
-                "reward_opt_state": reward_opt_state,
                 "epoch": epoch,
                 "best_loss": best_loss,
                 "normalization_stats": normalization_stats,
@@ -1046,9 +945,8 @@ def train_world_model(
 
     pbar.close()
     print("Training completed")
-    return params, reward_params, {
+    return params, {
         "final_loss": train_loss,
-        "final_reward_loss": reward_loss,
         "normalization_stats": normalization_stats,
         "best_loss": best_loss,
     }
@@ -1430,19 +1328,28 @@ def main():
             with open(save_path, "rb") as f:
                 saved_data = pickle.load(f)
                 dynamics_params = saved_data["dynamics_params"]
-                reward_predictor_params = saved_data.get("reward_predictor_params", None)
                 normalization_stats = saved_data.get("normalization_stats", None)
         elif os.path.exists(checkpoint_file):
             print(f"Loading checkpoint from {checkpoint_file} (training skipped)...")
             with open(checkpoint_file, "rb") as f:
                 checkpoint_data = pickle.load(f)
                 dynamics_params = checkpoint_data["params"]
-                reward_predictor_params = checkpoint_data["reward_params"]
                 normalization_stats = checkpoint_data.get("normalization_stats", None)
         else:
             print(f"Error: No model found. Looked for {save_path} and {checkpoint_file}")
             print("Please train first.")
             sys.exit(1)
+
+        # Load standalone reward predictor
+        reward_predictor_path = "reward_predictor_standalone.pkl"
+        if os.path.exists(reward_predictor_path):
+            print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+            with open(reward_predictor_path, "rb") as f:
+                reward_data = pickle.load(f)
+                reward_predictor_params = reward_data["params"]
+        else:
+            print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+            reward_predictor_params = None
     else:
         # Load experience data for training
         for i in range(0, experience_its):
@@ -1464,17 +1371,13 @@ def main():
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
 
-        # TEMPORARY: Check if we should only train reward predictor
-        # TODO_CLEANUP: This flag will be useful for memory-constrained training
-        train_reward_only = len(sys.argv) > 1 and sys.argv[1] == "train_reward"
-
         # Train or continue training
         if os.path.exists(save_path):
             print(f"Existing model found. Continuing training from checkpoint...")
         else:
             print("No existing model found. Training a new model...")
 
-        dynamics_params, reward_predictor_params, training_info = train_world_model(
+        dynamics_params, training_info = train_world_model(
             obs_array,
             actions_array,
             next_obs_array,
@@ -1484,7 +1387,6 @@ def main():
             model_scale_factor=model_scale_factor,
             checkpoint_path=save_path,
             save_every=10,
-            train_reward_only=train_reward_only,
         )
         normalization_stats = training_info.get("normalization_stats", None)
 
@@ -1492,7 +1394,6 @@ def main():
             pickle.dump(
                 {
                     "dynamics_params": dynamics_params,
-                    "reward_predictor_params": reward_predictor_params,
                     "normalization_stats": training_info.get(
                         "normalization_stats", None
                     ),
@@ -1500,6 +1401,17 @@ def main():
                 f,
             )
         print(f"Model saved to {save_path}")
+
+        # Load standalone reward predictor
+        reward_predictor_path = "reward_predictor_standalone.pkl"
+        if os.path.exists(reward_predictor_path):
+            print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+            with open(reward_predictor_path, "rb") as f:
+                reward_data = pickle.load(f)
+                reward_predictor_params = reward_data["params"]
+        else:
+            print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+            reward_predictor_params = None
 
     gc.collect()
 

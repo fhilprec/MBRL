@@ -1064,15 +1064,16 @@ def RewardPredictorMLPTransition(model_scale_factor=1):
 def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
     """
     Position-only reward predictor that uses only player/enemy positions and ball positions
-    from the LAST frame only.
+    from ALL frames in the frame stack.
 
     This avoids using score features which are not well predicted by the world model.
     Instead, it learns to predict scoring events based on positions alone.
+    Using all frames provides ball trajectory information to distinguish scoring events.
 
     For Pong with 4-frame stacking (56 total features):
     - Each frame has 14 features
-    - We extract from last frame only: player_y (1), enemy_y (5), ball_x (8), ball_y (9)
-    - Total: 4 features from each state
+    - We extract from ALL frames: player_y (1), enemy_y (5), ball_x (8), ball_y (9)
+    - Total: 16 features from each state (4 frames × 4 features)
 
     Args:
         current_state: Current observation (56 features for 4-frame stack)
@@ -1089,31 +1090,32 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
         if len(next_state.shape) == 1:
             next_state = next_state.reshape(1, -1)
 
-        # Extract only position features from LAST frame (excluding scores)
+        # Extract position features from ALL frames (excluding scores)
         def extract_position_features(state):
-            """Extract only player, enemy, and ball positions from last frame"""
-            # Get last frame's base index
-            base = (frame_stack_size - 1) * 14
+            """Extract player, enemy, and ball positions from ALL frames"""
+            all_features = []
+            for frame_idx in range(frame_stack_size):
+                base = frame_idx * 14
+                player_y = state[..., base + 1:base + 2]  # index 1
+                enemy_y = state[..., base + 5:base + 6]   # index 5
+                ball_x = state[..., base + 8:base + 9]    # index 8
+                ball_y = state[..., base + 9:base + 10]   # index 9
+                all_features.extend([player_y, enemy_y, ball_x, ball_y])
 
-            player_y = state[..., base + 1:base + 2]  # index 1
-            enemy_y = state[..., base + 5:base + 6]   # index 5
-            ball_x = state[..., base + 8:base + 9]    # index 8
-            ball_y = state[..., base + 9:base + 10]   # index 9
-
-            return jnp.concatenate([player_y, enemy_y, ball_x, ball_y], axis=-1)
+            return jnp.concatenate(all_features, axis=-1)
 
         current_positions = extract_position_features(current_state)
         next_positions = extract_position_features(next_state)
 
 
-        # Concatenate position features and action: [current_positions, action, next_positions]
-        # Total: 4 + 6 + 4 = 14 features
+        # Concatenate position features from all frames
+        # Total: 16 + 16 = 32 features (4 features × 4 frames × 2 states)
         x = jnp.concatenate([current_positions, next_positions], axis=-1)
 
-        # Small MLP architecture for simple position-based prediction
-        x = hk.Linear(int(32))(x)
+        # MLP architecture for trajectory-based prediction
+        x = hk.Linear(int(64))(x)
         x = jax.nn.relu(x)
-        x = hk.Linear(int(16))(x)
+        x = hk.Linear(int(32))(x)
         x = jax.nn.relu(x)
 
         # Output layer - single scalar reward
