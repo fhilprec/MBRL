@@ -969,7 +969,7 @@ def compare_real_vs_model(
     model_path=None,
     show_only_one_step = False,
     reward_predictor_params=None,
-    calc_score_based_reward: bool = False,
+    calc_score_based_reward: bool = True,
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -1014,19 +1014,27 @@ def compare_real_vs_model(
         if reward_predictor_params is not None:
             reward_model_viz = RewardPredictorMLPPositionOnly(model_scale_factor)
             # Need previous observation for transition-based prediction
-            if step > 0:
-                prev_real_obs = obs[step - 1] if step > 0 else real_obs
-                predicted_reward = reward_model_viz.apply(
-                    reward_predictor_params, rng, prev_real_obs, action, real_obs
-                )
-                predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
-                # rounded_reward = jnp.round(predicted_reward * 2) / 2
-                pred_val = float(predicted_reward)
-                if abs(pred_val) > 0.0:
-                    if pred_val > 0:
-                        print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val}\033[0m")
-                    else:
-                        print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val}\033[0m")
+            # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
+            prev_real_obs = obs[step]
+            raw_prediction = reward_model_viz.apply(
+                reward_predictor_params, rng, prev_real_obs, action, real_obs
+            )
+            raw_val = float(jnp.squeeze(raw_prediction))
+            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(4/3)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            # rounded_reward = jnp.round(predicted_reward * 2) / 2
+            pred_val = float(predicted_reward)
+
+            # Debug: print ball_x from prev and current obs to understand what model sees
+            frame_stack_size = 4
+            base = (frame_stack_size - 1) * 14
+            prev_ball_x = float(prev_real_obs[base + 8])
+            curr_ball_x = float(real_obs[base + 8])
+
+            if abs(pred_val) > 0.0:
+                if pred_val > 0:
+                    print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                else:
+                    print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
 
         if error > 20 and render_debugging:
             print("-" * 100)

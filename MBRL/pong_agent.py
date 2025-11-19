@@ -618,10 +618,10 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze((predicted_reward*(4/3)/2)), -1.0, 1.0))
 
                 # Apply confidence weighting: lower confidence for later steps
-                reward_predictor_reward = predicted_reward_clipped * confidence
+                reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
 
             # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
             # Hand-crafted reward provides stable gradient signal throughout

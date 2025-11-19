@@ -1107,7 +1107,6 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
         current_positions = extract_position_features(current_state)
         next_positions = extract_position_features(next_state)
 
-
         # Concatenate position features from all frames
         # Total: 16 + 16 = 32 features (4 features × 4 frames × 2 states)
         x = jnp.concatenate([current_positions, next_positions], axis=-1)

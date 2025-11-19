@@ -75,6 +75,42 @@ def calculate_position_based_reward(flat_obs, next_flat_obs, frame_stack_size=4)
     return reward
 
 
+def calculate_edge_crossing_reward(flat_obs, next_flat_obs, frame_stack_size=4):
+    """
+    Calculate reward based on ball being at extreme positions.
+
+    This labels frames where the ball is at the edge of the field,
+    indicating a score just happened or is about to happen.
+
+    Ball x ranges 0-16:
+    - x near 0: player's side (left)
+    - x near 16: enemy's side (right)
+
+    Scoring detection (simple position thresholds):
+    - Ball at very high x (>14): player scored (+1)
+    - Ball at very low x (<1): enemy scored (-1)
+
+    This ensures the model only predicts scores when ball is at extreme edges,
+    never when ball is in the middle (hitting paddle).
+    """
+    # Get ball_x from last frame
+    base = (frame_stack_size - 1) * 14
+    ball_x_curr = flat_obs[..., base + 8]
+
+    # Simple position-based detection
+    # Player scores when ball reaches enemy edge
+    player_scored = ball_x_curr > 14.0
+
+    # Enemy scores when ball reaches player edge
+    enemy_scored = ball_x_curr < 1.0
+
+    # Convert to reward
+    reward = jnp.where(player_scored, 1.0,
+                       jnp.where(enemy_scored, -1.0, 0.0))
+
+    return reward
+
+
 def load_experience_data(num_files=5):
     """Load experience data from pickle files."""
     all_obs = []
@@ -163,8 +199,21 @@ def create_training_data(obs, next_obs, frame_stack_size=4):
         high_curr = ball_x_curr[reset_to_high]
         print(f"  Prior ball_x: min={jnp.min(high_curr):.1f}, max={jnp.max(high_curr):.1f}, mean={jnp.mean(high_curr):.1f}")
 
-    # Calculate rewards based on score changes (more training data than position-based)
+    # Calculate rewards using score-based detection
+    # This correctly identifies scoring events by actual score changes
+    # (edge-crossing detection gives false positives when ball_x=0 during game start/reset)
     rewards = calculate_score_based_reward(obs, next_obs)
+
+    # Compare with score-based for diagnostics
+    score_rewards = calculate_score_based_reward(obs, next_obs)
+    edge_pos = jnp.sum(rewards > 0)
+    edge_neg = jnp.sum(rewards < 0)
+    score_pos = jnp.sum(score_rewards > 0)
+    score_neg = jnp.sum(score_rewards < 0)
+
+    print(f"\nEdge-crossing vs Score-based comparison:")
+    print(f"  Edge +1 events: {edge_pos}, Score +1 events: {score_pos}")
+    print(f"  Edge -1 events: {edge_neg}, Score -1 events: {score_neg}")
 
     # Count reward distribution
     num_positive = jnp.sum(rewards > 0)
