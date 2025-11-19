@@ -1067,10 +1067,11 @@ def compare_real_vs_model(
     starting_step: int = 0,
     render_debugging: bool = False,
     frame_stack_size: int = 4,
-    model_scale_factor=4,
+    model_scale_factor=model_scale_factor,
     model_path=None,
     show_only_one_step = False,
     reward_predictor_params=None,
+    calc_score_based_reward: bool = False,
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -1093,7 +1094,7 @@ def compare_real_vs_model(
 
 
         #for debugging purposes
-        if calc_score_reward:
+        if calc_score_based_reward:
             prev_real_obs = obs[step - 1] if step > 0 else real_obs
 
             old_score =  prev_real_obs[-5]-prev_real_obs[-1]
@@ -1103,13 +1104,17 @@ def compare_real_vs_model(
             score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
 
             if score_reward != 0:
-                print(f"Step {step}, Score Reward: {score_reward}")
+                score_val = float(score_reward)
+                if score_val > 0:
+                    print(f"\033[92mStep {step}, Score Reward: {score_val}\033[0m")
+                elif score_val < 0:
+                    print(f"\033[91mStep {step}, Score Reward: {score_val}\033[0m")
 
         # print(pred_obs)
         # TEMPORARY: Using transition-based reward predictor for visualization
         # TODO_CLEANUP: This will become standard once migration is complete
         if reward_predictor_params is not None:
-            reward_model_viz = RewardPredictorMLPTransition(model_scale_factor)
+            reward_model_viz = RewardPredictorMLPPositionOnly(model_scale_factor)
             # Need previous observation for transition-based prediction
             if step > 0:
                 prev_real_obs = obs[step - 1] if step > 0 else real_obs
@@ -1118,8 +1123,12 @@ def compare_real_vs_model(
                 )
                 predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
                 # rounded_reward = jnp.round(predicted_reward * 2) / 2
-                if abs(predicted_reward) > 0.0:
-                    print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
+                pred_val = float(predicted_reward)
+                if abs(pred_val) > 0.0:
+                    if pred_val > 0:
+                        print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val}\033[0m")
+                    else:
+                        print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val}\033[0m")
 
         if error > 20 and render_debugging:
             print("-" * 100)

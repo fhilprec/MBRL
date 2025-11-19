@@ -29,7 +29,7 @@ from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrappe
 
 import random
 
-
+MODEL_SCALE_FACTOR = 5
 
 def lambda_return_dreamerv2(
     rewards: jnp.ndarray,
@@ -514,7 +514,7 @@ def generate_imagined_rollouts(
     discount: float = 0.99,
     key: jax.random.PRNGKey = None,
     reward_predictor_params: Any = None,
-    model_scale_factor: int = 2,
+    model_scale_factor: int = MODEL_SCALE_FACTOR,
 ) -> Tuple[
     jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
 ]:
@@ -608,7 +608,7 @@ def generate_imagined_rollouts(
 
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
+                reward_model = RewardPredictorMLPPositionOnly(MODEL_SCALE_FACTOR, frame_stack_size=4)
                 # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 predicted_reward = reward_model.apply(
                     reward_predictor_params,
@@ -740,7 +740,7 @@ def generate_imagined_rollouts(
     )
 
 
-def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=2):
+def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
     """Run one complete episode using JAX scan with masking."""
     reset_key, step_key = jax.random.split(episode_key)
     obs, state = env.reset(reset_key)
@@ -776,7 +776,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Still apply slight confidence weighting for consistency, but higher baseline
             reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
+                reward_model = RewardPredictorMLPPositionOnly(MODEL_SCALE_FACTOR, frame_stack_size=4)
                 # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 rng_reward = jax.random.PRNGKey(0)
                 predicted_reward = reward_model.apply(
@@ -851,7 +851,7 @@ def generate_real_rollouts(
     initial_observations = None,
     num_rollouts: int = 3000,
     reward_predictor_params: Any = None,
-    model_scale_factor: int = 2,
+    model_scale_factor: int = MODEL_SCALE_FACTOR,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Collect episodes with JAX vmap and reshape to (rollout_length, num_rollouts, features)."""
     
@@ -867,7 +867,7 @@ def generate_real_rollouts(
     
     # Run episodes in parallel with vmap
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=MODEL_SCALE_FACTOR),
         in_axes=0
     )
 
@@ -1409,7 +1409,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
             actions=actions_array,
             frame_stack_size=4,
             clock_speed=50,
-            model_scale_factor=5,
+            model_scale_factor=MODEL_SCALE_FACTOR,
             reward_predictor_params=reward_predictor_params,
         )
 
@@ -1448,7 +1448,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 def main():
 
     training_runs = 1000
-    model_scale_factor = 5  # Same as in worldmodelPong.py
+    model_scale_factor = MODEL_SCALE_FACTOR  # Same as in worldmodelPong.py
 
     training_params = {
         "action_dim": 6,
@@ -1610,7 +1610,7 @@ def main():
             discount=training_params["discount"],
             key=jax.random.PRNGKey(SEED),
             reward_predictor_params=reward_predictor_params,
-            model_scale_factor=model_scale_factor,
+            model_scale_factor=MODEL_SCALE_FACTOR,
         )
 
     
@@ -1645,11 +1645,13 @@ def main():
                 compare_real_vs_model(
                     steps_into_future=0,
                     obs=obs,
+                    num_steps=obs.shape[0],
                     actions=sel_actions,
                     frame_stack_size=4,
                     clock_speed=5,
-                    model_scale_factor=model_scale_factor,
+                    model_scale_factor=MODEL_SCALE_FACTOR,
                     reward_predictor_params=reward_predictor_params,
+                    calc_score_based_reward=True
                 )
 
         print(
