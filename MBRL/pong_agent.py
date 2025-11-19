@@ -608,8 +608,8 @@ def generate_imagined_rollouts(
 
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPTransition(model_scale_factor)
-                # RewardPredictorMLPTransition expects (current_state, action, next_state)
+                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
+                # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 predicted_reward = reward_model.apply(
                     reward_predictor_params,
                     None,
@@ -776,8 +776,8 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Still apply slight confidence weighting for consistency, but higher baseline
             reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPTransition(model_scale_factor)
-                # RewardPredictorMLPTransition expects (current_state, action, next_state)
+                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
+                # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 rng_reward = jax.random.PRNGKey(0)
                 predicted_reward = reward_model.apply(
                     reward_predictor_params,

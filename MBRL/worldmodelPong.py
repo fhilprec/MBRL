@@ -453,9 +453,9 @@ def train_world_model(
     )
 
     model = MODEL_ARCHITECTURE(model_scale_factor)
-    # TEMPORARY: Using transition-based reward predictor during migration
-    # TODO_CLEANUP: Once migration is complete, this will be the standard approach
-    reward_model = RewardPredictorMLPTransition(model_scale_factor)
+    # Position-only reward predictor that uses only player/enemy/ball positions
+    # This avoids using score features which are not well predicted by the world model
+    reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size)
 
     lr_schedule = optax.cosine_decay_schedule(
         init_value=learning_rate,
@@ -494,13 +494,13 @@ def train_world_model(
             checkpoint_data = pickle.load(f)
             params = checkpoint_data["params"]
             opt_state = checkpoint_data["opt_state"]
-            # TODO_TRANSITION_CLEANUP: Remove this block after transition to new reward model is complete
             # Reinitialize reward model from scratch (ignoring old checkpoint params)
-            # This is needed because the reward model architecture changed (old: 56 input dim, new: 118)
+            # This is needed because the reward model architecture changed to position-only inputs
+            # (old: full 56 features per state, new: only 16 position features per state)
             rng, reward_rng = jax.random.split(rng)
             reward_params = reward_model.init(reward_rng, dummy_state, dummy_action, dummy_next_state)
             reward_opt_state = reward_optimizer.init(reward_params)
-            print("Note: Reward model reinitialized from scratch (ignoring checkpoint params due to architecture change)")
+            print("Note: Reward model reinitialized from scratch (position-only architecture, ignoring old checkpoint params)")
             start_epoch = checkpoint_data["epoch"] + 1
             best_loss = checkpoint_data.get("best_loss", float("inf"))
             normalization_stats = checkpoint_data.get("normalization_stats", normalization_stats)
@@ -1092,10 +1092,9 @@ def compare_real_vs_model(
         # )
 
         # print(pred_obs)
-        # TEMPORARY: Using transition-based reward predictor for visualization
-        # TODO_CLEANUP: This will become standard once migration is complete
+        # Position-only reward predictor for visualization
         if reward_predictor_params is not None:
-            reward_model_viz = RewardPredictorMLPTransition(model_scale_factor)
+            reward_model_viz = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size)
             # Need previous observation for transition-based prediction
             if step > 0:
                 prev_real_obs = obs[step - 1] if step > 0 else real_obs
@@ -1103,9 +1102,17 @@ def compare_real_vs_model(
                     reward_predictor_params, rng, prev_real_obs, action, real_obs
                 )
                 predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
-                # rounded_reward = jnp.round(predicted_reward * 2) / 2
-                if abs(predicted_reward) > 0.0:
-                    print(f"Step {step}, Reward Model Prediction: {predicted_reward}")
+                # Convert to python float for comparison/printing
+                pr = float(predicted_reward)
+                if abs(pr) > 0.0:
+                    if pr == 1.0:
+                        color = "\033[92m"  # green
+                    elif pr == -1.0:
+                        color = "\033[91m"  # red
+                    else:
+                        color = "\033[0m"
+                    reset = "\033[0m"
+                    print(f"Step {step}, Reward Model Prediction: {color}{pr}{reset}")
 
         if error > 20 and render_debugging:
             print("-" * 100)
