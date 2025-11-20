@@ -1090,28 +1090,31 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
         if len(next_state.shape) == 1:
             next_state = next_state.reshape(1, -1)
 
-        # Extract position features from ALL frames (excluding scores)
-        def extract_position_features(state):
-            """Extract player, enemy, and ball positions from ALL frames"""
-            all_features = []
-            for frame_idx in range(frame_stack_size):
-                player_y = state[..., 7 - frame_idx : 7 - frame_idx + 1]  # index 1
-                enemy_y = state[..., 23 - frame_idx : 23 - frame_idx + 1]   # index 5
-                ball_x = state[..., -21-frame_idx : -21-frame_idx + 1]    # index 8
-                
-                ball_y = state[..., -17-frame_idx : -17-frame_idx + 1]   # index 9
-                all_features.extend([player_y, enemy_y, ball_x, ball_y])
+        # Extract position features from the latest frame only (excluding scores)
+        # For frame stack, we extract from the last frame: indices 3::4 gives us 14 features
+        # From those 14 features: player_y (1), enemy_y (5), ball_x (8), ball_y (9)
 
-            return jnp.concatenate(all_features, axis=-1)
+        # Extract the latest frame from the stack
+        if frame_stack_size > 1:
+            # Get the latest frame by taking every frame_stack_size'th element starting from frame_stack_size-1
+            next_latest = next_state[:, (frame_stack_size - 1)::frame_stack_size]
+        else:
+            next_latest = next_state
 
-        current_positions = extract_position_features(current_state)
-        next_positions = extract_position_features(next_state)
+        # Extract position features using slice notation to preserve 2D shape (batch_size, 1)
+        # Each slice returns (batch_size, 1) shape
+        player_y = next_latest[:, 1:2]
+        enemy_y = next_latest[:, 5:6]
+        ball_x = next_latest[:, 8:9]
+        ball_y = next_latest[:, 9:10]
 
-        # Concatenate position features from all frames
-        # Total: 16 + 16 = 32 features (4 features × 4 frames × 2 states)
-        x = jnp.concatenate([current_positions, next_positions], axis=-1)
+        # Concatenate along axis=1 to get (batch_size, 4)
+        next_positions = jnp.concatenate([player_y, enemy_y, ball_x, ball_y], axis=1)
 
-        # MLP architecture for trajectory-based prediction
+        # next_positions should have shape (batch_size, 4)
+        x = next_positions
+
+        # MLP architecture for position-based reward prediction
         x = hk.Linear(int(64))(x)
         x = jax.nn.relu(x)
         x = hk.Linear(int(32))(x)

@@ -618,7 +618,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze((predicted_reward*(4/3)/2)), -1.0, 1.0))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -787,7 +787,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                     next_flat_obs[None, :]   # next state (REAL - no model errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1.0, 1.0))
+                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
 
                 # For real rollouts, use high confidence (0.9) since next_state is accurate
                 # This helps the reward predictor contribute more to policy learning
@@ -1661,7 +1661,7 @@ def main():
                     clock_speed=5,
                     model_scale_factor=MODEL_SCALE_FACTOR,
                     reward_predictor_params=reward_predictor_params,
-                    calc_score_based_reward=True
+                    calc_score_based_reward=False
                 )
 
         print(

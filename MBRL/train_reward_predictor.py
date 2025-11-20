@@ -1,6 +1,15 @@
 """
 Standalone reward predictor training script.
-Trains the reward predictor to predict score-based rewards from position features only.
+Trains the reward predictor to predict position-based rewards:
+  - +1 when ball goes past enemy paddle (x < 16) → Player scores
+  - -1 when ball goes past player paddle (x > 140) → Enemy scores
+  -  0 when ball is in play (16 <= x <= 140)
+
+Coordinate system: WIDTH=160 pixels
+  - Enemy paddle: x=16 (left side)
+  - Player paddle: x=140 (right side)
+
+This trains the model to recognize scoring events purely from ball position.
 """
 
 import os
@@ -15,94 +24,44 @@ from tqdm import tqdm
 from model_architectures import RewardPredictorMLPPositionOnly
 
 
-def calculate_score_based_reward(flat_obs, next_flat_obs):
+def calculate_position_based_reward(next_flat_obs, frame_stack_size=4):
     """
-    Calculate reward based on score difference between observations.
-    Returns +1 if player scored, -1 if enemy scored, 0 otherwise.
+    Calculate reward PURELY based on ball position in next_obs.
+
+    Ball x coordinate system (pixel coordinates, WIDTH=160):
+    - Enemy paddle at x=16 (left side)
+    - Player paddle at x=140 (right side)
+    - Ball center at x=78
+
+    Scoring logic:
+    - x < 16: Ball past enemy paddle → Enemy misses → PLAYER SCORED (+1)
+    - x > 140: Ball past player paddle → Player misses → ENEMY SCORED (-1)
+    - Otherwise: Ball in play → 0
+
+    This is the ONLY reward function used for training.
+    The model learns to predict scoring purely from ball positions.
+
+    Frame-stacked observations are INTERLEAVED:
+    [f1_e0, f2_e0, f3_e0, f4_e0, f1_e1, f2_e1, ...]
+    To extract the last frame, take every frame_stack_size'th element
+    starting from (frame_stack_size - 1).
     """
-    # flat_obs[-5] is player score, flat_obs[-1] is enemy score
-    player_score_old = flat_obs[..., -5]
-    enemy_score_old = flat_obs[..., -1]
-    player_score_new = next_flat_obs[..., -5]
-    enemy_score_new = next_flat_obs[..., -1]
+    # Extract the latest frame from the interleaved observation
+    # Takes indices [3, 7, 11, 15, ...] for frame_stack_size=4
+    last_frame = next_flat_obs[..., (frame_stack_size - 1)::frame_stack_size]
 
-    # Calculate score changes
-    player_scored = player_score_new - player_score_old
-    enemy_scored = enemy_score_new - enemy_score_old
+    # Ball x is at index 8 in the flat observation structure:
+    # [player.x, player.y, player.width, player.height,  # 0-3
+    #  enemy.x, enemy.y, enemy.width, enemy.height,      # 4-7
+    #  ball.x, ball.y, ball.width, ball.height,          # 8-11
+    #  score_player, score_enemy]                         # 12-13
+    ball_x = last_frame[..., 8]
 
-    # Reward is +1 if player scored, -1 if enemy scored, 0 otherwise
-    score_reward = player_scored - enemy_scored
+    # Player scores when ball goes past enemy paddle (left side)
+    player_scored = ball_x < 16.0
 
-    # Filter out rewards where abs > 1 (safety check)
-    score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
-
-    return score_reward
-
-
-def calculate_position_based_reward(flat_obs, next_flat_obs, frame_stack_size=4):
-    """
-    Calculate reward based on ball reaching extreme positions.
-
-    Ball x ranges 0-16. We assign reward when ball is at edges:
-    - Ball at very high x (>12): ball near/past enemy paddle → +1
-    - Ball at very low x (0): ball near/past player paddle → -1
-
-    This ensures model learns to associate extreme positions with scoring,
-    and will never predict scores when ball is in the middle.
-    """
-    # Get ball_x from last frame
-    base = (frame_stack_size - 1) * 14
-    ball_x_curr = flat_obs[..., base + 8]
-    ball_x_next = next_flat_obs[..., base + 8]
-
-    # Calculate the change in ball position
-    ball_x_delta = ball_x_next - ball_x_curr
-
-    # Detect scoring based on large backward jumps (resets)
-    # All scoring events cause ball to reset with a large negative delta
-    is_reset = ball_x_delta < -3.0
-
-    # Classify by where ball was before reset
-    # Ball at high x (>6) before reset: ball was on far side → player scored
-    # Ball at moderate-low x (2-6) before reset: ball was on near side → enemy scored
-    player_scored = is_reset & (ball_x_curr > 6.0)
-    enemy_scored = is_reset & (ball_x_curr >= 2.0) & (ball_x_curr <= 6.0)
-
-    # Convert to reward
-    reward = jnp.where(player_scored, 1.0,
-                       jnp.where(enemy_scored, -1.0, 0.0))
-
-    return reward
-
-
-def calculate_edge_crossing_reward(flat_obs, next_flat_obs, frame_stack_size=4):
-    """
-    Calculate reward based on ball being at extreme positions.
-
-    This labels frames where the ball is at the edge of the field,
-    indicating a score just happened or is about to happen.
-
-    Ball x ranges 0-16:
-    - x near 0: player's side (left)
-    - x near 16: enemy's side (right)
-
-    Scoring detection (simple position thresholds):
-    - Ball at very high x (>14): player scored (+1)
-    - Ball at very low x (<1): enemy scored (-1)
-
-    This ensures the model only predicts scores when ball is at extreme edges,
-    never when ball is in the middle (hitting paddle).
-    """
-    # Get ball_x from last frame
-    base = (frame_stack_size - 1) * 14
-    ball_x_curr = flat_obs[..., base + 8]
-
-    # Simple position-based detection
-    # Player scores when ball reaches enemy edge
-    player_scored = ball_x_curr > 14.0
-
-    # Enemy scores when ball reaches player edge
-    enemy_scored = ball_x_curr < 1.0
+    # Enemy scores when ball goes past player paddle (right side)
+    enemy_scored = ball_x > 140.0
 
     # Convert to reward
     reward = jnp.where(player_scored, 1.0,
@@ -141,109 +100,48 @@ def create_training_data(obs, next_obs, frame_stack_size=4):
     Create input/output arrays for reward predictor training.
 
     Input: (current_obs, next_obs) pairs
-    Output: position-based reward (-1, 0, or +1) based on ball crossing edges
+    Output: position-based reward (-1, 0, or +1) based on ball position in next_obs
+
+    Reward assignment (pixel coordinates, WIDTH=160):
+    - +1 when ball_x < 16 (past enemy paddle = player scored)
+    - -1 when ball_x > 140 (past player paddle = enemy scored)
+    -  0 otherwise (ball in play)
     """
-    # Debug: find actual ball_x range in data
-    base = (frame_stack_size - 1) * 14
-    all_ball_x = jnp.concatenate([obs[:, base + 8], next_obs[:, base + 8]])
-    print(f"\nBall X statistics across all data:")
-    print(f"  Min: {jnp.min(all_ball_x):.1f}")
-    print(f"  Max: {jnp.max(all_ball_x):.1f}")
-    print(f"  Mean: {jnp.mean(all_ball_x):.1f}")
-
-    # Check score-based rewards to understand actual scoring events
-    score_rewards = calculate_score_based_reward(obs, next_obs)
-    score_pos_mask = score_rewards > 0
-    score_neg_mask = score_rewards < 0
-
-    print(f"\nScore-based reward analysis:")
-    print(f"  +1 events (player scored): {jnp.sum(score_pos_mask)}")
-    print(f"  -1 events (enemy scored): {jnp.sum(score_neg_mask)}")
-
-    ball_x_curr = obs[:, base + 8]
-    ball_x_next = next_obs[:, base + 8]
-
-    if jnp.sum(score_pos_mask) > 0:
-        print(f"\nWhen player scores (+1):")
-        print(f"  Current ball_x: min={jnp.min(ball_x_curr[score_pos_mask]):.1f}, max={jnp.max(ball_x_curr[score_pos_mask]):.1f}, mean={jnp.mean(ball_x_curr[score_pos_mask]):.1f}")
-        print(f"  Next ball_x: min={jnp.min(ball_x_next[score_pos_mask]):.1f}, max={jnp.max(ball_x_next[score_pos_mask]):.1f}, mean={jnp.mean(ball_x_next[score_pos_mask]):.1f}")
-
-    if jnp.sum(score_neg_mask) > 0:
-        print(f"\nWhen enemy scores (-1):")
-        print(f"  Current ball_x: min={jnp.min(ball_x_curr[score_neg_mask]):.1f}, max={jnp.max(ball_x_curr[score_neg_mask]):.1f}, mean={jnp.mean(ball_x_curr[score_neg_mask]):.1f}")
-        print(f"  Next ball_x: min={jnp.min(ball_x_next[score_neg_mask]):.1f}, max={jnp.max(ball_x_next[score_neg_mask]):.1f}, mean={jnp.mean(ball_x_next[score_neg_mask]):.1f}")
-
-    # Analyze ball_x jumps (resets)
-    ball_x_delta = ball_x_next - ball_x_curr
-    print(f"\nBall X delta (next - curr) statistics:")
-    print(f"  Min: {jnp.min(ball_x_delta):.1f}")
-    print(f"  Max: {jnp.max(ball_x_delta):.1f}")
-
-    # Find large jumps
-    large_neg = ball_x_delta < -5
-    large_pos = ball_x_delta > 5
-    print(f"  Large negative jumps (<-5): {jnp.sum(large_neg)}")
-    print(f"  Large positive jumps (>5): {jnp.sum(large_pos)}")
-
-    # Check transitions to 0
-    reset_to_zero = ball_x_next == 0
-    print(f"\nTransitions to ball_x=0: {jnp.sum(reset_to_zero)}")
-    if jnp.sum(reset_to_zero) > 0:
-        reset_curr = ball_x_curr[reset_to_zero]
-        print(f"  Prior ball_x: min={jnp.min(reset_curr):.1f}, max={jnp.max(reset_curr):.1f}, mean={jnp.mean(reset_curr):.1f}")
-
-    # Check transitions to high values
-    reset_to_high = ball_x_next > 14
-    print(f"Transitions to ball_x>14: {jnp.sum(reset_to_high)}")
-    if jnp.sum(reset_to_high) > 0:
-        high_curr = ball_x_curr[reset_to_high]
-        print(f"  Prior ball_x: min={jnp.min(high_curr):.1f}, max={jnp.max(high_curr):.1f}, mean={jnp.mean(high_curr):.1f}")
-
-    # Calculate rewards using score-based detection
-    # This correctly identifies scoring events by actual score changes
-    # (edge-crossing detection gives false positives when ball_x=0 during game start/reset)
-    rewards = calculate_score_based_reward(obs, next_obs)
-
-    # Compare with score-based for diagnostics
-    score_rewards = calculate_score_based_reward(obs, next_obs)
-    edge_pos = jnp.sum(rewards > 0)
-    edge_neg = jnp.sum(rewards < 0)
-    score_pos = jnp.sum(score_rewards > 0)
-    score_neg = jnp.sum(score_rewards < 0)
-
-    print(f"\nEdge-crossing vs Score-based comparison:")
-    print(f"  Edge +1 events: {edge_pos}, Score +1 events: {score_pos}")
-    print(f"  Edge -1 events: {edge_neg}, Score -1 events: {score_neg}")
+    # Calculate rewards using ONLY ball position in next_obs
+    rewards = calculate_position_based_reward(next_obs, frame_stack_size)
 
     # Count reward distribution
     num_positive = jnp.sum(rewards > 0)
     num_negative = jnp.sum(rewards < 0)
     num_zero = jnp.sum(rewards == 0)
 
-    print(f"Reward distribution (score-based):")
-    print(f"  +1 (player scored): {num_positive}")
-    print(f"  -1 (enemy scored): {num_negative}")
-    print(f"   0 (no score): {num_zero}")
+    print(f"\nPosition-based reward distribution:")
+    print(f"  +1 (ball past enemy paddle, x<16): {num_positive}")
+    print(f"  -1 (ball past player paddle, x>140): {num_negative}")
+    print(f"   0 (ball in play, 16<=x<=140): {num_zero}")
 
-    # Debug: show ball positions for +1 vs -1 cases
-    base = (frame_stack_size - 1) * 14  # Last frame
+    # Show ball position statistics for labeled cases
+    # Extract last frame and get ball_x (same as in reward calculation)
+    last_frame_next = next_obs[:, (frame_stack_size - 1)::frame_stack_size]
+    ball_x_next = last_frame_next[:, 8]
 
     pos_mask = rewards > 0
     neg_mask = rewards < 0
 
     if jnp.sum(pos_mask) > 0:
-        pos_ball_x_curr = obs[pos_mask, base + 8]
-        pos_ball_x_next = next_obs[pos_mask, base + 8]
         print(f"\n+1 cases (player scored):")
-        print(f"  Current ball_x: min={jnp.min(pos_ball_x_curr):.1f}, max={jnp.max(pos_ball_x_curr):.1f}, mean={jnp.mean(pos_ball_x_curr):.1f}")
-        print(f"  Next ball_x: min={jnp.min(pos_ball_x_next):.1f}, max={jnp.max(pos_ball_x_next):.1f}, mean={jnp.mean(pos_ball_x_next):.1f}")
+        print(f"  Ball X range: {jnp.min(ball_x_next[pos_mask]):.1f} - {jnp.max(ball_x_next[pos_mask]):.1f}")
+        print(f"  Mean: {jnp.mean(ball_x_next[pos_mask]):.1f}")
 
     if jnp.sum(neg_mask) > 0:
-        neg_ball_x_curr = obs[neg_mask, base + 8]
-        neg_ball_x_next = next_obs[neg_mask, base + 8]
         print(f"\n-1 cases (enemy scored):")
-        print(f"  Current ball_x: min={jnp.min(neg_ball_x_curr):.1f}, max={jnp.max(neg_ball_x_curr):.1f}, mean={jnp.mean(neg_ball_x_curr):.1f}")
-        print(f"  Next ball_x: min={jnp.min(neg_ball_x_next):.1f}, max={jnp.max(neg_ball_x_next):.1f}, mean={jnp.mean(neg_ball_x_next):.1f}")
+        print(f"  Ball X range: {jnp.min(ball_x_next[neg_mask]):.1f} - {jnp.max(ball_x_next[neg_mask]):.1f}")
+        print(f"  Mean: {jnp.mean(ball_x_next[neg_mask]):.1f}")
+
+    print(f"\nOverall ball_x statistics:")
+    print(f"  Min: {jnp.min(ball_x_next):.1f}")
+    print(f"  Max: {jnp.max(ball_x_next):.1f}")
+    print(f"  Mean: {jnp.mean(ball_x_next):.1f}")
 
     return obs, next_obs, rewards
 
@@ -448,7 +346,12 @@ def train_reward_predictor(
 
 def main():
     print("=" * 60)
-    print("Reward Predictor Training")
+    print("Reward Predictor Training (Position-Based)")
+    print("=" * 60)
+    print("Reward definition:")
+    print("  +1: Ball past enemy paddle (x < 16) → Player scores")
+    print("  -1: Ball past player paddle (x > 140) → Enemy scores")
+    print("   0: Ball in play (16 <= x <= 140)")
     print("=" * 60)
 
     # Load data
@@ -464,7 +367,7 @@ def main():
         rewards=rewards,
         learning_rate=1e-3,
         batch_size=512,
-        num_epochs=500,
+        num_epochs=100,
         frame_stack_size=4,
         save_path="reward_predictor_standalone.pkl",
     )
