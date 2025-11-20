@@ -1027,9 +1027,9 @@ def compare_real_vs_model(
             # Debug: print ball_x from prev and current obs to understand what model sees
             frame_stack_size = 4
             base = (frame_stack_size - 1) * 14
-            prev_ball_x = float(prev_real_obs[base + 8])
-            curr_ball_x = float(real_obs[base + 8])
-
+            prev_ball_x = float(prev_real_obs[-21])
+            curr_ball_x = float(real_obs[-21])
+            print(curr_ball_x)
             if abs(pred_val) > 0.0:
                 if pred_val > 0:
                     print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")

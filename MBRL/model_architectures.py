@@ -1095,11 +1095,11 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
             """Extract player, enemy, and ball positions from ALL frames"""
             all_features = []
             for frame_idx in range(frame_stack_size):
-                base = frame_idx * 14
-                player_y = state[..., base + 1:base + 2]  # index 1
-                enemy_y = state[..., base + 5:base + 6]   # index 5
-                ball_x = state[..., base + 8:base + 9]    # index 8
-                ball_y = state[..., base + 9:base + 10]   # index 9
+                player_y = state[..., 7 - frame_idx : 7 - frame_idx + 1]  # index 1
+                enemy_y = state[..., 23 - frame_idx : 23 - frame_idx + 1]   # index 5
+                ball_x = state[..., -21-frame_idx : -21-frame_idx + 1]    # index 8
+                
+                ball_y = state[..., -17-frame_idx : -17-frame_idx + 1]   # index 9
                 all_features.extend([player_y, enemy_y, ball_x, ball_y])
 
             return jnp.concatenate(all_features, axis=-1)
