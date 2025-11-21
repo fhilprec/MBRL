@@ -372,7 +372,7 @@ def train_world_model(
     learning_rate=1e-4,
     batch_size=4,
     num_epochs=1000,
-    sequence_length=32,
+    sequence_length=6,
     episode_boundaries=None,
     frame_stack_size=4,
     model_scale_factor=1,
