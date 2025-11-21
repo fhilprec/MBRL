@@ -433,6 +433,23 @@ def train_world_model(
     batches = create_sequential_batches()
     print(f"Created {len(batches)} sequential batches of size {sequence_length}")
 
+    # Debug: Check for shape consistency
+    if batches:
+        shapes = set(b[0].shape for b in batches)
+        print(f"Unique state shapes in batches: {shapes}")
+        if len(shapes) > 1:
+            print("WARNING: Inconsistent batch shapes detected!")
+            # Filter to keep only the most common shape
+            shape_counts = {}
+            for b in batches:
+                s = b[0].shape
+                shape_counts[s] = shape_counts.get(s, 0) + 1
+            most_common_shape = max(shape_counts, key=shape_counts.get)
+            print(f"Most common shape: {most_common_shape} ({shape_counts[most_common_shape]} batches)")
+            print(f"Filtering out batches with other shapes...")
+            batches = [b for b in batches if b[0].shape == most_common_shape]
+            print(f"Remaining batches: {len(batches)}")
+
     total_batches = len(batches)
     train_size = int(0.8 * total_batches)
 
