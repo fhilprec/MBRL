@@ -599,37 +599,8 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            # Compute improved pong reward (hand-crafted, always reliable)
-            improved_reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
-
-            # HYBRID REWARD: Confidence-weighted blending of hand-crafted + predicted rewards
-            # Confidence decreases as we get further into the rollout (world model accumulates errors)
-            # Early steps (0-2): confidence = 0.9-0.7  (trust predictor more)
-            # Mid steps (3-4):   confidence = 0.5-0.3  (trust both equally)
-            # Late steps (5+):   confidence = 0.2      (trust hand-crafted more)
-            confidence = jnp.maximum(0.2, 1.0 - (step_idx / rollout_length) * 0.8)
-
-            reward_predictor_reward = 0.0
-            if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
-                # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
-                predicted_reward = reward_model.apply(
-                    reward_predictor_params,
-                    None,
-                    obs[None, :],      # current state
-                    jnp.array([action]),  # action (needs to be array)
-                    next_obs[None, :]  # next state (IMAGINED - may have errors!)
-                )
-                # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward/2), -1.0, 1.0))
-
-                # Apply confidence weighting: lower confidence for later steps
-                reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
-
-            # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
-            # Hand-crafted reward provides stable gradient signal throughout
-            # Predicted reward adds sparse score information when confident
-            reward = improved_reward + reward_predictor_reward * 2.0
+            # Use hand-crafted reward only (no reward predictor)
+            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
