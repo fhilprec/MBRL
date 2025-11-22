@@ -621,7 +621,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward/2), -1.0, 1.0))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -630,6 +630,21 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             reward = improved_reward + reward_predictor_reward * 2.0
+
+            # DEBUG: Print reward components for first trajectory, first few steps
+            # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
+            #     jax.debug.print(
+            #         "Traj {traj}, Step {step}: improved={imp:.4f}, predictor={pred:.4f}, total={tot:.4f}",
+            #         traj=traj_idx, step=step_idx, imp=improved_rew, pred=predictor_rew, tot=total_rew
+            #     )
+
+            # # Only print for trajectory 0, steps 0-5 to avoid spam
+            # jax.lax.cond(
+            #     step_idx < 6,
+            #     lambda _: debug_print_rewards(0, step_idx, improved_reward, reward_predictor_reward, reward),
+            #     lambda _: None,
+            #     None
+            # )
 
             discount_factor = jnp.array(discount)
 
@@ -801,6 +816,18 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
 
             # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
             reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
+
+            # DEBUG: Print reward components occasionally in real episodes
+            # Print every 50 steps to see what's happening
+            jax.lax.cond(
+                jnp.mod(jnp.array(0), 50) == 0,  # This won't work perfectly but gives us some prints
+                lambda _: jax.debug.print(
+                    "REAL - improved={imp:.4f}, predictor={pred:.4f}, total={tot:.4f}",
+                    imp=improved_reward, pred=reward_predictor_reward, tot=reward
+                ),
+                lambda _: None,
+                None
+            )
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, reward, ~done)
@@ -1711,13 +1738,18 @@ def main():
                     calc_score_based_reward=False
                 )
 
-        print(
-            f"Reward stats: min={jnp.min(imagined_rewards):.4f}, max={jnp.max(imagined_rewards):.4f}"
-        )
-        print(
-            f"Non-zero rewards: {jnp.sum(imagined_rewards != 0.0)} / {imagined_rewards.size}"
-        )
+        print("\n=== REWARD STATISTICS ===")
+        print(f"Reward stats: min={jnp.min(imagined_rewards):.4f}, max={jnp.max(imagined_rewards):.4f}, mean={jnp.mean(imagined_rewards):.4f}")
+        print(f"Non-zero rewards: {jnp.sum(imagined_rewards != 0.0)} / {imagined_rewards.size}")
+
+        # Show reward distribution
+        rewards_flat = imagined_rewards.flatten()
+        print(f"Rewards > 2.0: {jnp.sum(rewards_flat > 2.0)}")
+        print(f"Rewards > 5.0: {jnp.sum(rewards_flat > 5.0)}")
+        print(f"Rewards > 10.0: {jnp.sum(rewards_flat > 10.0)}")
+        print(f"Rewards in [-1, 1]: {jnp.sum((rewards_flat >= -1.0) & (rewards_flat <= 1.0))}")
         print(f"Imagined rollouts shape: {imagined_obs.shape}")
+        print("=" * 50)
 
         print("Training DreamerV2 actor-critic...")
         actor_params, critic_params = train_dreamerv2_actor_critic(
