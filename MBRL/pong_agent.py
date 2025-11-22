@@ -532,7 +532,10 @@ def generate_imagined_rollouts(
         state_mean = 0
         state_std = 1
 
-    world_model = PongLSTM(5)
+    # print(state_mean)
+    # print(state_std)
+
+    world_model = PongMLPDeep(model_scale_factor)
 
     num_trajectories = initial_observations.shape[0]
 
@@ -608,7 +611,7 @@ def generate_imagined_rollouts(
 
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPPositionOnly(MODEL_SCALE_FACTOR, frame_stack_size=4)
+                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
                 # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 predicted_reward = reward_model.apply(
                     reward_predictor_params,
@@ -618,7 +621,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -776,7 +779,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             # Still apply slight confidence weighting for consistency, but higher baseline
             reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
             if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPPositionOnly(MODEL_SCALE_FACTOR, frame_stack_size=4)
+                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
                 # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 rng_reward = jax.random.PRNGKey(0)
                 predicted_reward = reward_model.apply(
@@ -787,7 +790,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                     next_flat_obs[None, :]   # next state (REAL - no model errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
+                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
 
                 # For real rollouts, use high confidence (0.9) since next_state is accurate
                 # This helps the reward predictor contribute more to policy learning
@@ -867,7 +870,7 @@ def generate_real_rollouts(
     
     # Run episodes in parallel with vmap
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=MODEL_SCALE_FACTOR),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor),
         in_axes=0
     )
 
@@ -1302,7 +1305,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False, reward_predictor_params=None):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
     """Evaluate the trained policy in the real Pong environment."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1409,7 +1412,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
             actions=actions_array,
             frame_stack_size=4,
             clock_speed=50,
-            model_scale_factor=MODEL_SCALE_FACTOR,
+            model_scale_factor=model_scale_factor,
             reward_predictor_params=reward_predictor_params,
         )
 
@@ -1496,11 +1499,46 @@ def main():
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
 
-        if os.path.exists("world_model_PongLSTM_checkpoint.pkl"):
-            with open("world_model_PongLSTM_checkpoint.pkl", "rb") as f:
+        # Try to load MLP world model first, fall back to LSTM model
+        model_path = None
+        loaded_model_scale_factor = MODEL_SCALE_FACTOR  # Default
+        loaded_use_deep = True  # Default
+        loaded_model_type = "PongMLPDeep"  # Default
+
+        if os.path.exists("worldmodel_mlp.pkl"):
+            model_path = "worldmodel_mlp.pkl"
+            print(f"Loading MLP world model from {model_path}...")
+        elif os.path.exists("world_model_PongLSTM_checkpoint.pkl"):
+            model_path = "world_model_PongLSTM_checkpoint.pkl"
+            print(f"Loading LSTM world model from {model_path}...")
+
+        if model_path:
+            with open(model_path, "rb") as f:
                 saved_data = pickle.load(f)
-                dynamics_params = saved_data["params"]
-                normalization_stats = saved_data.get("normalization_stats", None)
+                dynamics_params = saved_data.get("params", saved_data.get("dynamics_params"))
+
+                # Handle both old and new normalization formats
+                if "normalization_stats" in saved_data:
+                    # New format: checkpoint["normalization_stats"]["mean/std"]
+                    normalization_stats = saved_data["normalization_stats"]
+                elif "mean" in saved_data and "std" in saved_data:
+                    # Old format: checkpoint["mean/std"] directly
+                    normalization_stats = {
+                        "mean": saved_data["mean"],
+                        "std": saved_data["std"]
+                    }
+                    print("Detected old normalization format, converting to new format")
+                else:
+                    normalization_stats = None
+                    print("Warning: No normalization stats found in checkpoint")
+
+                # Load model architecture info (update outer scope variables)
+                loaded_model_scale_factor = saved_data.get("model_scale_factor", loaded_model_scale_factor)
+                loaded_use_deep = saved_data.get("use_deep", loaded_use_deep)
+                loaded_model_type = saved_data.get("model_type", loaded_model_type)
+
+                print(f"Model info from checkpoint: type={loaded_model_type}, scale={loaded_model_scale_factor}, use_deep={loaded_use_deep}")
+
                 model_exists = True
                 del saved_data
                 gc.collect()
@@ -1516,8 +1554,17 @@ def main():
                 print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
                 reward_predictor_params = None
 
-            print(f"Loading existing model from experience_data_LSTM_pong_{current_experience_it}.pkl...")
-            with open(f"experience_data_LSTM_pong_{current_experience_it}.pkl", "rb") as f:
+            # Load experience data based on which model was loaded
+            if model_path == "worldmodel_mlp.pkl":
+                experience_path = "experience_mlp.pkl"
+                if not os.path.exists(experience_path):
+                    print(f"Warning: {experience_path} not found, falling back to LSTM experience data")
+                    experience_path = f"experience_data_LSTM_pong_{current_experience_it}.pkl"
+            else:
+                experience_path = f"experience_data_LSTM_pong_{current_experience_it}.pkl"
+
+            print(f"Loading experience data from {experience_path}...")
+            with open(experience_path, "rb") as f:
                 saved_data = pickle.load(f)
                 obs = saved_data["obs"]
                 del saved_data
@@ -1581,7 +1628,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
             exit()
 
 
@@ -1620,7 +1667,7 @@ def main():
             discount=training_params["discount"],
             key=jax.random.PRNGKey(SEED),
             reward_predictor_params=reward_predictor_params,
-            model_scale_factor=MODEL_SCALE_FACTOR,
+            model_scale_factor=loaded_model_scale_factor,
         )
 
     
@@ -1659,7 +1706,7 @@ def main():
                     actions=sel_actions,
                     frame_stack_size=4,
                     clock_speed=5,
-                    model_scale_factor=MODEL_SCALE_FACTOR,
+                    model_scale_factor=loaded_model_scale_factor,
                     reward_predictor_params=reward_predictor_params,
                     calc_score_based_reward=False
                 )

@@ -374,6 +374,100 @@ def PongMLP(model_scale_factor=1):
     return hk.transform(forward)
 
 
+def PongMLPLight(model_scale_factor=1):
+    """
+    Lightweight MLP with residual connection.
+    Designed for fast training with frame stacking (no recurrent state needed).
+    """
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+
+        x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
+
+        # Simple 2-layer MLP
+        x = hk.Linear(int(256 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+        x = hk.Linear(int(256 * model_scale_factor))(x)
+        x = jax.nn.relu(x)
+
+        # Predict delta (residual connection)
+        delta = hk.Linear(state.shape[-1])(x)
+        prediction = flat_state + delta
+
+        return prediction, None
+
+    return hk.transform(forward)
+
+
+def PongMLPDeep(model_scale_factor=1):
+    """
+    Deeper MLP with LayerNorm and residual connections.
+    4 layers with skip connections for better gradient flow.
+    """
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state_full = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state_full = state
+
+        flat_state = flat_state_full[..., :]
+        action_one_hot = jax.nn.one_hot(action, num_classes=6)
+        x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
+
+        hidden_size = int(256 * model_scale_factor)
+
+        # Layer 1
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+
+        # Layer 2 with residual
+        residual = x
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = x + residual
+
+        # Layer 3 with residual
+        residual = x
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = x + residual
+
+        # Layer 4 with residual
+        residual = x
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = x + residual
+
+        # Predict full state with residual connection for stability
+        # This is more expressive than constraining to only 14 delta values
+        full_delta = hk.Linear(flat_state.shape[-1])(x)
+
+        # Increased residual weight from 0.1 to 0.2 for more expressive predictions
+        # while maintaining stability
+        prediction = flat_state + 0.2 * full_delta
+
+        return prediction, None
+
+    return hk.transform(forward)
+
+
 def PongMLP2(model_scale_factor=1):
     def forward(state, action, lstm_state=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1

@@ -1,7 +1,7 @@
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import pygame
 import time
 import jax
@@ -990,7 +990,7 @@ def compare_real_vs_model(
 ):
 
     rng = jax.random.PRNGKey(0)
-    print(obs.shape)
+
 
     if len(obs) == 1:
         obs = obs.squeeze(0)
@@ -1026,6 +1026,7 @@ def compare_real_vs_model(
                     print(f"\033[91mStep {step}, Score Reward: {score_val}\033[0m")
 
         # print(pred_obs)
+        # print(reward_predictor_params)
         # TEMPORARY: Using transition-based reward predictor for visualization
         # TODO_CLEANUP: This will become standard once migration is complete
         if reward_predictor_params is not None:
@@ -1037,7 +1038,8 @@ def compare_real_vs_model(
                 reward_predictor_params, rng, prev_real_obs, action, real_obs
             )
             raw_val = float(jnp.squeeze(raw_prediction))
-            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(10/9)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            print(raw_val)
+            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(4/3)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
             # rounded_reward = jnp.round(predicted_reward * 2) / 2
             pred_val = float(predicted_reward)
 
@@ -1183,7 +1185,7 @@ def compare_real_vs_model(
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
         # )
-
+        # action = jnp.array(4) #overwrite for testing
         next_real_obs = obs[step_count + 1]
 
         if steps_into_future > 0 and (
@@ -1264,7 +1266,8 @@ def compare_real_vs_model(
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
-            lstm_state = lstm_real_state
+            lstm_state = None
+            # lstm_state = lstm_real_state
 
         step_count += 1
         clock.tick(clock_speed)
@@ -1464,7 +1467,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=10,
+                steps_into_future=100,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
@@ -1480,7 +1483,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=10,
+                steps_into_future=100,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
