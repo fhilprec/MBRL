@@ -600,24 +600,47 @@ def generate_imagined_rollouts(
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = next_obs.squeeze().astype(obs.dtype)
 
-            # CRITICAL FIX: Add noise to imagined trajectories to match observed errors
-            # World model has ~7-17 pixel errors, so we add comparable noise to train robustness
-            # Noise scale: 3.0 pixels for positions (matches empirical error ~7 pixels)
-            noise_key = jax.random.fold_in(key, step_idx)
-            position_noise = jax.random.normal(noise_key, next_obs.shape) * 3.0
-            # Only add noise to position/velocity features, not scores
-            # Positions: indices 0-11 for all frames, Scores: indices 12-13 for all frames
-            noise_mask = jnp.ones_like(next_obs)
-            # Mask out score features (12, 13 for each of 4 frames)
-            for frame in range(4):
-                score_player_idx = 12 * 4 + frame
-                score_enemy_idx = 13 * 4 + frame
-                noise_mask = noise_mask.at[score_player_idx].set(0.0)
-                noise_mask = noise_mask.at[score_enemy_idx].set(0.0)
-            next_obs = next_obs + position_noise * noise_mask
+            # # CRITICAL FIX: Add noise to imagined trajectories to match observed errors
+            # # World model has ~7-17 pixel errors, so we add comparable noise to train robustness
+            # # Noise scale: 3.0 pixels for positions (matches empirical error ~7 pixels)
+            # noise_key = jax.random.fold_in(key, step_idx)
+            # position_noise = jax.random.normal(noise_key, next_obs.shape) * 3.0
+            # # Only add noise to position/velocity features, not scores
+            # # Positions: indices 0-11 for all frames, Scores: indices 12-13 for all frames
+            # noise_mask = jnp.ones_like(next_obs)
+            # # Mask out score features (12, 13 for each of 4 frames)
+            # for frame in range(4):
+            #     score_player_idx = 12 * 4 + frame
+            #     score_enemy_idx = 13 * 4 + frame
+            #     noise_mask = noise_mask.at[score_player_idx].set(0.0)
+            #     noise_mask = noise_mask.at[score_enemy_idx].set(0.0)
+            # next_obs = next_obs + position_noise * noise_mask
 
             # Use hand-crafted reward only (no reward predictor)
-            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
+
+            improved_reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
+
+            reward_predictor_reward = 0.0
+            if reward_predictor_params is not None:
+                reward_model = RewardPredictorMLPPositionOnly(MODEL_SCALE_FACTOR, frame_stack_size=4)
+                # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
+                predicted_reward = reward_model.apply(
+                    reward_predictor_params,
+                    None,
+                    obs[None, :],      # current state
+                    jnp.array([action]),  # action (needs to be array)
+                    next_obs[None, :]  # next state (IMAGINED - may have errors!)
+                )
+                # Clip and round to match real rollout behavior: {-1, 0, +1}
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
+
+                # Apply confidence weighting: lower confidence for later steps
+                reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
+
+            # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
+            # Hand-crafted reward provides stable gradient signal throughout
+            # Predicted reward adds sparse score information when confident
+            reward = improved_reward + reward_predictor_reward * 2.0
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
