@@ -641,7 +641,8 @@ def generate_imagined_rollouts(
             # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
-            reward = improved_reward + reward_predictor_reward * 2.0
+            reward = improved_reward
+            # reward = improved_reward + reward_predictor_reward * 2.0
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
