@@ -81,11 +81,11 @@ def print_full_array(arr):
 
 action_map = {
     0: "NOOP",
-    1: "FIRE",
-    2: "RIGHT",
-    3: "LEFT",
-    4: "RIGHTFIRE",
-    5: "LEFTFIRE",
+    1: "NOOP",
+    2: "NOOP",
+    3: "DOWN",
+    4: "UP",
+    5: "NOOP",
 }
 
 
@@ -1003,9 +1003,9 @@ def compare_real_vs_model(
     ):
         # pred_obs is now squeezed, so it's 1D
         error = jnp.mean((real_obs - pred_obs) ** 2)
-        # print(
-        #     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
-        # )
+        print(
+            f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
+        )
 
 
         #for debugging purposes
@@ -1185,7 +1185,7 @@ def compare_real_vs_model(
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
         # )
-        # action = jnp.array(4) #overwrite for testing
+        action = jnp.array(3) #overwrite for testing
         next_real_obs = obs[step_count + 1]
 
         if steps_into_future > 0 and (

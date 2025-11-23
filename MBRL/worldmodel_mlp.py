@@ -22,10 +22,10 @@ from jaxatari.games.jax_pong import JaxPong
 from jaxatari.wrappers import AtariWrapper, FlattenObservationWrapper
 
 # Import from existing codebase
-from model_architectures import PongMLPLight, PongMLPDeep
+from model_architectures import PongMLPDeep, PongMLPLight
 
 
-MODEL_SCALE_FACTOR = 2  # Larger model for better ball physics
+MODEL_SCALE_FACTOR = 1  # Keep at 1 for speed
 
 # ============================================================================
 # MLP World Model
@@ -350,11 +350,11 @@ def train_world_model(
     num_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
     print(f"Model parameters: {num_params:,}")
 
-    # Optimizer with learning rate schedule
-    schedule = optax.cosine_decay_schedule(learning_rate, num_epochs)
+    # Optimizer - CONSTANT learning rate, NO weight decay
+    # Previous schedule/decay was causing plateau - model couldn't escape local minimum
     optimizer = optax.chain(
         optax.clip_by_global_norm(1.0),
-        optax.adamw(learning_rate=schedule, weight_decay=1e-4),
+        optax.adam(learning_rate=learning_rate),  # Pure Adam, no schedule, no weight decay
     )
     opt_state = optimizer.init(params)
 
@@ -364,19 +364,24 @@ def train_world_model(
     # Ball features: ball_x (feat 8), ball_y (feat 9)
     # All frames for ball_x: [32, 33, 34, 35], ball_y: [36, 37, 38, 39]
     feature_weights = jnp.ones(56)
-    # Weight ball position features higher (3x weight)
+    # INCREASED: Weight ball position features MUCH higher (10x weight instead of 3x)
+    # This forces the model to prioritize ball physics accuracy
     ball_x_indices = jnp.array([32, 33, 34, 35])
     ball_y_indices = jnp.array([36, 37, 38, 39])
-    feature_weights = feature_weights.at[ball_x_indices].set(3.0)
-    feature_weights = feature_weights.at[ball_y_indices].set(3.0)
+    feature_weights = feature_weights.at[ball_x_indices].set(10.0)
+    feature_weights = feature_weights.at[ball_y_indices].set(10.0)
 
-    # Ball velocity features are also important
+    # Ball velocity features are also critical (5x weight instead of 2x)
     # ball_x_direction (feat 4): [16, 17, 18, 19]
     # ball_y_direction (feat 5): [20, 21, 22, 23]
     ball_vx_indices = jnp.array([16, 17, 18, 19])
     ball_vy_indices = jnp.array([20, 21, 22, 23])
-    feature_weights = feature_weights.at[ball_vx_indices].set(2.0)
-    feature_weights = feature_weights.at[ball_vy_indices].set(2.0)
+    feature_weights = feature_weights.at[ball_vx_indices].set(5.0)
+    feature_weights = feature_weights.at[ball_vy_indices].set(5.0)
+
+    # Player position also matters (2x weight)
+    player_y_indices = jnp.array([4, 5, 6, 7])  # player_y all frames
+    feature_weights = feature_weights.at[player_y_indices].set(2.0)
 
     # Simple single-step training with ball-weighted loss
     @jax.jit
@@ -430,8 +435,9 @@ def train_world_model(
                 pred_2 = single_forward(pred_1, actions[1])
                 loss_2step = jnp.mean(((pred_2 - targets[1]) ** 2) * feature_weights)
 
-                # Combine losses: full weight on 1-step, 0.3 weight on 2-step
-                total_loss = loss_1step + 0.3 * loss_2step
+                # Combine losses: full weight on 1-step, 0.5 weight on 2-step
+                # Increased from 0.3 to put more emphasis on rollout consistency
+                total_loss = loss_1step + 0.5 * loss_2step
 
                 return total_loss, loss_1step
 
@@ -685,9 +691,10 @@ def main():
             num_epochs=num_epochs,
             rollout_weight=0.0,
             model_scale_factor=MODEL_SCALE_FACTOR,
-            learning_rate=1e-3,
+            learning_rate=3e-4,  # Reduced from 1e-3 - was too high, causing early plateau
+            batch_size=512,  # Increased from 256 for more stable gradients
             checkpoint_path="worldmodel_mlp.pkl",
-            use_multistep=True,  # Multi-step training (1-step + 2-step) - set False for single-step
+            use_multistep=False,  # Disabled - preparation too slow
         )
 
     elif command == "render":
@@ -757,14 +764,14 @@ def main():
 
         compare_real_vs_model(
             num_steps=500,
-            render_scale=2,
+            render_scale=6,
             obs=data["obs"],
             actions=data["actions"],
             normalization_stats=norm_stats,
             boundaries=data["episode_boundaries"],
             env=env,
             starting_step=start_idx,
-            steps_into_future=6,
+            steps_into_future=10,
             frame_stack_size=frame_stack_size,
             model_scale_factor=MODEL_SCALE_FACTOR,
             model_path=checkpoint_path,

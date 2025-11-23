@@ -455,13 +455,9 @@ def PongMLPDeep(model_scale_factor=1):
         x = jax.nn.gelu(x)
         x = x + residual
 
-        # Predict full state with residual connection for stability
-        # This is more expressive than constraining to only 14 delta values
-        full_delta = hk.Linear(flat_state.shape[-1])(x)
-
-        # Increased residual weight from 0.1 to 0.2 for more expressive predictions
-        # while maintaining stability
-        prediction = flat_state + 0.2 * full_delta
+        # Output layer - predict FULL next state directly (no residual)
+        # Residual connections were causing plateau - model just learned to copy input
+        prediction = hk.Linear(flat_state.shape[-1])(x)
 
         return prediction, None
 
@@ -998,17 +994,15 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         0.0
     )
 
-    # Reward based on ball position: high reward when ball is on enemy side (low x values)
-    # Assuming ball_x is normalized roughly in range [0, ~10] where:
-    # - Low values (0-3): enemy side (good for player)
-    # - High values (7-10): player side (bad for player)
-    # Create gradient reward: +2.0 at enemy side, -2.0 at player side
-    ball_position_reward = 2.0 * (5.0 - ball_x) / 5.0  # Linear gradient from -2 to +2
-
-    # Clip to reasonable range
-    ball_position_reward = jnp.clip(ball_position_reward, -2.0, 2.0)
-
-    score_reward = ball_position_reward
+    score_reward = jnp.where(
+        ball_x > player_x + 3,  # Ball past player's paddle
+        -1.0,  # Strong penalty for missing
+        jnp.where(
+            ball_x < enemy_x - 3,  # Ball past enemy's paddle
+            10.0,  # Strong reward for scoring
+            0.0
+        )
+    )
 
     # Combine rewards with appropriate scaling
     total_reward = tracking_reward + alignment_bonus + movement_reward + score_reward
