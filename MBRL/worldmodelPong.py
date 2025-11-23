@@ -1185,7 +1185,7 @@ def compare_real_vs_model(
         # print(
         #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
         # )
-        action = jnp.array(3) #overwrite for testing
+        # action = jnp.array(3) #overwrite for testing
         next_real_obs = obs[step_count + 1]
 
         if steps_into_future > 0 and (
@@ -1467,7 +1467,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=100,
+                steps_into_future=3,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
@@ -1483,7 +1483,7 @@ def main():
                 boundaries=boundaries,
                 env=env,
                 starting_step=0,
-                steps_into_future=100,
+                steps_into_future=3,
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,

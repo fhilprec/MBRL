@@ -455,11 +455,40 @@ def PongMLPDeep(model_scale_factor=1):
         x = jax.nn.gelu(x)
         x = x + residual
 
-        # Output layer - predict FULL next state directly (no residual)
-        # Residual connections were causing plateau - model just learned to copy input
-        prediction = hk.Linear(flat_state.shape[-1])(x)
+        # Output layer - predict NEW frame only (not full state)
+        # For frame stacking, we need to SHIFT frames and add new frame
+        # Features per frame: 14, Frames: 4, Total: 56
+        num_features_per_frame = 14
+        num_frames = 4
 
-        return prediction, None
+        # Predict only the NEW frame (14 values)
+        new_frame = hk.Linear(num_features_per_frame)(x)
+
+        # Shift frames: [f0, f1, f2, f3] -> [f1, f2, f3, NEW]
+        # Interleaved format: for feature i, frame f: index = i * num_frames + f
+
+        # Build index arrays for vectorized shifting
+        # For each feature, we want to shift frames [1,2,3] to positions [0,1,2]
+        shifted_frames = []
+
+        for feat_idx in range(num_features_per_frame):
+            # Get frames 1, 2, 3 for this feature (shift left)
+            old_indices = jnp.array([feat_idx * num_frames + f for f in range(1, num_frames)])
+            old_frames = flat_state[..., old_indices]  # Shape: (batch, 3)
+
+            # Append the new predicted frame
+            new_frame_value = new_frame[..., feat_idx:feat_idx+1]  # Shape: (batch, 1)
+
+            # Concatenate: [frame1, frame2, frame3, NEW]
+            feature_frames = jnp.concatenate([old_frames, new_frame_value], axis=-1)  # Shape: (batch, 4)
+            shifted_frames.append(feature_frames)
+
+        # Stack all features in interleaved format
+        # shifted_frames is list of 14 arrays, each (batch, 4)
+        # We need to interleave them: [f0_frames, f1_frames, ..., f13_frames]
+        shifted_prediction = jnp.concatenate(shifted_frames, axis=-1)  # Shape: (batch, 56)
+
+        return shifted_prediction, None
 
     return hk.transform(forward)
 

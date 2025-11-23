@@ -636,6 +636,8 @@ def generate_imagined_rollouts(
 
             discount_factor = jnp.array(discount)
 
+
+
             step_data = (next_obs, action, reward, discount_factor, value, log_prob)
             new_carry = (key, next_obs, new_lstm_state)
 
@@ -1470,7 +1472,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 3,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "rollout_length": 20,  # Reduced from 6 to 4 - errors compound too fast by step 3
         "num_rollouts": 5000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
@@ -1505,11 +1507,8 @@ def main():
 
     model_exists = False
 
-    experience_its = 5 #same as in worldodel.py
-
     for i in range(training_runs):
         print(f"This is the {i}th iteration training the actor-critic")
-        current_experience_it = random.randint(0, experience_its - 1)
 
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
@@ -1569,14 +1568,13 @@ def main():
                 print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
                 reward_predictor_params = None
 
-            # Load experience data based on which model was loaded
-            if model_path == "worldmodel_mlp.pkl":
-                experience_path = "experience_mlp.pkl"
-                if not os.path.exists(experience_path):
-                    print(f"Warning: {experience_path} not found, falling back to LSTM experience data")
-                    experience_path = f"experience_data_LSTM_pong_{current_experience_it}.pkl"
-            else:
-                experience_path = f"experience_data_LSTM_pong_{current_experience_it}.pkl"
+            # Always use experience_mlp.pkl for imagined rollouts
+            experience_path = "experience_mlp.pkl"
+
+            if not os.path.exists(experience_path):
+                print(f"ERROR: {experience_path} not found!")
+                print("Run: python MBRL/worldmodel_mlp.py collect 100")
+                return
 
             print(f"Loading experience data from {experience_path}...")
             with open(experience_path, "rb") as f:

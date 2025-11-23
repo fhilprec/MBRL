@@ -22,7 +22,7 @@ from jaxatari.games.jax_pong import JaxPong
 from jaxatari.wrappers import AtariWrapper, FlattenObservationWrapper
 
 # Import from existing codebase
-from model_architectures import PongMLPDeep, PongMLPLight
+from model_architectures import PongMLPDeep
 
 
 MODEL_SCALE_FACTOR = 1  # Keep at 1 for speed
@@ -715,32 +715,37 @@ def main():
         print(f"Using {'deep' if use_deep else 'light'} model from checkpoint")
         # Note: params loaded from checkpoint by compare_real_vs_model via model_path
 
-        # Load experience for rendering
-        experience_path = "experience_mlp.pkl"
-        if not os.path.exists(experience_path):
-            print(f"No experience data found at {experience_path}")
-            return
+        # Generate FRESH test episode to check for overfitting
+        print("\n" + "=" * 60)
+        print("GENERATING FRESH TEST EPISODE (not from training data)")
+        print("This tests if the model generalizes vs. overfits to training data")
+        print("=" * 60 + "\n")
 
-        print(f"Loading from: {os.path.abspath(experience_path)}")
-        print(f"File mtime: {os.path.getmtime(experience_path)}")
+        env = create_env(frame_stack_size)
 
-        with open(experience_path, "rb") as f:
-            data = pickle.load(f)
+        # Collect 1 fresh episode with ball-tracking policy
+        test_data = collect_experience(
+            env,
+            num_episodes=1,
+            max_steps_per_episode=1000,
+            frame_stack_size=frame_stack_size,
+            exploration_rate=0.5,
+            seed=99999,  # Different seed than training data
+        )
 
         # Diagnostic: Check data format
-        obs = data["obs"]
-        print(f"\n=== Data Diagnostics ===")
+        obs = test_data["obs"]
+        print(f"\n=== Fresh Test Episode Diagnostics ===")
         print(f"Obs shape: {obs.shape}")
-        print(f"Actions shape: {data['actions'].shape}")
-        print(f"Episode boundaries: {data['episode_boundaries'][:5]}...")
+        print(f"Actions shape: {test_data['actions'].shape}")
+        print(f"Episode boundaries: {test_data['episode_boundaries']}")
+        print(f"Total transitions: {len(obs)}")
 
         # Check first observation values
-        # INTERLEAVED format: for feature i, frame f: index = i * 4 + f
-        sample_obs = obs[start_idx]
-        print(f"\nSample obs at idx {start_idx} (INTERLEAVED format):")
+        sample_obs = obs[min(start_idx, len(obs) - 1)]
+        print(f"\nSample obs at idx {min(start_idx, len(obs) - 1)} (INTERLEAVED format):")
         print(f"  Frame stacking: {frame_stack_size} frames x 14 features = {frame_stack_size * 14}")
         for frame in range(frame_stack_size):
-            # Feature indices: player_y=1, ball_x=8, ball_y=9, score_player=12, score_enemy=13
             player_y_idx = 1 * frame_stack_size + frame
             ball_x_idx = 8 * frame_stack_size + frame
             ball_y_idx = 9 * frame_stack_size + frame
@@ -751,27 +756,18 @@ def main():
                   f"score_p={sample_obs[score_p_idx]:.0f}, score_e={sample_obs[score_e_idx]:.0f}")
 
         print(f"\nFormat: [feat0_f0..f3, feat1_f0..f3, ...] - last frame uses idx i*4+3")
-        print("=" * 30)
-
-        env = create_env(frame_stack_size)
-
-        # Debug: verify data before passing
-        print("\n=== DEBUG: Data being passed to compare_real_vs_model ===")
-        print(f"obs type: {type(data['obs'])}")
-        print(f"obs shape: {data['obs'].shape}")
-        print(f"obs[10000]: {data['obs'][10000][:20]}...")
-        print("=" * 50)
+        print("=" * 60)
 
         compare_real_vs_model(
             num_steps=500,
             render_scale=6,
-            obs=data["obs"],
-            actions=data["actions"],
+            obs=test_data["obs"],
+            actions=test_data["actions"],
             normalization_stats=norm_stats,
-            boundaries=data["episode_boundaries"],
+            boundaries=test_data["episode_boundaries"],
             env=env,
-            starting_step=start_idx,
-            steps_into_future=10,
+            starting_step=min(start_idx, len(obs) - 1),
+            steps_into_future=3,
             frame_stack_size=frame_stack_size,
             model_scale_factor=MODEL_SCALE_FACTOR,
             model_path=checkpoint_path,
