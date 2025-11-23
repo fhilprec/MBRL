@@ -772,14 +772,14 @@ def generate_imagined_rollouts(
     )
 
 
-def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
+def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR, use_score_reward=False):
     """Run one complete episode using JAX scan with masking."""
     reset_key, step_key = jax.random.split(episode_key)
     obs, state = env.reset(reset_key)
-    
+
     def step_fn(carry, _):
         rng, obs, state, done = carry
-        
+
         # Skip if already done
         def continue_step(_):
             # Get action
@@ -787,65 +787,57 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             flat_obs, _ = flatten_obs(obs, single_state=True)
             pi = actor_network.apply(actor_params, flat_obs)
             action = pi.sample(seed=action_key)
-            
+
             # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
 
-            # keep this nice reward for analysis
-            # old_score =  flat_obs[-5]-flat_obs[-1]
-            # new_score =  next_flat_obs[-5]-next_flat_obs[-1]
+            # Compute score-based reward (my_score - enemy_score)
+            old_score = flat_obs[-5] - flat_obs[-1]
+            new_score = next_flat_obs[-5] - next_flat_obs[-1]
+            score_reward = new_score - old_score
+            # Clip to prevent weird edge cases
+            score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
 
-            # score_reward = new_score - old_score
-            # score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
-
-
-            # Compute improved pong reward (hand-crafted, always reliable)
-            improved_reward = improved_pong_reward(next_flat_obs, action, frame_stack_size=4)
-
-            # HYBRID REWARD: For real rollouts, we can trust the predictor more since
-            # next_state comes from the REAL environment (no compounding errors)
-            # Still apply slight confidence weighting for consistency, but higher baseline
-            reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
-            if reward_predictor_params is not None:
-                reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
-                # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
-                rng_reward = jax.random.PRNGKey(0)
-                predicted_reward = reward_model.apply(
-                    reward_predictor_params,
-                    rng_reward,
-                    flat_obs[None, :],       # current state
-                    jnp.array([action]),     # action (needs to be array)
-                    next_flat_obs[None, :]   # next state (REAL - no model errors!)
-                )
-                # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
-
-                # For real rollouts, use high confidence (0.9) since next_state is accurate
-                # This helps the reward predictor contribute more to policy learning
-                confidence_real = 0.9
-                reward_predictor_reward = predicted_reward_clipped * confidence_real
+            # Choose reward based on flag
+            if use_score_reward:
+                # For evaluation: use actual score difference
+                final_reward = jnp.array(score_reward, dtype=jnp.float32)
             else:
+                # For training: use improved pong reward + predictor
+                improved_reward = improved_pong_reward(next_flat_obs, action, frame_stack_size=4)
+
+                # HYBRID REWARD: For real rollouts, we can trust the predictor more since
+                # next_state comes from the REAL environment (no compounding errors)
+                # Still apply slight confidence weighting for consistency, but higher baseline
                 reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
+                if reward_predictor_params is not None:
+                    reward_model = RewardPredictorMLPPositionOnly(model_scale_factor, frame_stack_size=4)
+                    # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
+                    rng_reward = jax.random.PRNGKey(0)
+                    predicted_reward = reward_model.apply(
+                        reward_predictor_params,
+                        rng_reward,
+                        flat_obs[None, :],       # current state
+                        jnp.array([action]),     # action (needs to be array)
+                        next_flat_obs[None, :]   # next state (REAL - no model errors!)
+                    )
+                    # Clip and round to match real rollout behavior: {-1, 0, +1}
+                    predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
 
-            # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
-            reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
+                    # For real rollouts, use high confidence (0.9) since next_state is accurate
+                    # This helps the reward predictor contribute more to policy learning
+                    confidence_real = 0.9
+                    reward_predictor_reward = predicted_reward_clipped * confidence_real
+                else:
+                    reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
-            # DEBUG: Print reward components occasionally in real episodes
-            # Print every 50 steps to see what's happening
-            jax.lax.cond(
-                jnp.mod(jnp.array(0), 50) == 0,  # This won't work perfectly but gives us some prints
-                lambda _: jax.debug.print(
-                    "REAL - improved={imp:.4f}, predictor={pred:.4f}, total={tot:.4f}",
-                    imp=improved_reward, pred=reward_predictor_reward, tot=reward
-                ),
-                lambda _: None,
-                None
-            )
+                # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
+                final_reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
-            transition = (flat_obs, state, action, reward, ~done)
-            
+            transition = (flat_obs, state, action, final_reward, ~done)
+
             return (rng_new, next_flat_obs, next_state, next_done), transition
         
         def skip_step(_):
@@ -1347,88 +1339,52 @@ def train_dreamerv2_actor_critic(
 
 
 def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
-    """Evaluate the trained policy in the real Pong environment."""
+    """Evaluate the trained policy in the real Pong environment using JAX scan."""
     from jaxatari.games.jax_pong import JaxPong
 
     env = JaxPong()
     env = AtariWrapper(
         env, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
-    total_rewards = []
 
     # Use a random seed if not provided
-
     seed = np.random.randint(0, 2**31)
     rng = jax.random.PRNGKey(seed)
 
-    # Collect observations and actions for rendering if enabled
+    # Generate episode keys
+    episode_keys = jax.random.split(rng, num_episodes)
+
+    print(f"Evaluating {num_episodes} episodes with vmap...")
+
+    # Run episodes in parallel with vmap (reusing the existing run_single_episode function)
+    # Use use_score_reward=True for evaluation to get actual Pong score
+    vmapped_episode_fn = jax.vmap(
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True),
+        in_axes=0
+    )
+
+    observations, actions, rewards, valid_mask, states, episode_lengths = vmapped_episode_fn(episode_keys)
+
+    # Extract episode rewards by summing valid rewards for each episode
+    total_rewards = []
     all_obs = []
     all_actions = []
 
-    for episode in range(num_episodes):
-        rng, reset_key = jax.random.split(rng)
-        print(rng)
-        obs, state = env.reset(reset_key)
-        episode_reward = 0
-        done = False
-        step_count = 0
+    for ep_idx in range(num_episodes):
+        ep_length = int(episode_lengths[ep_idx])
 
-        episode_obs = []
-        episode_actions = []
+        # Sum rewards for valid steps
+        ep_reward = float(jnp.sum(rewards[ep_idx, :ep_length]))
+        total_rewards.append(ep_reward)
 
-        print(f"Episode {episode + 1}:")
+        print(f"Episode {ep_idx + 1}: Final reward: {ep_reward:.3f}, Steps: {ep_length}")
 
-        while not done:
-
-            obs_tensor, _ = flatten_obs(obs, single_state=True)
-
-            # Store observation for rendering
-            if render:
-                episode_obs.append(obs_tensor)
-
-            pi = actor_network.apply(actor_params, obs_tensor)
-            temperature = 0.1
-            scaled_logits = pi.logits / temperature
-            scaled_pi = distrax.Categorical(logits=scaled_logits)
-            # Use rng for sampling to get different actions each episode
-            rng, action_key = jax.random.split(rng)
-            action = scaled_pi.sample(seed=action_key)
-
-            # Store action for rendering
-            if render:
-                episode_actions.append(action)
-
-            if step_count % 100 == 0:
-                obs_flat, _ = flatten_obs(obs, single_state=True)
-                # training_reward = improved_pong_reward(
-                #     obs_flat, action, frame_stack_size=4
-                # )
-                # print(f"  Training reward would be: {training_reward:.3f}")
-
-                obs_flat, _ = flatten_obs(obs, single_state=True)
-
-                last_obs = obs_flat[(4 - 1) :: 4]
-
-                player_y = last_obs[1]
-                ball_y = last_obs[9]
-                # print(
-                #     f"  Player Y: {player_y:.2f}, Ball Y: {ball_y:.2f}, Distance: {abs(ball_y-player_y):.2f}"
-                # )
-
-            obs, state, reward, done, _ = env.step(state, action)
-            episode_reward += reward
-            step_count += 1
-
-            if step_count % 100 == 0:
-                print(f"  Step {step_count}, Reward: {episode_reward:.3f}")
-
-        total_rewards.append(episode_reward)
-        print(f"  Final reward: {episode_reward:.3f}, Steps: {step_count}")
-
-        # Store episode data for rendering
-        if render and len(episode_obs) > 0:
-            all_obs.extend(episode_obs)
-            all_actions.extend(episode_actions)
+        # Collect observations and actions for rendering if needed
+        if render:
+            valid_obs = observations[ep_idx, :ep_length]
+            valid_actions = actions[ep_idx, :ep_length]
+            all_obs.append(valid_obs)
+            all_actions.append(valid_actions)
 
     mean_reward = np.mean(total_rewards)
     std_reward = np.std(total_rewards)
@@ -1439,12 +1395,11 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
 
     # Render collected episodes if requested
     if render and len(all_obs) > 0:
-        print(f"\nRendering {len(all_obs)} frames from {num_episodes} episodes...")
-        obs_array = jnp.stack(all_obs)
-        actions_array = jnp.array(all_actions)
+        # Concatenate all episodes for rendering
+        obs_array = jnp.concatenate(all_obs, axis=0)
+        actions_array = jnp.concatenate(all_actions, axis=0)
 
-       #load the reward predictor params here
-
+        print(f"\nRendering {len(obs_array)} frames from {num_episodes} episodes...")
 
         compare_real_vs_model(
             steps_into_future=0,
@@ -1819,6 +1774,15 @@ def main():
 
         save_model_checkpoints(actor_params, critic_params, prefix=prefix)
 
+
+        if i % 50 == 0:
+            evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
+            # and print result into training_log
+            eval_rewards = evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
+            eval_mean = float(np.mean(eval_rewards))
+            eval_std = float(np.std(eval_rewards))
+            with open("training_log", "a") as lf:
+                lf.write(f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n")
 
 
 
