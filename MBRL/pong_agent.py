@@ -622,6 +622,7 @@ def generate_imagined_rollouts(
 
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
+                print("REWARD PREDICTOR USED IN ROLLOUTS")
                 reward_model = RewardPredictorMLPPositionOnly(MODEL_SCALE_FACTOR, frame_stack_size=4)
                 # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 predicted_reward = reward_model.apply(
@@ -1495,7 +1496,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 20,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "rollout_length": 3,  # Reduced from 6 to 4 - errors compound too fast by step 3
         "num_rollouts": 5000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates

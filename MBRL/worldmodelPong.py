@@ -1003,9 +1003,9 @@ def compare_real_vs_model(
     ):
         # pred_obs is now squeezed, so it's 1D
         error = jnp.mean((real_obs - pred_obs) ** 2)
-        print(
-            f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
-        )
+        # print(
+        #     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
+        # )
 
 
         #for debugging purposes
@@ -1030,6 +1030,7 @@ def compare_real_vs_model(
         # TEMPORARY: Using transition-based reward predictor for visualization
         # TODO_CLEANUP: This will become standard once migration is complete
         if reward_predictor_params is not None:
+            print("REWARD PREDICTOR USED IN RENDERING")
             reward_model_viz = RewardPredictorMLPPositionOnly(model_scale_factor)
             # Need previous observation for transition-based prediction
             # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
@@ -1038,8 +1039,8 @@ def compare_real_vs_model(
                 reward_predictor_params, rng, prev_real_obs, action, real_obs
             )
             raw_val = float(jnp.squeeze(raw_prediction))
-            print(raw_val)
-            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(4/3)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            # print(raw_val)
+            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(10/9)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
             # rounded_reward = jnp.round(predicted_reward * 2) / 2
             pred_val = float(predicted_reward)
 
@@ -1049,11 +1050,14 @@ def compare_real_vs_model(
             prev_ball_x = float(prev_real_obs[-21])
             curr_ball_x = float(real_obs[-21])
             # print(curr_ball_x)
-            if abs(pred_val) > 0.0:
-                if pred_val > 0:
-                    print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
-                else:
-                    print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+            improved_reward = improved_reward = improved_pong_reward(real_obs, action, frame_stack_size=4)
+            reward = improved_reward + pred_val * 2.0
+            print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
+            # if abs(pred_val) > 0.0:
+            #     if pred_val > 0:
+            #         print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+            #     else:
+            #         print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
 
         if error > 20 and render_debugging:
             print("-" * 100)
