@@ -8,6 +8,7 @@ A simple, fast world model using:
 - Full JAX JIT compilation for speed
 """
 
+import time
 import jax
 import jax.numpy as jnp
 import optax
@@ -22,7 +23,7 @@ from jaxatari.games.jax_pong import JaxPong
 from jaxatari.wrappers import AtariWrapper, FlattenObservationWrapper
 
 # Import from existing codebase
-from model_architectures import PongMLPDeep
+from model_architectures import PongMLPDeep, RewardPredictorMLPTransition
 
 
 MODEL_SCALE_FACTOR = 1  # Keep at 1 for speed
@@ -723,6 +724,8 @@ def main():
 
         env = create_env(frame_stack_size)
 
+    
+
         # Collect 1 fresh episode with ball-tracking policy
         test_data = collect_experience(
             env,
@@ -730,7 +733,7 @@ def main():
             max_steps_per_episode=1000,
             frame_stack_size=frame_stack_size,
             exploration_rate=0.5,
-            seed=99999,  # Different seed than training data
+            seed=int(time.time()),  # Different seed for fresh data
         )
 
         # Diagnostic: Check data format
@@ -758,8 +761,19 @@ def main():
         print(f"\nFormat: [feat0_f0..f3, feat1_f0..f3, ...] - last frame uses idx i*4+3")
         print("=" * 60)
 
+        # Load standalone reward predictor
+        reward_predictor_path = "reward_predictor_standalone.pkl"
+        if os.path.exists(reward_predictor_path):
+            print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+            with open(reward_predictor_path, "rb") as f:
+                reward_data = pickle.load(f)
+                reward_predictor_params = reward_data["params"]
+        else:
+            print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+            reward_predictor_params = None
+
         compare_real_vs_model(
-            num_steps=500,
+            num_steps=50000,
             render_scale=6,
             obs=test_data["obs"],
             actions=test_data["actions"],
@@ -767,10 +781,13 @@ def main():
             boundaries=test_data["episode_boundaries"],
             env=env,
             starting_step=min(start_idx, len(obs) - 1),
-            steps_into_future=3,
+            steps_into_future=2,
             frame_stack_size=frame_stack_size,
             model_scale_factor=MODEL_SCALE_FACTOR,
+            reward_predictor_params=reward_predictor_params,
             model_path=checkpoint_path,
+            clock_speed=100,
+            print_error=False,
         )
 
     else:

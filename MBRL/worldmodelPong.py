@@ -987,6 +987,7 @@ def compare_real_vs_model(
     show_only_one_step = False,
     reward_predictor_params=None,
     calc_score_based_reward: bool = True,
+    print_error: bool = False,
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -1000,12 +1001,14 @@ def compare_real_vs_model(
         real_obs,
         pred_obs,
         action,
+        previous_model_obs=None,
     ):
         # pred_obs is now squeezed, so it's 1D
         error = jnp.mean((real_obs - pred_obs) ** 2)
-        # print(
-        #     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
-        # )
+        if print_error:
+            print(
+                f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
+            )
 
 
         #for debugging purposes
@@ -1029,15 +1032,47 @@ def compare_real_vs_model(
         # print(reward_predictor_params)
         # TEMPORARY: Using transition-based reward predictor for visualization
         # TODO_CLEANUP: This will become standard once migration is complete
-        if reward_predictor_params is not None:
-            print("REWARD PREDICTOR USED IN RENDERING")
-            reward_model_viz = RewardPredictorMLPPositionOnly(model_scale_factor)
+        if reward_predictor_params is not None and previous_model_obs is not None:
+
+            reward_model_viz = RewardPredictorMLPTransition(1)
+            # Need previous observation for transition-based prediction
+            # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
+            prev_real_obs = obs[step]
+            raw_prediction = reward_model_viz.apply(
+                reward_predictor_params, rng, previous_model_obs, action, pred_obs
+            )
+
+            raw_val = float(jnp.squeeze(raw_prediction))
+            # print(raw_val)
+            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(4/3)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            # rounded_reward = jnp.round(predicted_reward * 2) / 2
+            pred_val = float(predicted_reward)
+
+            # Debug: print ball_x from prev and current obs to understand what model sees
+            frame_stack_size = 4
+            base = (frame_stack_size - 1) * 14
+            prev_ball_x = float(prev_real_obs[-21])
+            curr_ball_x = float(real_obs[-21])
+            # print(curr_ball_x)
+            improved_reward = improved_reward = improved_pong_reward(real_obs, action, frame_stack_size=4)
+            reward = improved_reward + pred_val * 2.0
+            # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
+            if abs(pred_val) > 0.0:
+                if pred_val > 0:
+                    print(f"\033[92mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                else:
+                    print(f"\033[91mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+
+        if reward_predictor_params is not None and steps_into_future == 0:
+
+            reward_model_viz = RewardPredictorMLPTransition(1)
             # Need previous observation for transition-based prediction
             # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
             prev_real_obs = obs[step]
             raw_prediction = reward_model_viz.apply(
                 reward_predictor_params, rng, prev_real_obs, action, real_obs
             )
+
             raw_val = float(jnp.squeeze(raw_prediction))
             # print(raw_val)
             predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(10/9)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
@@ -1052,12 +1087,12 @@ def compare_real_vs_model(
             # print(curr_ball_x)
             improved_reward = improved_reward = improved_pong_reward(real_obs, action, frame_stack_size=4)
             reward = improved_reward + pred_val * 2.0
-            print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
-            # if abs(pred_val) > 0.0:
-            #     if pred_val > 0:
-            #         print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
-            #     else:
-            #         print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+            # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
+            if abs(pred_val) > 0.0:
+                if pred_val > 0:
+                    print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                else:
+                    print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -1178,6 +1213,7 @@ def compare_real_vs_model(
     model_base_state = None
 
 
+    reset = False
 
     while step_count < min(num_steps, len(obs) - 1):
 
@@ -1195,7 +1231,7 @@ def compare_real_vs_model(
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
-            print("State reset")
+            # print("State reset")
             model_obs = obs[step_count]
 
         normalized_flattened_model_obs = (model_obs - state_mean) / state_std
@@ -1219,8 +1255,12 @@ def compare_real_vs_model(
         # Squeeze batch dimension to maintain shape consistency (feature_dim,)
         model_obs = unnormalized_model_prediction.squeeze()
 
-        # if steps_into_future > 0:
-        debug_obs(step_count, next_real_obs, model_obs, action)
+        if steps_into_future == 0 or reset:
+            debug_obs(step_count, next_real_obs, model_obs, action)
+        if steps_into_future > 0 and not reset:
+            previous_model_obs = normalized_flattened_model_obs * state_std + state_mean
+            debug_obs(step_count, next_real_obs, model_obs, action, previous_model_obs)
+
 
         real_base_state = pong_flat_observation_to_state(
             real_obs, unflattener, frame_stack_size=frame_stack_size
@@ -1271,6 +1311,7 @@ def compare_real_vs_model(
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
             lstm_state = None
+            reset = True
             # lstm_state = lstm_real_state
 
         step_count += 1
@@ -1281,6 +1322,7 @@ def compare_real_vs_model(
             print_full_array(print_obs)
             time.sleep(1)
             break
+        reset = False
         
 
     pygame.quit()
@@ -1402,7 +1444,7 @@ def main():
         actions_array = jnp.array(actions)
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
-
+ 
         # Train or continue training
         if os.path.exists(save_path):
             print(f"Existing model found. Continuing training from checkpoint...")
