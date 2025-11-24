@@ -21,7 +21,7 @@ import optax
 import pickle
 import numpy as np
 from tqdm import tqdm
-from model_architectures import RewardPredictorMLPPositionOnly
+from model_architectures import RewardPredictorMLPTransition
 
 
 def calculate_position_based_reward(next_flat_obs, frame_stack_size=4):
@@ -159,7 +159,7 @@ def train_reward_predictor(
     """Train the reward predictor."""
 
     # Create model
-    reward_model = RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=frame_stack_size)
+    reward_model = RewardPredictorMLPTransition(model_scale_factor=1)
 
     # Initialize
     rng = jax.random.PRNGKey(42)
