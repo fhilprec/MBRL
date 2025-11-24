@@ -623,7 +623,7 @@ def generate_imagined_rollouts(
             reward_predictor_reward = 0.0
             if reward_predictor_params is not None:
                 print("REWARD PREDICTOR USED IN ROLLOUTS")
-                reward_model = RewardPredictorMLPTransition(MODEL_SCALE_FACTOR)
+                reward_model = RewardPredictorMLPTransition(1)
                 # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
                 predicted_reward = reward_model.apply(
                     reward_predictor_params,
@@ -633,7 +633,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -642,7 +642,7 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             # reward = improved_reward
-            reward = improved_reward + reward_predictor_reward * 1.0
+            reward = improved_reward + reward_predictor_reward * 2.0
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
@@ -1453,7 +1453,7 @@ def main():
     training_params = {
         "action_dim": 6,
         "rollout_length": 3,  # Reduced from 6 to 4 - errors compound too fast by step 3
-        "num_rollouts": 5000,
+        "num_rollouts": 10000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
         "critic_lr": 5e-4,  # Moderate critic learning rate
