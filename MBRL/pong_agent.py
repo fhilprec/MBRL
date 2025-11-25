@@ -2,7 +2,7 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 import jax
 import jax.numpy as jnp
@@ -617,7 +617,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -0.1, 1))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1, 1))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -626,7 +626,7 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             # reward = improved_reward
-            reward = improved_reward + reward_predictor_reward * 2
+            reward = improved_reward + reward_predictor_reward * 3
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
@@ -757,7 +757,7 @@ def generate_imagined_rollouts(
     )
 
 
-def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR, use_score_reward=False):
+def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=10000, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR, use_score_reward=False, inference=False):
     """Run one complete episode using JAX scan with masking."""
     reset_key, step_key = jax.random.split(episode_key)
     obs, state = env.reset(reset_key)
@@ -771,7 +771,10 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             rng_new, action_key = jax.random.split(rng)
             flat_obs, _ = flatten_obs(obs, single_state=True)
             pi = actor_network.apply(actor_params, flat_obs)
-            action = pi.sample(seed=action_key)
+            if not inference:
+                action = pi.sample(seed=action_key)
+            else:
+                action = pi.mode()
 
             # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
@@ -1344,7 +1347,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
     # Run episodes in parallel with vmap (reusing the existing run_single_episode function)
     # Use use_score_reward=True for evaluation to get actual Pong score
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=True),
         in_axes=0
     )
 
@@ -1448,6 +1451,7 @@ def main():
         "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
+
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
     parser.add_argument("--eval", type=bool, help="Specifies whether to run evaluation", default=0)
     parser.add_argument("--render", type=int, help="Specifies whether to run rendering", default=0)
@@ -1761,9 +1765,9 @@ def main():
 
 
         if i % 50 == 0:
-            evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
+            # evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
             # and print result into training_log
-            eval_rewards = evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
+            eval_rewards = evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
             eval_mean = float(np.mean(eval_rewards))
             eval_std = float(np.std(eval_rewards))
             with open("training_log", "a") as lf:
