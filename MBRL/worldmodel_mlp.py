@@ -787,7 +787,7 @@ def main():
             reward_predictor_params=reward_predictor_params,
             model_path=checkpoint_path,
             clock_speed=100,
-            print_error=False,
+            print_error=True,
         )
 
     else:

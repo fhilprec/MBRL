@@ -598,25 +598,9 @@ def generate_imagined_rollouts(
             )
 
             next_obs = normalized_next_obs * state_std + state_mean
-            next_obs = next_obs.squeeze().astype(obs.dtype)
+            next_obs = jnp.round(next_obs).squeeze().astype(obs.dtype)
 
-            # # CRITICAL FIX: Add noise to imagined trajectories to match observed errors
-            # # World model has ~7-17 pixel errors, so we add comparable noise to train robustness
-            # # Noise scale: 3.0 pixels for positions (matches empirical error ~7 pixels)
-            # noise_key = jax.random.fold_in(key, step_idx)
-            # position_noise = jax.random.normal(noise_key, next_obs.shape) * 3.0
-            # # Only add noise to position/velocity features, not scores
-            # # Positions: indices 0-11 for all frames, Scores: indices 12-13 for all frames
-            # noise_mask = jnp.ones_like(next_obs)
-            # # Mask out score features (12, 13 for each of 4 frames)
-            # for frame in range(4):
-            #     score_player_idx = 12 * 4 + frame
-            #     score_enemy_idx = 13 * 4 + frame
-            #     noise_mask = noise_mask.at[score_player_idx].set(0.0)
-            #     noise_mask = noise_mask.at[score_enemy_idx].set(0.0)
-            # next_obs = next_obs + position_noise * noise_mask
 
-            # Use hand-crafted reward only (no reward predictor)
 
             improved_reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
@@ -633,7 +617,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -0.1, 1))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -642,7 +626,7 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             # reward = improved_reward
-            reward = improved_reward + reward_predictor_reward * 2.0
+            reward = improved_reward + reward_predictor_reward * 2
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
@@ -824,7 +808,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                         next_flat_obs[None, :]   # next state (REAL - no model errors!)
                     )
                     # Clip and round to match real rollout behavior: {-1, 0, +1}
-                    predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
+                    predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
 
                     # For real rollouts, use high confidence (0.9) since next_state is accurate
                     # This helps the reward predictor contribute more to policy learning
@@ -1447,13 +1431,13 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 
 def main():
 
-    training_runs = 1000
+    training_runs = 10000
     model_scale_factor = MODEL_SCALE_FACTOR  # Same as in worldmodelPong.py
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 3,  # Reduced from 6 to 4 - errors compound too fast by step 3
-        "num_rollouts": 10000,
+        "rollout_length": 10,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "num_rollouts": 3000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
         "critic_lr": 5e-4,  # Moderate critic learning rate

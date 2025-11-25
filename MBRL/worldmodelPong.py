@@ -1231,7 +1231,7 @@ def compare_real_vs_model(
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries
         ):
-            # print("State reset")
+            print("State reset")
             model_obs = obs[step_count]
 
         normalized_flattened_model_obs = (model_obs - state_mean) / state_std
@@ -1250,7 +1250,7 @@ def compare_real_vs_model(
 
         # Denormalize WITHOUT rounding to avoid error accumulation
         # The model was trained on continuous values, not quantized ones
-        unnormalized_model_prediction = normalized_model_prediction * state_std + state_mean
+        unnormalized_model_prediction = jnp.round(normalized_model_prediction * state_std + state_mean)
 
         # Squeeze batch dimension to maintain shape consistency (feature_dim,)
         model_obs = unnormalized_model_prediction.squeeze()
