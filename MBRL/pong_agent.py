@@ -1740,7 +1740,7 @@ def main():
             f"most_likely={most_likely}\n"
         )
 
-        with open("training_log", "a") as lf:
+        with open(f"{prefix}_training_log", "a") as lf:
             lf.write(log_line)
 
         save_model_checkpoints(actor_params, critic_params, prefix=prefix)
@@ -1781,7 +1781,7 @@ def main():
             eval_rewards = evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
             eval_mean = float(np.mean(eval_rewards))
             eval_std = float(np.std(eval_rewards))
-            with open("training_log", "a") as lf:
+            with open(f"{prefix}_training_log", "a") as lf:
                 lf.write(f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n")
 
 
