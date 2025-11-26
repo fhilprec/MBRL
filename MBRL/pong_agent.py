@@ -626,7 +626,7 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             # reward = improved_reward
-            reward = improved_reward + reward_predictor_reward * 2
+            reward = improved_reward
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
@@ -819,7 +819,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                     reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
                 # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
-                final_reward = jnp.array(improved_reward + predicted_reward_clipped * 2.0, dtype=jnp.float32)
+                final_reward = jnp.array(improved_reward, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, final_reward, ~done)
@@ -1418,7 +1418,7 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 6,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "rollout_length": 7,  # Reduced from 6 to 4 - errors compound too fast by step 3
         "num_rollouts": 5000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
