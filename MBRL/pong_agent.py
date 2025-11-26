@@ -1420,7 +1420,7 @@ def main():
         "action_dim": 6,
         "rollout_length": 6,  # Reduced from 6 to 4 - errors compound too fast by step 3
         "num_rollouts": 5000,
-        "policy_epochs": 5,  # Max epochs, KL will stop earlier
+        "policy_epochs": 10,  # Max epochs, KL will stop earlier
         "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
         "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
