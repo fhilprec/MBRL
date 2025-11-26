@@ -988,6 +988,7 @@ def compare_real_vs_model(
     reward_predictor_params=None,
     calc_score_based_reward: bool = True,
     print_error: bool = False,
+    rollout_length: int = 0,
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -1227,6 +1228,10 @@ def compare_real_vs_model(
         # )
         # action = jnp.array(3) #overwrite for testing
         next_real_obs = obs[step_count + 1]
+
+        if rollout_length and (step_count % rollout_length) - 1 == 0:
+            print("NEXT ROLLOUT")
+            time.sleep(0.25)
 
         if steps_into_future > 0 and (
             step_count % steps_into_future == 0 or step_count in boundaries

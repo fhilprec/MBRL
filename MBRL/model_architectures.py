@@ -1024,17 +1024,17 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     )
 
     score_reward = jnp.where(
-        ball_x > player_x + 3,  # Ball past player's paddle
+        ball_x > player_x + 1,  # Ball past player's paddle
         -1.0,  # Strong penalty for missing
         jnp.where(
-            ball_x < enemy_x - 3,  # Ball past enemy's paddle
-            10.0,  # Strong reward for scoring
+            ball_x < enemy_x - 1,  # Ball past enemy's paddle
+            1.0,  # Strong reward for scoring
             0.0
         )
     )
 
     # Combine rewards with appropriate scaling
-    total_reward = tracking_reward + alignment_bonus # + movement_reward
+    total_reward = tracking_reward + alignment_bonus + score_reward * 2 # + movement_reward
 
     # Scale to reasonable range for learning
     return total_reward

@@ -1667,10 +1667,11 @@ def main():
                     num_steps=obs.shape[0],
                     actions=sel_actions,
                     frame_stack_size=4,
-                    clock_speed=1,
+                    clock_speed=5,
                     model_scale_factor=loaded_model_scale_factor,
                     reward_predictor_params=reward_predictor_params,
-                    calc_score_based_reward=False
+                    calc_score_based_reward=False,
+                    rollout_length=training_params["rollout_length"],
                 )
 
         print("\n=== REWARD STATISTICS ===")
@@ -1745,7 +1746,7 @@ def main():
         save_model_checkpoints(actor_params, critic_params, prefix=prefix)
 
         # Retrain worldmodel every 200 training runs
-        if i > 0 and i % 200 == 0:
+        if False and i > 0 and i % 200 == 0:   #activate this later
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")

@@ -699,7 +699,6 @@ def main():
                 print(f"Loading {actor_type} actor from {actor_path}...")
                 try:
                     # Import actor creation function from pong_agent
-                    import sys
                     sys.path.append(os.path.dirname(__file__))
                     from pong_agent import create_dreamerv2_actor
 
@@ -841,7 +840,7 @@ def main():
             boundaries=test_data["episode_boundaries"],
             env=env,
             starting_step=min(start_idx, len(obs) - 1),
-            steps_into_future=2,
+            steps_into_future=10,
             frame_stack_size=frame_stack_size,
             model_scale_factor=MODEL_SCALE_FACTOR,
             reward_predictor_params=reward_predictor_params,
