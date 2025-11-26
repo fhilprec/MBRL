@@ -2,7 +2,7 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 import jax
 import jax.numpy as jnp
@@ -1421,8 +1421,8 @@ def main():
         "rollout_length": 6,  # Reduced from 6 to 4 - errors compound too fast by step 3
         "num_rollouts": 5000,
         "policy_epochs": 5,  # Max epochs, KL will stop earlier
-        "actor_lr": 2e-4,  # Reduced significantly for smaller policy updates
-        "critic_lr": 8e-5,  # Moderate critic learning rate
+        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
+        "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
