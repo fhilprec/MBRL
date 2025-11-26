@@ -1750,9 +1750,13 @@ def main():
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")
 
+            # Determine which actor to use based on rollout_style
+            # Map 'model' -> 'imagined' for the actor filename
+            actor_type = "imagined" if args.rollout_style == "model" else args.rollout_style
+
             # Collect fresh experience with trained actor
-            print("Collecting fresh experience...")
-            os.system("python MBRL/worldmodel_mlp.py collect 500")
+            print(f"Collecting fresh experience with {actor_type} actor...")
+            os.system(f"python MBRL/worldmodel_mlp.py collect 500 {actor_type}")
 
             # Retrain worldmodel
             print("Retraining worldmodel...")

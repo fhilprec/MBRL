@@ -669,9 +669,10 @@ def main():
         print("Lightweight MLP World Model for Pong")
         print()
         print("Usage:")
-        print("  python worldmodel_mlp.py collect [num_episodes]  - Collect experience data")
-        print("  python worldmodel_mlp.py train [num_epochs]      - Train the world model")
-        print("  python worldmodel_mlp.py render [start_idx]      - Visualize predictions")
+        print("  python worldmodel_mlp.py collect [num_episodes] [actor_type]  - Collect experience data")
+        print("                                                     actor_type: 'real', 'imagined', or 'none' (default: none)")
+        print("  python worldmodel_mlp.py train [num_epochs]                   - Train the world model")
+        print("  python worldmodel_mlp.py render [start_idx]                   - Visualize predictions")
         print()
         print("Files:")
         print("  experience_mlp.pkl   - Collected experience data")
@@ -683,34 +684,39 @@ def main():
 
     if command == "collect":
         num_episodes = int(args[1]) if len(args) > 1 else 100
+        actor_type = args[2] if len(args) > 2 else "none"  # 'real', 'imagined', or 'none'
 
         env = create_env(frame_stack_size)
 
-        # Try to load trained actor if available
+        # Load trained actor based on actor_type parameter
         actor_params = None
         actor_network = None
-        actor_path = "real_actor_params.pkl"
 
-        if os.path.exists(actor_path):
-            print(f"Loading trained actor from {actor_path}...")
-            try:
-                # Import actor creation function from pong_agent
-                import sys
-                sys.path.append(os.path.dirname(__file__))
-                from pong_agent import create_dreamerv2_actor
+        if actor_type in ["real", "imagined"]:
+            actor_path = f"{actor_type}_actor_params.pkl"
 
-                with open(actor_path, "rb") as f:
-                    saved_data = pickle.load(f)
-                    actor_params = saved_data.get("params", saved_data)
+            if os.path.exists(actor_path):
+                print(f"Loading {actor_type} actor from {actor_path}...")
+                try:
+                    # Import actor creation function from pong_agent
+                    import sys
+                    sys.path.append(os.path.dirname(__file__))
+                    from pong_agent import create_dreamerv2_actor
 
-                actor_network = create_dreamerv2_actor(action_dim=6)
-                print("Successfully loaded trained actor for experience collection!")
-            except Exception as e:
-                print(f"Warning: Could not load actor ({e}), using ball-tracking policy")
-                actor_params = None
-                actor_network = None
+                    with open(actor_path, "rb") as f:
+                        saved_data = pickle.load(f)
+                        actor_params = saved_data.get("params", saved_data)
+
+                    actor_network = create_dreamerv2_actor(action_dim=6)
+                    print(f"Successfully loaded {actor_type} actor for experience collection!")
+                except Exception as e:
+                    print(f"Warning: Could not load {actor_type} actor ({e}), using ball-tracking policy")
+                    actor_params = None
+                    actor_network = None
+            else:
+                print(f"No {actor_type} actor found at {actor_path}, using ball-tracking policy")
         else:
-            print("No trained actor found, using ball-tracking policy")
+            print("Using ball-tracking policy (no actor specified)")
 
         data = collect_experience(
             env,
