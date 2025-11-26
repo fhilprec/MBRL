@@ -1376,7 +1376,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=10, rend
             frame_stack_size=4,
             clock_speed=50,
             model_scale_factor=model_scale_factor,
-            reward_predictor_params=reward_predictor_params,
+            reward_predictor_params=None,
         )
 
     return total_rewards
@@ -1669,7 +1669,7 @@ def main():
                     frame_stack_size=4,
                     clock_speed=5,
                     model_scale_factor=loaded_model_scale_factor,
-                    reward_predictor_params=reward_predictor_params,
+                    reward_predictor_params=None,
                     calc_score_based_reward=False,
                     rollout_length=training_params["rollout_length"],
                 )

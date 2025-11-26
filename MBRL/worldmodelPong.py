@@ -1008,7 +1008,7 @@ def compare_real_vs_model(
         error = jnp.mean((real_obs - pred_obs) ** 2)
         if print_error:
             print(
-                f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} FOR DEBUGGING : Player y position : {pred_obs[7]:.2f} "
+                f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} "
             )
 
 
