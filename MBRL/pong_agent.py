@@ -617,7 +617,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1, 1))
+                predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -626,7 +626,7 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             # reward = improved_reward
-            reward = improved_reward + reward_predictor_reward * 5
+            reward = improved_reward + reward_predictor_reward * 2
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
@@ -811,17 +811,15 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                         next_flat_obs[None, :]   # next state (REAL - no model errors!)
                     )
                     # Clip and round to match real rollout behavior: {-1, 0, +1}
-                    predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1.0, 1.0))
+                    predicted_reward_clipped = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(4/3)/2), -1.0, 1.0))
 
-                    # For real rollouts, use high confidence (0.9) since next_state is accurate
-                    # This helps the reward predictor contribute more to policy learning
-                    confidence_real = 0.9
-                    reward_predictor_reward = predicted_reward_clipped * confidence_real
+
+
                 else:
                     reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
                 # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
-                final_reward = jnp.array(improved_reward + reward_predictor_reward * 2.0, dtype=jnp.float32)
+                final_reward = jnp.array(improved_reward + predicted_reward_clipped * 2.0, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, final_reward, ~done)
@@ -1420,8 +1418,8 @@ def main():
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 10,  # Reduced from 6 to 4 - errors compound too fast by step 3
-        "num_rollouts": 3000,
+        "rollout_length": 6,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "num_rollouts": 5000,
         "policy_epochs": 5,  # Max epochs, KL will stop earlier
         "actor_lr": 2e-4,  # Reduced significantly for smaller policy updates
         "critic_lr": 8e-5,  # Moderate critic learning rate
