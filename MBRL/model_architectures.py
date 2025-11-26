@@ -1034,7 +1034,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     )
 
     # Combine rewards with appropriate scaling
-    total_reward = tracking_reward + alignment_bonus + score_reward * 2 # + movement_reward
+    total_reward = tracking_reward + alignment_bonus + score_reward * 2.1 # + movement_reward
 
     # Scale to reasonable range for learning
     return total_reward

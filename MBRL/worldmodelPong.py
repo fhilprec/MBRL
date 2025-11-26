@@ -987,7 +987,7 @@ def compare_real_vs_model(
     show_only_one_step = False,
     reward_predictor_params=None,
     calc_score_based_reward: bool = True,
-    print_error: bool = False,
+    print_error: bool = True,
     rollout_length: int = 0,
 ):
 
@@ -1007,9 +1007,23 @@ def compare_real_vs_model(
         # pred_obs is now squeezed, so it's 1D
         error = jnp.mean((real_obs - pred_obs) ** 2)
         if print_error:
-            print(
-                f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} "
-            )
+
+            score_val = improved_pong_reward(real_obs, action, frame_stack_size=4)
+            if score_val > 1:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[92m Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} \033[0m"
+                )
+            elif score_val < -1:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} \033[0m"
+                )
+            else:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} "
+                )
+
+
+            
 
 
         #for debugging purposes
