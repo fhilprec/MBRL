@@ -617,7 +617,7 @@ def generate_imagined_rollouts(
                     next_obs[None, :]  # next state (IMAGINED - may have errors!)
                 )
                 # Clip and round to match real rollout behavior: {-1, 0, +1}
-                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward*(10/9)/2), -1, 1))
+                predicted_reward_clipped = predicted_reward = jnp.round(jnp.clip(jnp.squeeze(predicted_reward), -1, 1))
 
                 # Apply confidence weighting: lower confidence for later steps
                 reward_predictor_reward = predicted_reward_clipped # * confidence deactivate confidence for now
@@ -626,7 +626,7 @@ def generate_imagined_rollouts(
             # Hand-crafted reward provides stable gradient signal throughout
             # Predicted reward adds sparse score information when confident
             # reward = improved_reward
-            reward = improved_reward + reward_predictor_reward * 3
+            reward = improved_reward + reward_predictor_reward * 5
 
             # DEBUG: Print reward components for first trajectory, first few steps
             # def debug_print_rewards(traj_idx, step_idx, improved_rew, predictor_rew, total_rew):
@@ -1065,25 +1065,6 @@ def train_dreamerv2_actor_critic(
     targets_std = targets.std()
     targets_normalized = (targets - targets_mean) / (targets_std + 1e-8)
 
-    # print(
-    #     f"Normalized targets - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    # )
-
-    # print(
-    #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
-    # )
-    # print(f"Targets shape: {targets.shape}, Values shape: {values.shape}")
-    # print(f"Raw advantages - Mean: {(targets - values[:-1]).mean():.4f}, Std: {(targets - values[:-1]).std():.4f}")
-    # print(
-    #     f"Lambda returns stats - Mean: {targets.mean():.4f}, Std: {targets.std():.4f}"
-    # )
-    # print(
-    #     f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    # )
-    # print(
-    #     f"Lambda returns stats - Mean: {targets_normalized.mean():.4f}, Std: {targets_normalized.std():.4f}"
-    # )
-
     # Use all T timesteps for training
     observations_flat = observations.reshape(T * B, -1)
     actions_flat = actions.reshape(T * B)
@@ -1326,7 +1307,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, num_episodes=1, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
     """Evaluate the trained policy in the real Pong environment using JAX scan."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1336,7 +1317,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
     )
 
     # Use a random seed if not provided
-    seed = np.random.randint(0, 2**31)
+    seed = int(__import__('time').time() * 1000) % (2**31)
     rng = jax.random.PRNGKey(seed)
 
     # Generate episode keys
@@ -1347,7 +1328,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=1, rende
     # Run episodes in parallel with vmap (reusing the existing run_single_episode function)
     # Use use_score_reward=True for evaluation to get actual Pong score
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=True),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=False),
         in_axes=0
     )
 
@@ -1441,9 +1422,9 @@ def main():
         "action_dim": 6,
         "rollout_length": 10,  # Reduced from 6 to 4 - errors compound too fast by step 3
         "num_rollouts": 3000,
-        "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
-        "critic_lr": 5e-4,  # Moderate critic learning rate
+        "policy_epochs": 5,  # Max epochs, KL will stop earlier
+        "actor_lr": 2e-4,  # Reduced significantly for smaller policy updates
+        "critic_lr": 8e-5,  # Moderate critic learning rate
         "lambda_": 0.95,
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
@@ -1619,7 +1600,9 @@ def main():
         #     dynamics_params = None
         #     reward_predictor_params = None
         #     normalization_stats = None
-        shuffled_obs = jax.random.permutation(jax.random.PRNGKey(SEED), obs)
+
+        key, shuffle_key = jax.random.split(key)
+        shuffled_obs = jax.random.permutation(shuffle_key, obs)
 
         # Free the original obs array, we only need shuffled_obs
         del obs
