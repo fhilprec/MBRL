@@ -2,7 +2,12 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+#print current python user
+import getpass
+user = getpass.getuser()
+
+if user == 'fhilprecht':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 import jax
 import jax.numpy as jnp
