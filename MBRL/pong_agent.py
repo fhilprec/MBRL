@@ -1744,6 +1744,31 @@ def main():
 
         save_model_checkpoints(actor_params, critic_params, prefix=prefix)
 
+        # Retrain worldmodel every 200 training runs
+        if i > 0 and i % 200 == 0:
+            print(f"\n{'='*60}")
+            print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
+            print(f"{'='*60}\n")
+
+            # Collect fresh experience with trained actor
+            print("Collecting fresh experience...")
+            os.system("python MBRL/worldmodel_mlp.py collect 500")
+
+            # Retrain worldmodel
+            print("Retraining worldmodel...")
+            os.system("python MBRL/worldmodel_mlp.py train 100")
+
+            # Reload the updated worldmodel
+            if os.path.exists("worldmodel_mlp.pkl"):
+                with open("worldmodel_mlp.pkl", "rb") as f:
+                    saved_data = pickle.load(f)
+                    dynamics_params = saved_data.get("params", saved_data.get("dynamics_params"))
+                    if "normalization_stats" in saved_data:
+                        normalization_stats = saved_data["normalization_stats"]
+                    print("Reloaded updated worldmodel!")
+
+            print("Worldmodel retraining complete!")
+            print(f"{'='*60}\n")
 
         if i % 50 == 0:
             # evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)

@@ -103,34 +103,51 @@ def collect_experience(
     frame_stack_size=4,
     exploration_rate=0.5,
     seed=42,
+    actor_params=None,
+    actor_network=None,
 ):
     """
     Collect experience data using JAX vmap and scan for speed.
 
-    Uses a ball-tracking policy with exploration.
+    Uses a trained actor policy if provided, otherwise uses ball-tracking policy with exploration.
     """
     rng = jax.random.PRNGKey(seed)
 
     def perfect_policy(obs, rng):
-        """Ball tracking policy with exploration."""
+        """Ball tracking policy with exploration, or trained actor policy if provided."""
         rng, action_key = jax.random.split(rng)
-        do_random = jax.random.uniform(action_key) < exploration_rate
-        random_action = jax.random.randint(action_key, (), 0, 6)
 
-        # Ball tracking: compare ball y with player y (from last frame)
-        perfect_action = jax.lax.cond(
-            obs.player.y[frame_stack_size - 1] > obs.ball.y[frame_stack_size - 1],
-            lambda _: jnp.array(4),  # Up
-            lambda _: jax.lax.cond(
-                obs.player.y[frame_stack_size - 1] < obs.ball.y[frame_stack_size - 1],
-                lambda _: jnp.array(3),  # Down
-                lambda _: jnp.array(0),  # Noop
+        # If actor is provided, use it instead of ball-tracking
+        if actor_params is not None and actor_network is not None:
+            # Flatten observation for actor
+            flat_obs, _ = flatten_obs(obs, single_state=True)
+            pi = actor_network.apply(actor_params, flat_obs)
+
+            # Sample action with exploration
+            do_random = jax.random.uniform(action_key) < exploration_rate
+            random_action = jax.random.randint(action_key, (), 0, 6)
+            actor_action = pi.sample(seed=action_key)
+
+            return jax.lax.select(do_random, random_action, actor_action)
+        else:
+            # Original ball-tracking policy
+            do_random = jax.random.uniform(action_key) < exploration_rate
+            random_action = jax.random.randint(action_key, (), 0, 6)
+
+            # Ball tracking: compare ball y with player y (from last frame)
+            perfect_action = jax.lax.cond(
+                obs.player.y[frame_stack_size - 1] > obs.ball.y[frame_stack_size - 1],
+                lambda _: jnp.array(4),  # Up
+                lambda _: jax.lax.cond(
+                    obs.player.y[frame_stack_size - 1] < obs.ball.y[frame_stack_size - 1],
+                    lambda _: jnp.array(3),  # Down
+                    lambda _: jnp.array(0),  # Noop
+                    None
+                ),
                 None
-            ),
-            None
-        )
+            )
 
-        return jax.lax.select(do_random, random_action, perfect_action)
+            return jax.lax.select(do_random, random_action, perfect_action)
 
     def run_single_episode(episode_key):
         """Run one complete episode using JAX scan."""
@@ -345,7 +362,15 @@ def train_world_model(
     dummy_obs = obs_normalized[0]
     dummy_action = jnp.array([actions[0]])  # Model expects (batch,) shape
 
-    params = model.init(rng, dummy_obs, dummy_action, None)
+    # Load existing checkpoint if available, otherwise initialize new params
+    if os.path.exists(checkpoint_path):
+        print(f"Loading existing checkpoint from {checkpoint_path}...")
+        checkpoint_data = load_checkpoint(checkpoint_path)
+        params = checkpoint_data.get("params", checkpoint_data.get("dynamics_params"))
+        print(f"Loaded checkpoint from epoch {checkpoint_data.get('epoch', 'unknown')}")
+    else:
+        print("No existing checkpoint found, initializing new parameters...")
+        params = model.init(rng, dummy_obs, dummy_action, None)
 
     # Count parameters
     num_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
@@ -660,10 +685,39 @@ def main():
         num_episodes = int(args[1]) if len(args) > 1 else 100
 
         env = create_env(frame_stack_size)
+
+        # Try to load trained actor if available
+        actor_params = None
+        actor_network = None
+        actor_path = "real_actor_params.pkl"
+
+        if os.path.exists(actor_path):
+            print(f"Loading trained actor from {actor_path}...")
+            try:
+                # Import actor creation function from pong_agent
+                import sys
+                sys.path.append(os.path.dirname(__file__))
+                from pong_agent import create_dreamerv2_actor
+
+                with open(actor_path, "rb") as f:
+                    saved_data = pickle.load(f)
+                    actor_params = saved_data.get("params", saved_data)
+
+                actor_network = create_dreamerv2_actor(action_dim=6)
+                print("Successfully loaded trained actor for experience collection!")
+            except Exception as e:
+                print(f"Warning: Could not load actor ({e}), using ball-tracking policy")
+                actor_params = None
+                actor_network = None
+        else:
+            print("No trained actor found, using ball-tracking policy")
+
         data = collect_experience(
             env,
             num_episodes=num_episodes,
             frame_stack_size=frame_stack_size,
+            actor_params=actor_params,
+            actor_network=actor_network,
         )
 
         save_path = "experience_mlp.pkl"

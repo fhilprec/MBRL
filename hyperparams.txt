@@ -1,0 +1,18 @@
+wm params: 500 episodes, 100 trainingepochs
+
+
+agent params:    
+ training_params = {
+        "action_dim": 6,
+        "rollout_length": 6,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "num_rollouts": 5000,
+        "policy_epochs": 10,  # Max epochs, KL will stop earlier
+        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
+        "critic_lr": 5e-4,  # Moderate critic learning rate
+        "lambda_": 0.95,
+        "entropy_scale": 0.01,  # Maintain exploration
+        "discount": 0.95,
+        "max_grad_norm": 0.5,  # Tight gradient clipping
+        "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
+        "early_stopping_patience": 100,
+    }
