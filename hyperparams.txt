@@ -16,3 +16,6 @@ agent params:
         "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
+
+
+    python MBRL/worldmodel_mlp.py collect 5000 imagined
