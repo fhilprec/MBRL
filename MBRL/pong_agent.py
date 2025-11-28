@@ -7,7 +7,7 @@ import getpass
 user = getpass.getuser()
 
 if user == 'fhilprecht':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 import jax
 import jax.numpy as jnp
@@ -824,7 +824,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                     reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
                 # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
-                final_reward = jnp.array(improved_reward, dtype=jnp.float32)
+                final_reward = jnp.array(score_reward, dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, final_reward, ~done)
