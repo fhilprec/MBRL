@@ -988,17 +988,29 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         frame_stack_size: Number of stacked frames
     """
     if frame_stack_size > 1:
-        obs = obs[(frame_stack_size - 1) :: frame_stack_size]
+        curr_obs = obs[(frame_stack_size - 1) :: frame_stack_size]
+        prev_obs = obs[(frame_stack_size - 2) :: frame_stack_size]  # Fixed: was -3, should be -2
+    else:
+        curr_obs = obs
+        prev_obs = obs
 
     # Extract ball and player positions from the latest frame
-    # Assuming standard Pong state format: [player_x, player_y, ..., ball_x, ball_y, ...]
-    player_x = obs[0]  # Player X position
-    player_y = obs[1]  # Player Y position
-    enemy_x = obs[4]   # Enemy X position
-    enemy_y = obs[5]   # Enemy Y position
-    ball_x = obs[8]  # Ball X position
-    ball_y = obs[9]  # Ball Y position
+    # Flat array order: [player_x, player_y, player_h, player_w,
+    #                    enemy_x, enemy_y, enemy_h, enemy_w,
+    #                    ball_x, ball_y, ball_h, ball_w,
+    #                    score_player, score_enemy]
+    player_x = curr_obs[0]  # Player X position (pixel coords, ~140)
+    player_y = curr_obs[1]  # Player Y position (pixel coords, 0-210)
+    enemy_x = curr_obs[4]   # Enemy X position (pixel coords, ~16)
+    ball_x = curr_obs[8]    # Ball X position (pixel coords, 0-160)
+    ball_y = curr_obs[9]    # Ball Y position (pixel coords, 0-210)
 
+    prev_ball_x = prev_obs[8]  # Ball X position from previous frame
+
+    # DEBUG: Print ball positions to find correct thresholds
+    # Uncomment these lines to see ball_x values when running
+    # jax.debug.print("ball_x={bx:.1f}, prev_ball_x={pbx:.1f}, player_x={px:.1f}, enemy_x={ex:.1f}",
+    #                 bx=ball_x, pbx=prev_ball_x, px=player_x, ex=enemy_x)
 
     # 1. Primary reward: Track ball vertically with exponential distance penalty
     y_distance = jnp.abs(ball_y - player_y)
@@ -1023,15 +1035,37 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         0.0
     )
 
-    score_reward = jnp.where(
-        ball_x > player_x + 1,  # Ball past player's paddle
-        -1.0,  # Strong penalty for missing
-        jnp.where(
-            ball_x < enemy_x - 1,  # Ball past enemy's paddle
-            1.0,  # Strong reward for scoring
-            0.0
+    # Detect crossing events using FIXED boundaries (not paddle positions)
+    # In Pong pixel coordinates (0-160):
+    #   - Enemy paddle is on LEFT at x=16
+    #   - Player paddle is on RIGHT at x=140
+    #   - Ball goes out of bounds past the paddles
+
+    # Scoring boundaries (ball goes past these to score)
+    # Enemy side (left): ball_x < ~10 means player missed (ball went left past enemy)
+    # Player side (right): ball_x > ~150 means enemy missed (ball went right past player)
+    ENEMY_WALL_X = 10   # Left boundary - if ball crosses, enemy scored
+    PLAYER_WALL_X = 150 # Right boundary - if ball crosses, player scored
+
+    margin = 3
+
+    if frame_stack_size > 1:
+        # Ball crossed LEFT wall (enemy scored, player missed)
+        ball_crossed_enemy_wall = (prev_ball_x >= ENEMY_WALL_X - margin) & (ball_x < ENEMY_WALL_X + margin)
+        # Ball crossed RIGHT wall (player scored, enemy missed)
+        ball_crossed_player_wall = (prev_ball_x <= PLAYER_WALL_X + margin) & (ball_x > PLAYER_WALL_X - margin)
+
+        score_reward = jnp.where(
+            ball_crossed_enemy_wall,
+            1.0,  # Enemy scored, player missed
+            jnp.where(
+                ball_crossed_player_wall,
+                -1.0,  # Player scored
+                0.0
+            )
         )
-    )
+    else:
+        score_reward = 0.0
 
     # Combine rewards with appropriate scaling
     total_reward = score_reward * 2.0 # + movement_reward

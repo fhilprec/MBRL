@@ -824,7 +824,7 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
                     reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
                 # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
-                final_reward = jnp.array(score_reward, dtype=jnp.float32)
+                final_reward = jnp.array(improved_pong_reward(next_flat_obs, action, frame_stack_size=4), dtype=jnp.float32)
 
             # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, final_reward, ~done)
@@ -1432,7 +1432,7 @@ def main():
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.5,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
     }
 
@@ -1675,7 +1675,7 @@ def main():
                     clock_speed=5,
                     model_scale_factor=loaded_model_scale_factor,
                     reward_predictor_params=None,
-                    calc_score_based_reward=False,
+                    calc_score_based_reward=True,
                     rollout_length=training_params["rollout_length"],
                 )
 
