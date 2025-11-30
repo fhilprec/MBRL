@@ -1055,11 +1055,13 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         # Ball crossed RIGHT wall (player scored, enemy missed)
         ball_crossed_player_wall = (prev_ball_x <= PLAYER_WALL_X + margin) & (ball_x > PLAYER_WALL_X - margin)
 
+        margin = 5
+
         score_reward = jnp.where(
-            ball_x < enemy_x,
+            ball_x < enemy_x - margin,
             1.0,  # Enemy scored, player missed
             jnp.where(
-                ball_x > player_x,
+                ball_x > player_x + margin,
                 -1.0,  # Player scored
                 0.0
             )
