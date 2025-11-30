@@ -1057,7 +1057,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
 
         score_reward = jnp.where(
             ball_x < enemy_x,
-            5.0,  # Enemy scored, player missed
+            1.0,  # Enemy scored, player missed
             jnp.where(
                 ball_x > player_x,
                 -1.0,  # Player scored
