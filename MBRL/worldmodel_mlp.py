@@ -843,7 +843,7 @@ def main():
             steps_into_future=10,
             frame_stack_size=frame_stack_size,
             model_scale_factor=MODEL_SCALE_FACTOR,
-            reward_predictor_params=reward_predictor_params,
+            # reward_predictor_params=reward_predictor_params,
             model_path=checkpoint_path,
             clock_speed=100,
             print_error=True,
