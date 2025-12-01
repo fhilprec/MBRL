@@ -413,6 +413,9 @@ def PongMLPDeep(model_scale_factor=1):
     """
     Deeper MLP with LayerNorm and residual connections.
     4 layers with skip connections for better gradient flow.
+
+    NOTE: Removes score features (last 8 features) from observations to prevent
+    out-of-distribution issues during model-based rollouts.
     """
     def forward(state, action, lstm_state=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
@@ -423,7 +426,11 @@ def PongMLPDeep(model_scale_factor=1):
         else:
             flat_state_full = state
 
-        flat_state = flat_state_full[..., :]
+        # Remove last 8 features (score_player and score_enemy for 4 frames)
+        # Original: 56 features (14 per frame × 4 frames)
+        # New: 48 features (12 per frame × 4 frames)
+        flat_state = flat_state_full[..., :-8]
+
         action_one_hot = jax.nn.one_hot(action, num_classes=6)
         x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
 
@@ -457,11 +464,11 @@ def PongMLPDeep(model_scale_factor=1):
 
         # Output layer - predict NEW frame only (not full state)
         # For frame stacking, we need to SHIFT frames and add new frame
-        # Features per frame: 14, Frames: 4, Total: 56
-        num_features_per_frame = 14
+        # Features per frame: 12 (excluding scores), Frames: 4, Total: 48
+        num_features_per_frame = 12  # Removed score features
         num_frames = 4
 
-        # Predict only the NEW frame (14 values)
+        # Predict only the NEW frame (12 values, no scores)
         new_frame = hk.Linear(num_features_per_frame)(x)
 
         # Shift frames: [f0, f1, f2, f3] -> [f1, f2, f3, NEW]
@@ -484,9 +491,9 @@ def PongMLPDeep(model_scale_factor=1):
             shifted_frames.append(feature_frames)
 
         # Stack all features in interleaved format
-        # shifted_frames is list of 14 arrays, each (batch, 4)
-        # We need to interleave them: [f0_frames, f1_frames, ..., f13_frames]
-        shifted_prediction = jnp.concatenate(shifted_frames, axis=-1)  # Shape: (batch, 56)
+        # shifted_frames is list of 12 arrays, each (batch, 4)
+        # We need to interleave them: [f0_frames, f1_frames, ..., f11_frames]
+        shifted_prediction = jnp.concatenate(shifted_frames, axis=-1)  # Shape: (batch, 48)
 
         return shifted_prediction, None
 

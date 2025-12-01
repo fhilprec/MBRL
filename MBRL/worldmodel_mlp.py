@@ -48,46 +48,56 @@ def create_world_model(model_scale_factor=MODEL_SCALE_FACTOR, use_deep=True):
 # ============================================================================
 
 def flatten_obs(state, single_state: bool = False) -> Tuple[jnp.ndarray, Any]:
-    """Flatten the state PyTree into a single array.
+    """Flatten the state PyTree into a single array and remove score features.
 
     Output format is INTERLEAVED: [feat0_f0, feat0_f1, ..., feat0_f3, feat1_f0, ...]
     This matches the format from jax.flatten_util.ravel_pytree on single observations.
+
+    NOTE: Removes last 8 features (score_player and score_enemy for 4 frames).
+    Original: 56 features, Output: 48 features
     """
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
-        return flat_state, unflattener
+        # Remove last 8 features (scores)
+        return flat_state[:-8], unflattener
 
     # Get all leaves - each has shape (..., 4) where 4 is frame stack
-    # Concatenate along last axis to get (..., 56)
+    # Concatenate along last axis to get (..., 56), then remove scores
     leaves = jax.tree_util.tree_leaves(state)
     flat_state = jnp.concatenate(leaves, axis=-1)
 
-    return flat_state, None
+    # Remove last 8 features (scores) -> shape becomes (..., 48)
+    return flat_state[..., :-8], None
 
 
 def detect_life_boundaries_vectorized(obs, next_obs, frame_stack_size=4):
     """
-    Detect scoring events in a batch of transitions (vectorized).
+    Detect scoring events using ball position (since scores are removed).
 
     Data is INTERLEAVED format: [feat0_f0, feat0_f1, ..., feat0_f3, feat1_f0, ...]
     For feature i at frame f: index = i * frame_stack_size + f
 
     Args:
-        obs: (N, 56) current observations
-        next_obs: (N, 56) next observations
+        obs: (N, 48) current observations (without scores)
+        next_obs: (N, 48) next observations (without scores)
 
     Returns:
-        Boolean array of shape (N,) indicating score changes
+        Boolean array of shape (N,) indicating score changes (ball reset events)
     """
-    # Feature indices (0-based): score_player=12, score_enemy=13
-    # Last frame index: feature_idx * 4 + 3
-    score_player_idx = 12 * frame_stack_size + (frame_stack_size - 1)  # = 51
-    score_enemy_idx = 13 * frame_stack_size + (frame_stack_size - 1)   # = 55
+    # Use ball position to detect resets
+    # Ball x (feat 8): indices [32, 33, 34, 35]
+    # When ball resets, it jumps to center (x=78)
+    ball_x_idx_last = 8 * frame_stack_size + (frame_stack_size - 1)  # = 35
 
-    score_changed = (
-        (obs[:, score_player_idx] != next_obs[:, score_player_idx]) |
-        (obs[:, score_enemy_idx] != next_obs[:, score_enemy_idx])
-    )
+    # Detect large jumps in ball position (indicating reset)
+    ball_x_curr = obs[:, ball_x_idx_last]
+    ball_x_next = next_obs[:, ball_x_idx_last]
+
+    # Ball reset detection: ball moves to center position (~78) from edge
+    ball_reset = jnp.abs(ball_x_next - 78.0) < 5.0  # Ball near center
+    ball_was_not_center = jnp.abs(ball_x_curr - 78.0) > 20.0  # Ball was away from center
+
+    score_changed = ball_reset & ball_was_not_center
 
     return score_changed
 
@@ -194,7 +204,7 @@ def collect_experience(
     print("Processing collected data...")
 
     # Flatten all observations at once (vectorized)
-    flat_obs_all, _ = flatten_obs(observations)  # (num_episodes, max_steps, 56)
+    flat_obs_all, _ = flatten_obs(observations)  # (num_episodes, max_steps, 48) - scores removed
 
     # Process episodes
     all_obs = []
@@ -219,15 +229,18 @@ def collect_experience(
             actions_slice = valid_actions[:-1]
             rewards_slice = valid_rewards[:-1]
 
-            # Vectorized life boundary detection (INTERLEAVED format)
-            # For feature i at last frame: index = i * frame_stack_size + (frame_stack_size - 1)
-            score_player_idx = 12 * frame_stack_size + (frame_stack_size - 1)  # = 51
-            score_enemy_idx = 13 * frame_stack_size + (frame_stack_size - 1)   # = 55
+            # Vectorized life boundary detection using ball position (scores removed)
+            # Ball x (feat 8) at last frame: index = 8 * frame_stack_size + (frame_stack_size - 1) = 35
+            ball_x_idx = 8 * frame_stack_size + (frame_stack_size - 1)  # = 35
 
-            score_changes = (
-                (obs_slice[:, score_player_idx] != next_obs_slice[:, score_player_idx]) |
-                (obs_slice[:, score_enemy_idx] != next_obs_slice[:, score_enemy_idx])
-            )
+            # Detect ball resets (ball moves to center ~78 from edge)
+            ball_x_curr = obs_slice[:, ball_x_idx]
+            ball_x_next = next_obs_slice[:, ball_x_idx]
+
+            ball_reset = jnp.abs(ball_x_next - 78.0) < 5.0  # Ball near center
+            ball_was_not_center = jnp.abs(ball_x_curr - 78.0) > 20.0  # Ball was away
+
+            score_changes = ball_reset & ball_was_not_center
             boundary_indices = jnp.where(score_changes)[0] + cumulative_steps
             life_boundaries.extend(boundary_indices.tolist())
 
@@ -387,9 +400,10 @@ def train_world_model(
 
     # Ball-specific loss weighting - ball position errors compound fastest
     # INTERLEAVED format: for feature i, frame f: index = i * 4 + f
+    # NOTE: Now using 48 features (12 per frame × 4 frames, scores removed)
     # Ball features: ball_x (feat 8), ball_y (feat 9)
     # All frames for ball_x: [32, 33, 34, 35], ball_y: [36, 37, 38, 39]
-    feature_weights = jnp.ones(56)
+    feature_weights = jnp.ones(48)  # Changed from 56 to 48
     # INCREASED: Weight ball position features MUCH higher (10x weight instead of 3x)
     # This forces the model to prioritize ball physics accuracy
     ball_x_indices = jnp.array([32, 33, 34, 35])
@@ -414,9 +428,9 @@ def train_world_model(
     def train_step_simple(params, opt_state, obs_batch, action_batch, target_batch):
         """
         Simple single-step prediction training.
-        obs_batch: (batch, 56) observations
+        obs_batch: (batch, 48) observations (scores removed)
         action_batch: (batch,) actions
-        target_batch: (batch, 56) target next observations
+        target_batch: (batch, 48) target next observations (scores removed)
         """
         def loss_fn(params):
             def single_forward(obs, action):

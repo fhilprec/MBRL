@@ -1005,21 +1005,27 @@ def compare_real_vs_model(
         previous_model_obs=None,
     ):
         # pred_obs is now squeezed, so it's 1D
+        print(len(pred_obs))
         error = jnp.mean((real_obs - pred_obs) ** 2)
         if print_error:
 
-            score_val = improved_pong_reward(real_obs, action, frame_stack_size=4)
+            if steps_into_future > 0:
+                reward_obs = pred_obs
+            else:
+                reward_obs = real_obs
+
+            score_val = improved_pong_reward(reward_obs, action, frame_stack_size=4)
             if score_val > 1:
                 print(
-                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[92m Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} \033[0m"
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[92m Reward: {score_val} \033[0m"
                 )
             elif score_val < -1:
                 print(
-                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} \033[0m"
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {score_val} \033[0m"
                 )
             else:
                 print(
-                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {improved_pong_reward(real_obs, action, frame_stack_size=4)} "
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
                 )
 
 
@@ -1280,12 +1286,14 @@ def compare_real_vs_model(
             previous_model_obs = normalized_flattened_model_obs * state_std + state_mean
             debug_obs(step_count, next_real_obs, model_obs, action, previous_model_obs)
 
-
+        #append state by 8 zeroes for the score part
+        real_obs_for_state = jnp.concatenate([real_obs, jnp.zeros(8)])
+        model_obs_for_state = jnp.concatenate([model_obs, jnp.zeros(8)])
         real_base_state = pong_flat_observation_to_state(
-            real_obs, unflattener, frame_stack_size=frame_stack_size
+            real_obs_for_state, unflattener, frame_stack_size=frame_stack_size
         )
         model_base_state = pong_flat_observation_to_state(
-            model_obs.squeeze(), unflattener, frame_stack_size=frame_stack_size
+            model_obs_for_state, unflattener, frame_stack_size=frame_stack_size
         )
 
         real_raster = renderer.render(real_base_state)

@@ -372,23 +372,45 @@ def flatten_obs(
     state, single_state: bool = False, is_list=False
 ) -> Tuple[jnp.ndarray, Any]:
     """
-    Flatten the state PyTree into a single array.
+    Flatten the state PyTree into a single array and remove score features.
     This is useful for debugging and visualization.
+
+    NOTE: Removes last 8 features (score_player and score_enemy for 4 frames).
+    Original: 56 features, Output: 48 features
+
+    IMPORTANT: If input is already a flat array with 48 features (from world model),
+    returns it unchanged.
     """
+
+    # If already a flat array (from world model predictions)
+    if isinstance(state, jnp.ndarray):
+        if state.ndim == 1 and state.shape[0] == 48:
+            # Already processed, return as-is
+            return state, None
+        elif state.ndim == 2 and state.shape[-1] == 48:
+            # Batch of already-processed observations
+            return state, None
 
     if type(state) == list:
         flat_states = []
 
         for s in state:
-            flat_state, _ = jax.flatten_util.ravel_pytree(s)
-            flat_states.append(flat_state)
+            # Check if already flat
+            if isinstance(s, jnp.ndarray) and s.shape[0] == 48:
+                flat_states.append(s)
+            else:
+                flat_state, _ = jax.flatten_util.ravel_pytree(s)
+                # Remove last 8 features (scores)
+                flat_states.append(flat_state[:-8])
         flat_states = jnp.stack(flat_states, axis=0)
         print(flat_states.shape)
         return flat_states
 
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
-        return flat_state, unflattener
+        # Remove last 8 features (scores)
+        return flat_state[:-8], unflattener
+
     batch_shape = (
         state.player_x.shape[0]
         if hasattr(state, "player_x")
@@ -397,7 +419,8 @@ def flatten_obs(
 
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     flat_state = flat_state.reshape(batch_shape, -1)
-    return flat_state, unflattener
+    # Remove last 8 features (scores) from each batch element
+    return flat_state[..., :-8], unflattener
 
 
 def create_dreamerv2_actor(action_dim: int):
@@ -785,19 +808,23 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
 
-            # Compute score-based reward (my_score - enemy_score)
-            old_score = flat_obs[-5] - flat_obs[-1]
-            new_score = next_flat_obs[-5] - next_flat_obs[-1]
-            score_reward = new_score - old_score
+            # Compute score-based reward from state (not observations!)
+            # Observations no longer contain scores (stripped to 48 features)
+            old_player_score = state.player_score if hasattr(state, 'player_score') else 0
+            old_enemy_score = state.enemy_score if hasattr(state, 'enemy_score') else 0
+            new_player_score = next_state.player_score if hasattr(next_state, 'player_score') else 0
+            new_enemy_score = next_state.enemy_score if hasattr(next_state, 'enemy_score') else 0
+
+            score_reward = (new_player_score - old_player_score) - (new_enemy_score - old_enemy_score)
             # Clip to prevent weird edge cases
             score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
 
             # Choose reward based on flag
             if use_score_reward:
-                # For evaluation: use actual score difference
+                # For evaluation: use actual score difference from game state
                 final_reward = jnp.array(score_reward, dtype=jnp.float32)
             else:
-                # For training: use improved pong reward + predictor
+                # For training: use improved pong reward (hand-crafted from positions)
                 improved_reward = improved_pong_reward(next_flat_obs, action, frame_stack_size=4)
 
                 # HYBRID REWARD: For real rollouts, we can trust the predictor more since
