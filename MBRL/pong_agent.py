@@ -810,10 +810,11 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
 
             # Compute score-based reward from state (not observations!)
             # Observations no longer contain scores (stripped to 48 features)
-            old_player_score = state.player_score if hasattr(state, 'player_score') else 0
-            old_enemy_score = state.enemy_score if hasattr(state, 'enemy_score') else 0
-            new_player_score = next_state.player_score if hasattr(next_state, 'player_score') else 0
-            new_enemy_score = next_state.enemy_score if hasattr(next_state, 'enemy_score') else 0
+            # State is always a PongState PyTree with player_score and enemy_score fields
+            old_player_score = state.player_score
+            old_enemy_score = state.enemy_score
+            new_player_score = next_state.player_score
+            new_enemy_score = next_state.enemy_score
 
             score_reward = (new_player_score - old_player_score) - (new_enemy_score - old_enemy_score)
             # Clip to prevent weird edge cases
