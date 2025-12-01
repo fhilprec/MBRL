@@ -810,11 +810,11 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
 
             # Compute score-based reward from state (not observations!)
             # Observations no longer contain scores (stripped to 48 features)
-            # State is always a PongState PyTree with player_score and enemy_score fields
-            old_player_score = state.player_score
-            old_enemy_score = state.enemy_score
-            new_player_score = next_state.player_score
-            new_enemy_score = next_state.enemy_score
+            # State is AtariState wrapper, actual game state is in env_state field
+            old_player_score = state.env_state.player_score
+            old_enemy_score = state.env_state.enemy_score
+            new_player_score = next_state.env_state.player_score
+            new_enemy_score = next_state.env_state.enemy_score
 
             score_reward = (new_player_score - old_player_score) - (new_enemy_score - old_enemy_score)
             # Clip to prevent weird edge cases
