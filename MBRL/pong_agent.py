@@ -1763,7 +1763,7 @@ def main():
         save_model_checkpoints(actor_params, critic_params, i, prefix=prefix)
 
         # Retrain worldmodel every 200 training runs
-        if i > 0 and i % 1 == 100 and rollout_func == generate_imagined_rollouts:   #activate this later
+        if i % 100 == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")
