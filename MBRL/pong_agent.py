@@ -1789,7 +1789,7 @@ def main():
 
             # Retrain worldmodel
             print("Retraining worldmodel...")
-            os.system("python MBRL/worldmodel_mlp.py train 50")
+            os.system("python MBRL/worldmodel_mlp.py train 10")
 
             # Reload the updated worldmodel
             if os.path.exists("worldmodel_mlp.pkl"):
