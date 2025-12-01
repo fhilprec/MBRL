@@ -1751,7 +1751,7 @@ def main():
         save_model_checkpoints(actor_params, critic_params, prefix=prefix)
 
         # Retrain worldmodel every 200 training runs
-        if False and i > 0 and i % 200 == 0:   #activate this later
+        if i > 0 and i % 1 == 100 and rollout_func == generate_imagined_rollouts:   #activate this later
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")
@@ -1766,7 +1766,7 @@ def main():
 
             # Retrain worldmodel
             print("Retraining worldmodel...")
-            os.system("python MBRL/worldmodel_mlp.py train 100")
+            os.system("python MBRL/worldmodel_mlp.py train 50")
 
             # Reload the updated worldmodel
             if os.path.exists("worldmodel_mlp.pkl"):
