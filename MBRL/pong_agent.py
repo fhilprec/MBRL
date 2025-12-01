@@ -1779,6 +1779,8 @@ def main():
 
             print("Worldmodel retraining complete!")
             print(f"{'='*60}\n")
+            with open(f"{prefix}training_log", "a") as lf:
+                lf.write("-------------------------------------- Retrained Model --------------------------------------")
 
         if i % 50 == 0:
             # evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
