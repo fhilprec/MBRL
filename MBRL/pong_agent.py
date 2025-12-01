@@ -1459,7 +1459,19 @@ def main():
 
     model_exists = False
 
-    for i in range(training_runs):
+    # Load starting iteration counter from actor params if it exists
+    start_iteration = 0
+    if os.path.exists(f"{prefix}actor_params.pkl"):
+        try:
+            with open(f"{prefix}actor_params.pkl", "rb") as f:
+                saved_data = pickle.load(f)
+                start_iteration = saved_data.get("iteration", 0)
+                print(f"Resuming from iteration {start_iteration}")
+        except Exception as e:
+            print(f"Could not load iteration counter: {e}. Starting from 0")
+            start_iteration = 0
+
+    for i in range(start_iteration, start_iteration + training_runs):
         print(f"This is the {i}th iteration training the actor-critic")
 
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
@@ -1716,13 +1728,13 @@ def main():
 
         print(f"Mean reward: {jnp.mean(imagined_rewards):.4f}")
 
-        def save_model_checkpoints(actor_params, critic_params, prefix=prefix):
-            """Save parameters with consistent structure"""
+        def save_model_checkpoints(actor_params, critic_params, iteration, prefix=prefix):
+            """Save parameters with consistent structure including iteration counter"""
             with open(f"{prefix}actor_params.pkl", "wb") as f:
-                pickle.dump({"params": actor_params}, f)
+                pickle.dump({"params": actor_params, "iteration": iteration + 1}, f)
             with open(f"{prefix}critic_params.pkl", "wb") as f:
-                pickle.dump({"params": critic_params}, f)
-            print("Saved actor, critic parameters")
+                pickle.dump({"params": critic_params, "iteration": iteration + 1}, f)
+            print(f"Saved actor, critic parameters (iteration {iteration})")
 
         action_probs = analyze_policy_behavior(actor_network, actor_params, imagined_obs)
 
@@ -1748,7 +1760,7 @@ def main():
         with open(f"{prefix}training_log", "a") as lf:
             lf.write(log_line)
 
-        save_model_checkpoints(actor_params, critic_params, prefix=prefix)
+        save_model_checkpoints(actor_params, critic_params, i, prefix=prefix)
 
         # Retrain worldmodel every 200 training runs
         if i > 0 and i % 1 == 100 and rollout_func == generate_imagined_rollouts:   #activate this later
