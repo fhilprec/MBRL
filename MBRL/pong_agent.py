@@ -1452,16 +1452,19 @@ def main():
     training_params = {
         "action_dim": 6,
         "rollout_length": 7,  # Reduced from 6 to 4 - errors compound too fast by step 3
-        "num_rollouts": 10000,
+        "num_rollouts": 20000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
-        "critic_lr": 5e-4,  # Moderate critic learning rate
+        "actor_lr": 4e-5,  # Reduced significantly for smaller policy updates
+        "critic_lr": 2.5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 0.1,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
+        "retrain_interval": 50,  # Retrain world model every 50 iterations
+        "wm_sample_size": 500,  # Number of samples to collect for world model training
+        "wm_train_epochs": 20,  # Increased from 10 - better world model accuracy
     }
 
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
@@ -1792,7 +1795,7 @@ def main():
 
 
 
-        if i % 50 == 0:
+        if i % training_params["retrain_interval"] == 0:
             # evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
             # and print result into training_log
             eval_rewards = evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
@@ -1801,8 +1804,8 @@ def main():
             with open(f"{prefix}training_log", "a") as lf:
                 lf.write(f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n")
 
-                # Retrain worldmodel every 200 training runs
-        if i % 50 == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
+                # Retrain worldmodel every retrain_interval training runs
+        if i % training_params["retrain_interval"] == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")
@@ -1813,25 +1816,32 @@ def main():
 
             # Collect fresh experience with trained actor
             print(f"Collecting fresh experience with {actor_type} actor...")
-            os.system(f"python MBRL/worldmodel_mlp.py collect 500 {actor_type}")
+            os.system(f"python MBRL/worldmodel_mlp.py collect {training_params['wm_sample_size']} {actor_type}")
 
             # Retrain worldmodel
             print("Retraining worldmodel...")
-            os.system("python MBRL/worldmodel_mlp.py train 10")
+            os.system(f"python MBRL/worldmodel_mlp.py train {training_params['wm_train_epochs']}")
 
-            # Reload the updated worldmodel
+            # Reload the updated worldmodel and get training error
             if os.path.exists("worldmodel_mlp.pkl"):
                 with open("worldmodel_mlp.pkl", "rb") as f:
                     saved_data = pickle.load(f)
                     dynamics_params = saved_data.get("params", saved_data.get("dynamics_params"))
                     if "normalization_stats" in saved_data:
                         normalization_stats = saved_data["normalization_stats"]
+                    # Get the training loss from the checkpoint
+                    wm_training_loss = saved_data.get("loss", None)
                     print("Reloaded updated worldmodel!")
+                    if wm_training_loss is not None:
+                        print(f"World model training loss: {wm_training_loss:.6f}")
 
             print("Worldmodel retraining complete!")
             print(f"{'='*60}\n")
             with open(f"{prefix}training_log", "a") as lf:
-                lf.write("-------------------------------------- Retrained Model --------------------------------------\n")
+                if wm_training_loss is not None:
+                    lf.write(f"-------------------------------------- Retrained Model (loss={wm_training_loss:.6f}) --------------------------------------\n")
+                else:
+                    lf.write("-------------------------------------- Retrained Model --------------------------------------\n")
 
 
 
