@@ -1065,8 +1065,8 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         margin = 5
 
         score_reward = jnp.where(
-            ball_x < enemy_x - margin,
-            3.0,  # Player Scored
+            ball_x < enemy_x + margin, #also give reward if ball is very close to enemy paddle
+            1.0,  # Player Scored
             jnp.where(
                 ball_x > player_x + margin,
                 -1.0,  # Enemy scored

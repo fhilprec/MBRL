@@ -1005,7 +1005,6 @@ def compare_real_vs_model(
         previous_model_obs=None,
     ):
         # pred_obs is now squeezed, so it's 1D
-        print(len(pred_obs))
         error = jnp.mean((real_obs - pred_obs) ** 2)
         if print_error:
 
@@ -1019,14 +1018,14 @@ def compare_real_vs_model(
                 print(
                     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[92m Reward: {score_val} \033[0m"
                 )
-            elif score_val < -1:
+            if score_val < -1:
                 print(
                     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {score_val} \033[0m"
                 )
-            else:
-                print(
-                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
-                )
+            # else:
+            #     print(
+            #         f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
+            #     )
 
 
             

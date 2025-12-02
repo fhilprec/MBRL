@@ -1446,7 +1446,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 
 def main():
 
-    training_runs = 10000
+    training_runs = 100000
     model_scale_factor = MODEL_SCALE_FACTOR  # Same as in worldmodelPong.py
 
     training_params = {
