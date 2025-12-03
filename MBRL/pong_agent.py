@@ -1359,7 +1359,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=10, rend
     # Run episodes in parallel with vmap (reusing the existing run_single_episode function)
     # Use use_score_reward=True for evaluation to get actual Pong score
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=True, num_episodes=5),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=True),
         in_axes=0
     )
 
@@ -1636,7 +1636,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=100)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=5)
             exit()
 
 
