@@ -27,11 +27,8 @@ from jax import lax
 import gc
 
 
-from worldmodelPong import (
-    compare_real_vs_model,
-    print_full_array,
-    collect_experience_sequential,
-    calculate_score_based_reward,
+from worldmodel_mlp import (
+    compare_real_vs_model
 )
 from model_architectures import *
 from jaxatari.wrappers import LogWrapper, FlattenObservationWrapper, AtariWrapper
@@ -1278,7 +1275,7 @@ def main():
                 lf.write(
                     f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n"
                 )
-            if eval_mean >= 14.0:
+            if eval_mean >= 19.0:
                 print(
                     f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!"
                 )

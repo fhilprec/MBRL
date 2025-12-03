@@ -1088,25 +1088,6 @@ def load_checkpoint(path):
     return data
 
 
-# ============================================================================
-# Visualization - uses compare_real_vs_model from worldmodelPong
-# ============================================================================
-
-import worldmodelPong
-from worldmodelPong import compare_real_vs_model
-
-
-def set_model_architecture(use_deep=True):
-    """Set the MODEL_ARCHITECTURE in worldmodelPong based on checkpoint."""
-    if use_deep:
-        worldmodelPong.MODEL_ARCHITECTURE = PongMLPDeep
-    else:
-        worldmodelPong.MODEL_ARCHITECTURE = PongMLPLight
-
-
-# ============================================================================
-# Main CLI
-# ============================================================================
 
 
 def create_env(frame_stack_size=4):
