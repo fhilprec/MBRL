@@ -802,7 +802,13 @@ def run_single_episode(episode_key, actor_params, actor_network, env, max_steps=
             if not inference:
                 action = pi.sample(seed=action_key)
             else:
-                action = pi.mode()
+                # Apply temperature to logits for controlled exploration
+                # Higher temperature = more random, lower = more greedy
+                # temperature=1.0 is normal sampling, temperature→0 is greedy
+                temperature = 0.05  # Adjust this value (0.05-0.3 is typical)
+                scaled_logits = pi.logits / temperature
+                pi_temp = distrax.Categorical(logits=scaled_logits)
+                action = pi_temp.sample(seed=action_key)
 
             # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
@@ -1636,7 +1642,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=100)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=1)
             exit()
 
 
