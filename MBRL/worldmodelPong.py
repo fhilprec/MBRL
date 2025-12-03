@@ -1022,10 +1022,10 @@ def compare_real_vs_model(
                 print(
                     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {score_val} \033[0m"
                 )
-            # else:
-            #     print(
-            #         f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
-            #     )
+            if score_val == 0:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
+                )
 
 
             
