@@ -15,22 +15,414 @@ import optax
 import pickle
 import os
 import sys
+import pygame
 from tqdm import tqdm
 from typing import Tuple, Any
 
 # Import from jaxatari for environment
-from jaxatari.games.jax_pong import JaxPong
+from obs_state_converter import pong_flat_observation_to_state
+from jaxatari.games.jax_pong import JaxPong, PongRenderer
 from jaxatari.wrappers import AtariWrapper, FlattenObservationWrapper
 
 # Import from existing codebase
-from model_architectures import PongMLPDeep, RewardPredictorMLPTransition
+from model_architectures import PongMLPDeep, RewardPredictorMLPTransition, improved_pong_reward
 
 
 MODEL_SCALE_FACTOR = 1  # Keep at 1 for speed
 
+action_map = {
+    0: "NOOP",
+    1: "NOOP",
+    2: "NOOP",
+    3: "DOWN",
+    4: "UP",
+    5: "NOOP",
+}
+
 # ============================================================================
 # MLP World Model
 # ============================================================================
+
+def compare_real_vs_model(
+    num_steps: int = 150,
+    render_scale: int = 2,
+    obs=None,
+    actions=None,
+    normalization_stats=None,
+    steps_into_future: int = 20,
+    clock_speed=20,
+    boundaries=None,
+    env=None,
+    starting_step: int = 0,
+    render_debugging: bool = False,
+    frame_stack_size: int = 4,
+    model_path=None,
+    show_only_one_step=False,
+    reward_predictor_params=None,
+    calc_score_based_reward: bool = True,
+    print_error: bool = True,
+    rollout_length: int = 0,
+):
+
+    rng = jax.random.PRNGKey(0)
+
+    if len(obs) == 1:
+        obs = obs.squeeze(0)
+
+    def debug_obs(
+        step,
+        real_obs,
+        pred_obs,
+        action,
+        previous_model_obs=None,
+    ):
+        # pred_obs is now squeezed, so it's 1D
+        error = jnp.mean((real_obs - pred_obs) ** 2)
+        if print_error:
+
+            if steps_into_future > 0:
+                reward_obs = pred_obs
+            else:
+                reward_obs = real_obs
+
+            score_val = improved_pong_reward(reward_obs, action, frame_stack_size=4)
+            if score_val > 1:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[92m Reward: {score_val} \033[0m"
+                )
+            if score_val < -1:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {score_val} \033[0m"
+                )
+            # else:
+            #     print(
+            #         f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
+            #     )
+
+        # for debugging purposes
+        if calc_score_based_reward:
+            prev_real_obs = obs[step - 1] if step > 0 else real_obs
+
+            old_score = prev_real_obs[-5] - prev_real_obs[-1]
+            new_score = real_obs[-5] - real_obs[-1]
+
+            score_reward = new_score - old_score
+            score_reward = jnp.array(
+                jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
+            )
+
+            if score_reward != 0:
+                score_val = float(score_reward)
+                if score_val > 0:
+                    print(f"\033[92mStep {step}, Score Reward: {score_val}\033[0m")
+                elif score_val < 0:
+                    print(f"\033[91mStep {step}, Score Reward: {score_val}\033[0m")
+
+        # print(pred_obs)
+        # print(reward_predictor_params)
+        # TEMPORARY: Using transition-based reward predictor for visualization
+        # TODO_CLEANUP: This will become standard once migration is complete
+        if reward_predictor_params is not None and previous_model_obs is not None:
+
+            reward_model_viz = RewardPredictorMLPTransition(1)
+            # Need previous observation for transition-based prediction
+            # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
+            prev_real_obs = obs[step]
+            raw_prediction = reward_model_viz.apply(
+                reward_predictor_params, rng, previous_model_obs, action, pred_obs
+            )
+
+            raw_val = float(jnp.squeeze(raw_prediction))
+            # print(raw_val)
+            predicted_reward = jnp.round(
+                jnp.clip(jnp.squeeze((raw_prediction * (4 / 3) / 2)), -1.0, 1.0)
+            )  # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            # rounded_reward = jnp.round(predicted_reward * 2) / 2
+            pred_val = float(predicted_reward)
+
+            # Debug: print ball_x from prev and current obs to understand what model sees
+            frame_stack_size = 4
+            base = (frame_stack_size - 1) * 14
+            prev_ball_x = float(prev_real_obs[-21])
+            curr_ball_x = float(real_obs[-21])
+            # print(curr_ball_x)
+            improved_reward = improved_reward = improved_pong_reward(
+                real_obs, action, frame_stack_size=4
+            )
+            reward = improved_reward + pred_val * 2.0
+            # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
+            if abs(pred_val) > 0.0:
+                if pred_val > 0:
+                    print(
+                        f"\033[92mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
+                else:
+                    print(
+                        f"\033[91mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
+
+        if reward_predictor_params is not None and steps_into_future == 0:
+
+            reward_model_viz = RewardPredictorMLPTransition(1)
+            # Need previous observation for transition-based prediction
+            # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
+            prev_real_obs = obs[step]
+            raw_prediction = reward_model_viz.apply(
+                reward_predictor_params, rng, prev_real_obs, action, real_obs
+            )
+
+            raw_val = float(jnp.squeeze(raw_prediction))
+            # print(raw_val)
+            predicted_reward = jnp.round(
+                jnp.clip(jnp.squeeze((raw_prediction * (10 / 9) / 2)), -1.0, 1.0)
+            )  # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            # rounded_reward = jnp.round(predicted_reward * 2) / 2
+            pred_val = float(predicted_reward)
+
+            # Debug: print ball_x from prev and current obs to understand what model sees
+            frame_stack_size = 4
+            base = (frame_stack_size - 1) * 14
+            prev_ball_x = float(prev_real_obs[-21])
+            curr_ball_x = float(real_obs[-21])
+            # print(curr_ball_x)
+            improved_reward = improved_reward = improved_pong_reward(
+                real_obs, action, frame_stack_size=4
+            )
+            reward = improved_reward + pred_val * 2.0
+            # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
+            if abs(pred_val) > 0.0:
+                if pred_val > 0:
+                    print(
+                        f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
+                else:
+                    print(
+                        f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
+
+        if error > 20 and render_debugging:
+            print("-" * 100)
+            print("Indexes where difference > 1:")
+            for j in range(len(pred_obs)):
+                if jnp.abs(pred_obs[j] - real_obs[j]) > 10:
+                    print(
+                        f"Index {j}: Predicted {pred_obs[j]:.2f} vs Real {real_obs[j]:.2f}"
+                    )
+            print("-" * 100)
+
+    def check_lstm_state_health(lstm_state, step):
+        if lstm_state is not None:
+
+            lstm1_state, lstm2_state = lstm_state
+
+            hidden1_norm = jnp.linalg.norm(lstm1_state.hidden)
+            cell1_norm = jnp.linalg.norm(lstm1_state.cell)
+
+            hidden2_norm = jnp.linalg.norm(lstm2_state.hidden)
+            cell2_norm = jnp.linalg.norm(lstm2_state.cell)
+
+            max_norm = max(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
+            min_norm = min(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
+
+            if max_norm > 5.0:
+                print(
+                    f"Step {step}: LSTM state explosion - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
+                )
+            elif min_norm < 0.01:
+                print(
+                    f"Step {step}: LSTM state vanishing - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
+                )
+            else:
+
+                if step % 50 == 0:
+                    print(
+                        f"Step {step}: LSTM states healthy - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
+                    )
+
+    if normalization_stats:
+        state_mean = normalization_stats["mean"]
+        state_std = normalization_stats["std"]
+    else:
+        state_mean = 0
+        state_std = 1
+
+    renderer = PongRenderer()
+
+
+    if steps_into_future != 0:
+        with open(model_path, "rb") as f:
+            model_data = pickle.load(f)
+            # Check if it's a checkpoint or final model
+            if "dynamics_params" in model_data:
+                dynamics_params = model_data["dynamics_params"]
+                normalization_stats = model_data.get("normalization_stats", None)
+            else:
+                # It's a checkpoint
+                dynamics_params = model_data["params"]
+                normalization_stats = model_data.get("normalization_stats", None)
+
+    # Initialize world_model outside the if block so it's always available
+    world_model = PongMLPDeep(MODEL_SCALE_FACTOR)
+
+    pygame.init()
+    WIDTH = 160
+    HEIGHT = 210
+    WINDOW_WIDTH = WIDTH * render_scale * 2 + 20
+    WINDOW_HEIGHT = HEIGHT * render_scale
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("Real Environment vs World Model (Pong)")
+
+    real_surface = pygame.Surface((WIDTH, HEIGHT))
+    model_surface = pygame.Surface((WIDTH, HEIGHT))
+
+    step_count = 0 + starting_step
+    clock = pygame.time.Clock()
+
+    game = JaxPong()
+    env = AtariWrapper(
+        game,
+        sticky_actions=False,
+        episodic_life=False,
+        frame_stack_size=frame_stack_size,
+    )
+    dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
+    _, unflattener = flatten_obs(dummy_obs, single_state=True)
+
+    real_obs = obs[0]
+    model_obs = obs[0]
+
+    # Initialize LSTM state (only if using model predictions)
+    if steps_into_future > 0:
+        dummy_action = jnp.zeros(1, dtype=jnp.int32)
+        normalized_init_obs = (obs[0] - state_mean) / state_std
+        _, lstm_state = world_model.apply(
+            dynamics_params, rng, normalized_init_obs, dummy_action, None
+        )
+    else:
+        lstm_state = None
+
+    lstm_real_state = None
+
+    model_base_state = None
+
+    reset = False
+
+    while step_count < min(num_steps, len(obs) - 1):
+
+        action = actions[step_count]
+        # if int(step_count / 50) % 2 == 0:
+        #     action = jnp.array(3) #overwrite for testing
+        # else:
+        #     action = jnp.array(4) #overwrite for testing
+        # print(
+        #     f"Reward : {improved_pong_reward(obs[step_count + 1], action, frame_stack_size=frame_stack_size):.2f}"
+        # )
+        # action = jnp.array(3) #overwrite for testing
+        next_real_obs = obs[step_count + 1]
+
+        if rollout_length and (step_count % rollout_length) - 1 == 0:
+            print("NEXT ROLLOUT")
+            time.sleep(0.25)
+
+        if steps_into_future > 0 and (
+            step_count % steps_into_future == 0 or step_count in boundaries
+        ):
+            print("State reset")
+            model_obs = obs[step_count]
+
+        normalized_flattened_model_obs = (model_obs - state_mean) / state_std
+
+        if steps_into_future > 0:
+
+            normalized_model_prediction, lstm_state = world_model.apply(
+                dynamics_params,
+                rng,
+                normalized_flattened_model_obs,
+                jnp.array([action]),
+                lstm_state,
+            )
+        else:
+            normalized_model_prediction = normalized_flattened_model_obs
+
+        # Denormalize WITHOUT rounding to avoid error accumulation
+        # The model was trained on continuous values, not quantized ones
+        unnormalized_model_prediction = jnp.round(
+            normalized_model_prediction * state_std + state_mean
+        )
+
+        # Squeeze batch dimension to maintain shape consistency (feature_dim,)
+        model_obs = unnormalized_model_prediction.squeeze()
+
+        if steps_into_future == 0 or reset:
+            debug_obs(step_count, next_real_obs, model_obs, action)
+        if steps_into_future > 0 and not reset:
+            previous_model_obs = normalized_flattened_model_obs * state_std + state_mean
+            debug_obs(step_count, next_real_obs, model_obs, action, previous_model_obs)
+
+        # append state by 8 zeroes for the score part
+        real_obs_for_state = jnp.concatenate([real_obs, jnp.zeros(8)])
+        model_obs_for_state = jnp.concatenate([model_obs, jnp.zeros(8)])
+        real_base_state = pong_flat_observation_to_state(
+            real_obs_for_state, unflattener, frame_stack_size=frame_stack_size
+        )
+        model_base_state = pong_flat_observation_to_state(
+            model_obs_for_state, unflattener, frame_stack_size=frame_stack_size
+        )
+
+        real_raster = renderer.render(real_base_state)
+        real_img = np.array(real_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(real_surface, real_img)
+
+        model_raster = renderer.render(model_base_state)
+        model_img = np.array(model_raster * 255, dtype=np.uint8)
+        pygame.surfarray.blit_array(model_surface, model_img)
+
+        screen.fill((0, 0, 0))
+
+        scaled_real = pygame.transform.scale(
+            real_surface, (WIDTH * render_scale, HEIGHT * render_scale)
+        )
+        screen.blit(scaled_real, (0, 0))
+
+        scaled_model = pygame.transform.scale(
+            model_surface, (WIDTH * render_scale, HEIGHT * render_scale)
+        )
+        screen.blit(scaled_model, (WIDTH * render_scale + 20, 0))
+
+        font = pygame.font.SysFont(None, 24)
+        real_text = font.render("Real Environment", True, (255, 255, 255))
+        model_text = font.render("World Model (Pong)", True, (255, 255, 255))
+        screen.blit(real_text, (20, 10))
+        screen.blit(model_text, (WIDTH * render_scale + 40, 10))
+        pygame.display.flip()
+
+        real_obs = obs[step_count]
+        if steps_into_future > 0:
+            normalized_real_obs = (real_obs - state_mean) / state_std
+            _, lstm_real_state = world_model.apply(
+                dynamics_params,
+                rng,
+                normalized_real_obs,
+                jnp.array([action]),
+                lstm_real_state,
+            )
+
+        if steps_into_future > 0 and (
+            step_count % steps_into_future == 0 or step_count in boundaries
+        ):
+            lstm_state = None
+            reset = True
+            # lstm_state = lstm_real_state
+
+        step_count += 1
+        clock.tick(clock_speed)
+        # we are doing this just for testing now
+
+        reset = False
+
+    pygame.quit()
+    print("Comparison completed")
+
 
 
 def create_world_model(model_scale_factor=MODEL_SCALE_FACTOR, use_deep=True):
@@ -39,9 +431,9 @@ def create_world_model(model_scale_factor=MODEL_SCALE_FACTOR, use_deep=True):
     use_deep=True uses PongMLPDeep (4 layers with LayerNorm and residual connections)
     use_deep=False uses PongMLPLight (2 layers, faster but less expressive)
     """
-    if use_deep:
-        return PongMLPDeep(model_scale_factor)
-    return PongMLPLight(model_scale_factor)
+
+    return PongMLPDeep(MODEL_SCALE_FACTOR)
+
 
 
 # ============================================================================
@@ -633,7 +1025,7 @@ def train_world_model(
                 {"mean": state_mean, "std": state_std},
                 epoch + 1,
                 avg_loss,
-                model_scale_factor,
+                MODEL_SCALE_FACTOR,
                 use_deep,
             )
 
@@ -644,7 +1036,7 @@ def train_world_model(
         {"mean": state_mean, "std": state_std},
         num_epochs,
         best_loss,
-        model_scale_factor,
+        MODEL_SCALE_FACTOR,
         use_deep,
     )
 
@@ -680,7 +1072,7 @@ def save_checkpoint(
                 "normalization_stats": normalization_stats,
                 "epoch": epoch,
                 "loss": float(loss),
-                "model_scale_factor": model_scale_factor,
+                "model_scale_factor": MODEL_SCALE_FACTOR,
                 "model_type": model_type,
                 "use_deep": use_deep,
             },
@@ -853,7 +1245,6 @@ def main():
 
         checkpoint = load_checkpoint(checkpoint_path)
         norm_stats = checkpoint["normalization_stats"]
-        model_scale_factor = checkpoint.get("model_scale_factor", 1)
         use_deep = checkpoint.get(
             "use_deep", False
         )  # Default False for old checkpoints

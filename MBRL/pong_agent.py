@@ -2,8 +2,8 @@ import argparse
 import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppress XLA C++ warnings (0=all, 1=info, 2=warning, 3=error)
-# print current python user
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 import getpass
 
 user = getpass.getuser()
@@ -126,26 +126,24 @@ def flatten_obs(
     state, single_state: bool = False, is_list=False
 ) -> Tuple[jnp.ndarray, Any]:
 
-
-    # If already a flat array (from world model predictions)
     if isinstance(state, jnp.ndarray):
         if state.ndim == 1 and state.shape[0] == 48:
-            # Already processed, return as-is
+
             return state, None
         elif state.ndim == 2 and state.shape[-1] == 48:
-            # Batch of already-processed observations
+
             return state, None
 
     if type(state) == list:
         flat_states = []
 
         for s in state:
-            # Check if already flat
+
             if isinstance(s, jnp.ndarray) and s.shape[0] == 48:
                 flat_states.append(s)
             else:
                 flat_state, _ = jax.flatten_util.ravel_pytree(s)
-                # Remove last 8 features (scores)
+
                 flat_states.append(flat_state[:-8])
         flat_states = jnp.stack(flat_states, axis=0)
         print(flat_states.shape)
@@ -153,7 +151,7 @@ def flatten_obs(
 
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
-        # Remove last 8 features (scores)
+
         return flat_state[:-8], unflattener
 
     batch_shape = (
@@ -164,7 +162,7 @@ def flatten_obs(
 
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     flat_state = flat_state.reshape(batch_shape, -1)
-    # Remove last 8 features (scores) from each batch element
+
     return flat_state[..., :-8], unflattener
 
 
@@ -231,13 +229,12 @@ def create_dreamerv2_critic():
             log_std = nn.Dense(
                 1,
                 kernel_init=orthogonal(0.01),
-                bias_init=constant(-1.0),  # Initialize to lower std
+                bias_init=constant(-1.0),
             )(x)
 
             mean = jnp.squeeze(mean, axis=-1)
             log_std = jnp.squeeze(log_std, axis=-1)
 
-            # Tighter clipping for more stable learning: std in [0.05, 1.0]
             log_std = jnp.clip(log_std, -3.0, 0.0)
 
             return distrax.Normal(mean, jnp.exp(log_std))
@@ -298,8 +295,6 @@ def generate_imagined_rollouts(
     if key is None:
         key = jax.random.PRNGKey(42)
 
-    # CRITICAL FIX: Use normalization stats from world model training!
-    # The world model was trained on normalized data, so we must normalize during rollouts too
     if normalization_stats:
         state_mean = normalization_stats["mean"]
         state_std = normalization_stats["std"]
@@ -307,15 +302,10 @@ def generate_imagined_rollouts(
         state_mean = 0
         state_std = 1
 
-    # print(state_mean)
-    # print(state_std)
-
-    # Use PongMLPDeep - retrained with use_deep=True
     world_model = PongMLPDeep(model_scale_factor)
 
     num_trajectories = initial_observations.shape[0]
 
-    # Pre-compute initial LSTM states for all trajectories at once (OPTIMIZATION 1)
     dummy_action = jnp.zeros(1, dtype=jnp.int32)
 
     def init_lstm_state(obs):
@@ -327,7 +317,6 @@ def generate_imagined_rollouts(
 
     initial_lstm_states = jax.vmap(init_lstm_state)(initial_observations)
 
-    # JIT-compiled rollout function (OPTIMIZATION 2)
     @jax.jit
     def single_trajectory_rollout(cur_obs, subkey, initial_lstm_state):
         """Generate a single trajectory starting from cur_obs."""
@@ -337,7 +326,6 @@ def generate_imagined_rollouts(
 
             key, action_key = jax.random.split(key)
             pi = actor_network.apply(actor_params, obs)
-
 
             action = pi.sample(seed=action_key)
             log_prob = pi.log_prob(action)
@@ -357,9 +345,8 @@ def generate_imagined_rollouts(
 
             next_obs = normalized_next_obs * state_std + state_mean
             next_obs = jnp.round(next_obs).squeeze().astype(obs.dtype)
-            
-            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
+            reward = improved_pong_reward(next_obs, action, frame_stack_size=4)
 
             discount_factor = jnp.array(discount)
 
@@ -371,7 +358,6 @@ def generate_imagined_rollouts(
         cur_obs = cur_obs.astype(jnp.float32)
         init_carry = (subkey, cur_obs, initial_lstm_state)
 
-        # Pass step indices to rollout_step for confidence weighting
         step_indices = jnp.arange(rollout_length)
         _, trajectory_data = lax.scan(rollout_step, init_carry, step_indices)
 
@@ -384,12 +370,9 @@ def generate_imagined_rollouts(
             log_probs_seq,
         ) = trajectory_data
 
-        # OPTIMIZATION 3: Avoid concatenations, build arrays directly in correct shape
-        # Initial values
         initial_value_dist = critic_network.apply(critic_params, cur_obs)
         initial_value = initial_value_dist.mean()
 
-        # Build full sequences directly (avoid concat overhead)
         observations = jnp.concatenate([cur_obs[None, ...], next_obs_seq], axis=0)
         actions = jnp.concatenate(
             [jnp.zeros_like(actions_seq[0])[None, ...], actions_seq], axis=0
@@ -405,12 +388,9 @@ def generate_imagined_rollouts(
 
     keys = jax.random.split(key, num_trajectories)
 
-    # OPTIMIZATION 4: Use vmap with pre-computed LSTM states
     rollout_fn = jax.vmap(single_trajectory_rollout, in_axes=(0, 0, 0))
 
-    # IMPORTANT: Process in batches to avoid excessive JIT compilation time
-    # First batch triggers compilation, subsequent batches reuse compiled code
-    batch_size = 100  # Process 100 trajectories at a time
+    batch_size = 100
     num_batches = (num_trajectories + batch_size - 1) // batch_size
 
     all_observations = []
@@ -424,7 +404,6 @@ def generate_imagined_rollouts(
         start_idx = batch_idx * batch_size
         end_idx = min(start_idx + batch_size, num_trajectories)
 
-        # Properly slice the LSTM state pytree
         batch_lstm_states = jax.tree_util.tree_map(
             lambda x: x[start_idx:end_idx], initial_lstm_states
         )
@@ -450,7 +429,6 @@ def generate_imagined_rollouts(
         all_values.append(batch_values)
         all_log_probs.append(batch_log_probs)
 
-    # Concatenate all batches
     observations = jnp.concatenate(all_observations, axis=0)
     actions = jnp.concatenate(all_actions, axis=0)
     rewards = jnp.concatenate(all_rewards, axis=0)
@@ -458,14 +436,13 @@ def generate_imagined_rollouts(
     values = jnp.concatenate(all_values, axis=0)
     log_probs = jnp.concatenate(all_log_probs, axis=0)
 
-    # OPTIMIZATION 5: Direct transpose to correct format (T, B, ...)
     return (
-        jnp.transpose(observations[:, :-1], (1, 0, 2)),  # (B, T, F) -> (T, B, F)
-        jnp.transpose(actions[:, 1:], (1, 0)),  # (B, T) -> (T, B)
-        jnp.transpose(rewards[:, 1:], (1, 0)),  # (B, T) -> (T, B)
-        jnp.transpose(discounts[:, 1:], (1, 0)),  # (B, T) -> (T, B)
-        jnp.transpose(values, (1, 0)),  # (B, T+1) -> (T+1, B)
-        jnp.transpose(log_probs[:, 1:], (1, 0)),  # (B, T) -> (T, B)
+        jnp.transpose(observations[:, :-1], (1, 0, 2)),
+        jnp.transpose(actions[:, 1:], (1, 0)),
+        jnp.transpose(rewards[:, 1:], (1, 0)),
+        jnp.transpose(discounts[:, 1:], (1, 0)),
+        jnp.transpose(values, (1, 0)),
+        jnp.transpose(log_probs[:, 1:], (1, 0)),
         0,
     )
 
@@ -488,30 +465,23 @@ def run_single_episode(
     def step_fn(carry, _):
         rng, obs, state, done = carry
 
-        # Skip if already done
         def continue_step(_):
-            # Get action
+
             rng_new, action_key = jax.random.split(rng)
             flat_obs, _ = flatten_obs(obs, single_state=True)
             pi = actor_network.apply(actor_params, flat_obs)
             if not inference:
                 action = pi.sample(seed=action_key)
             else:
-                # Apply temperature to logits for controlled exploration
-                # Higher temperature = more random, lower = more greedy
-                # temperature=1.0 is normal sampling, temperature→0 is greedy
-                temperature = 0.05  # Adjust this value (0.05-0.3 is typical)
+
+                temperature = 0.05
                 scaled_logits = pi.logits / temperature
                 pi_temp = distrax.Categorical(logits=scaled_logits)
                 action = pi_temp.sample(seed=action_key)
 
-            # Step environment
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
 
-            # Compute score-based reward from state (not observations!)
-            # Observations no longer contain scores (stripped to 48 features)
-            # State is AtariState wrapper, actual game state is in env_state field
             old_player_score = state.env_state.player_score
             old_enemy_score = state.env_state.enemy_score
             new_player_score = next_state.env_state.player_score
@@ -520,35 +490,31 @@ def run_single_episode(
             score_reward = (new_player_score - old_player_score) - (
                 new_enemy_score - old_enemy_score
             )
-            # Clip to prevent weird edge cases
+
             score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
 
-            # Choose reward based on flag
             if use_score_reward:
-                # For evaluation: use actual score difference from game state
+
                 final_reward = jnp.array(score_reward, dtype=jnp.float32)
             else:
-                # For training: use improved pong reward (hand-crafted from positions)
+
                 improved_reward = improved_pong_reward(
                     next_flat_obs, action, frame_stack_size=4
                 )
 
-                # HYBRID REWARD: For real rollouts, we can trust the predictor more since
-                # next_state comes from the REAL environment (no compounding errors)
-                # Still apply slight confidence weighting for consistency, but higher baseline
                 reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
                 if reward_predictor_params is not None:
                     reward_model = RewardPredictorMLPTransition(1)
-                    # RewardPredictorMLPPositionOnly expects (current_state, action, next_state)
+
                     rng_reward = jax.random.PRNGKey(0)
                     predicted_reward = reward_model.apply(
                         reward_predictor_params,
                         rng_reward,
-                        flat_obs[None, :],  # current state
-                        jnp.array([action]),  # action (needs to be array)
-                        next_flat_obs[None, :],  # next state (REAL - no model errors!)
+                        flat_obs[None, :],
+                        jnp.array([action]),
+                        next_flat_obs[None, :],
                     )
-                    # Clip and round to match real rollout behavior: {-1, 0, +1}
+
                     predicted_reward_clipped = jnp.round(
                         jnp.clip(jnp.squeeze(predicted_reward * (4 / 3) / 2), -1.0, 1.0)
                     )
@@ -556,32 +522,29 @@ def run_single_episode(
                 else:
                     reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
 
-                # Combine rewards: hand-crafted (always) + predicted (confidence-weighted)
                 final_reward = jnp.array(
                     improved_pong_reward(next_flat_obs, action, frame_stack_size=4),
                     dtype=jnp.float32,
                 )
 
-            # Store transition with valid mask (valid = not done BEFORE this step)
             transition = (flat_obs, state, action, final_reward, ~done)
 
             return (rng_new, next_flat_obs, next_state, next_done), transition
 
         def skip_step(_):
-            # Return dummy data when done - ENSURE EXACT TYPE MATCHING
+
             flat_obs, _ = flatten_obs(obs, single_state=True)
 
-            # Make sure dummy values match the exact types from continue_step
-            dummy_action = jnp.array(0, dtype=jnp.int32)  # Match action type
-            dummy_reward = jnp.array(0.0, dtype=jnp.float32)  # Match reward type
-            dummy_valid = jnp.array(False, dtype=jnp.bool_)  # Match valid mask type
+            dummy_action = jnp.array(0, dtype=jnp.int32)
+            dummy_reward = jnp.array(0.0, dtype=jnp.float32)
+            dummy_valid = jnp.array(False, dtype=jnp.bool_)
 
             dummy_transition = (
-                flat_obs,  # Same obs type
-                state,  # Same state type
-                dummy_action,  # int32
-                dummy_reward,  # float32
-                dummy_valid,  # bool
+                flat_obs,
+                state,
+                dummy_action,
+                dummy_reward,
+                dummy_valid,
             )
             return (rng, flat_obs, state, done), dummy_transition
 
@@ -594,7 +557,6 @@ def run_single_episode(
 
     observations, states, actions, rewards, valid_mask = transitions
 
-    # Filter to only valid steps
     episode_length = jnp.sum(valid_mask)
 
     return observations, actions, rewards, valid_mask, states, episode_length
@@ -620,17 +582,14 @@ def generate_real_rollouts(
 ]:
     """Collect episodes with JAX vmap and reshape to (rollout_length, num_rollouts, features)."""
 
-    # Create environment
     game = JaxPong()
     env = AtariWrapper(
         game, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
     env = FlattenObservationWrapper(env)
 
-    # Generate episode keys
     episode_keys = jax.random.split(key, num_episodes)
 
-    # Run episodes in parallel with vmap
     vmapped_episode_fn = jax.vmap(
         lambda k: run_single_episode(
             k,
@@ -643,12 +602,10 @@ def generate_real_rollouts(
         in_axes=0,
     )
 
-    # After getting the vmapped results
     observations, actions, rewards, valid_mask, states, episode_length = (
         vmapped_episode_fn(episode_keys)
     )
 
-    # Process each episode separately to extract only valid steps
     all_valid_obs = []
     all_valid_actions = []
     all_valid_rewards = []
@@ -657,7 +614,6 @@ def generate_real_rollouts(
     for ep_idx in range(num_episodes):
         ep_length = int(episode_length[ep_idx])
 
-        # Extract valid steps for this episode
         valid_obs = observations[ep_idx, :ep_length]
         valid_actions = actions[ep_idx, :ep_length]
         valid_rewards = rewards[ep_idx, :ep_length]
@@ -666,24 +622,20 @@ def generate_real_rollouts(
         all_valid_actions.append(valid_actions)
         all_valid_rewards.append(valid_rewards)
 
-    # Concatenate all valid episodes
     all_obs = jnp.concatenate(all_valid_obs, axis=0)
     all_actions = jnp.concatenate(all_valid_actions, axis=0)
     all_rewards = jnp.concatenate(all_valid_rewards, axis=0)
 
-    # Now you can sample rollouts from the concatenated valid data
     total_steps = len(all_obs)
     num_valid_starts = total_steps - rollout_length
     if num_valid_starts < num_rollouts:
         num_rollouts = num_valid_starts
 
-    # Sample random rollout start positions
     rng = jax.random.PRNGKey(42)
     start_indices = jax.random.choice(
         rng, num_valid_starts, shape=(num_rollouts,), replace=False
     )
 
-    # Create rollouts by slicing
     obs_rollouts = jnp.stack(
         [all_obs[i : i + rollout_length + 1] for i in start_indices]
     )
@@ -694,7 +646,6 @@ def generate_real_rollouts(
         [all_rewards[i : i + rollout_length] for i in start_indices]
     )
 
-    # Compute values and log_probs
     all_obs_for_critic = obs_rollouts.reshape(-1, obs_rollouts.shape[-1])
     value_dists = critic_network.apply(critic_params, all_obs_for_critic)
     values = value_dists.mean().reshape(num_rollouts, rollout_length + 1)
@@ -706,20 +657,15 @@ def generate_real_rollouts(
 
     discounts = jnp.full_like(rewards_rollouts, discount)
 
-    # Transpose to (T, B, ...) format as expected by training function
-    # Current format: (B, T, ...) where B=num_rollouts, T=rollout_length
-    # Need format: (T, B, ...) where T=rollout_length, B=num_rollouts
-    # NOTE: values needs T+1 timesteps for bootstrapping, others need T timesteps
-
     total_valid_steps = int(total_steps)
 
     return (
-        jnp.transpose(obs_rollouts[:, :-1], (1, 0, 2)),  # (B, T, F) -> (T, B, F)
-        jnp.transpose(actions_rollouts, (1, 0)),  # (B, T) -> (T, B)
-        jnp.transpose(rewards_rollouts, (1, 0)),  # (B, T) -> (T, B)
-        jnp.transpose(discounts, (1, 0)),  # (B, T) -> (T, B)
-        jnp.transpose(values, (1, 0)),  # (B, T+1) -> (T+1, B) - KEEP all values!
-        jnp.transpose(log_probs, (1, 0)),  # (B, T) -> (T, B)
+        jnp.transpose(obs_rollouts[:, :-1], (1, 0, 2)),
+        jnp.transpose(actions_rollouts, (1, 0)),
+        jnp.transpose(rewards_rollouts, (1, 0)),
+        jnp.transpose(discounts, (1, 0)),
+        jnp.transpose(values, (1, 0)),
+        jnp.transpose(log_probs, (1, 0)),
         total_valid_steps,
     )
 
@@ -783,20 +729,18 @@ def train_dreamerv2_actor_critic(
 
     def compute_trajectory_targets(traj_rewards, traj_values, traj_discounts):
 
-        bootstrap = traj_values[-1]  # V(s_T) for bootstrapping
+        bootstrap = traj_values[-1]
 
         targets = lambda_return_dreamerv2(
-            traj_rewards,  # (T,) - all T rewards
-            traj_values[:-1],  # (T,) - V(s_0) to V(s_{T-1})
-            traj_discounts,  # (T,) - all T discounts
-            bootstrap,  # V(s_T) - bootstrap value
+            traj_rewards,
+            traj_values[:-1],
+            traj_discounts,
+            bootstrap,
             lambda_=lambda_,
             axis=0,
         )
         return targets
 
-    # Vmap over batch dimension (axis 1) - compute targets for each trajectory separately
-    # rewards shape: (T, B), vmap over B to get 3000 trajectories of length T
     targets = jax.vmap(compute_trajectory_targets, in_axes=(1, 1, 1), out_axes=1)(
         rewards, values, discounts
     )
@@ -804,11 +748,10 @@ def train_dreamerv2_actor_critic(
     targets_std = targets.std()
     targets_normalized = (targets - targets_mean) / (targets_std + 1e-8)
 
-    # Use all T timesteps for training
     observations_flat = observations.reshape(T * B, -1)
     actions_flat = actions.reshape(T * B)
     targets_flat = targets.reshape(T * B)
-    values_flat = values[:-1].reshape(T * B)  # values has T+1 timesteps
+    values_flat = values[:-1].reshape(T * B)
     old_log_probs_flat = log_probs.reshape(T * B)
 
     def critic_loss_fn(critic_params, obs, targets):
@@ -833,45 +776,14 @@ def train_dreamerv2_actor_critic(
 
         advantages = targets - values
 
-        # if debug:
-        #     jax.debug.print("Raw advantages: mean={mean}, std={std}, min={min}, max={max}",
-        #                   mean=advantages.mean(), std=advantages.std(),
-        #                   min=advantages.min(), max=advantages.max())
-        #     jax.debug.print("Actions: shape={shape}, dtype={dtype}, min={min}, max={max}, first_10={first}",
-        #                   shape=actions.shape, dtype=actions.dtype,
-        #                   min=actions.min(), max=actions.max(),
-        #                   first=actions[:10])
-        #     jax.debug.print("Pi logits: shape={shape}, min={min}, max={max}, first_sample={first}",
-        #                   shape=pi.logits.shape,
-        #                   min=pi.logits.min(), max=pi.logits.max(),
-        #                   first=pi.logits[0])
-        #     jax.debug.print("Pi probs: first_sample={first}",
-        #                   first=pi.probs[0])
-        #     jax.debug.print("Log probs: mean={mean}, std={std}, min={min}, max={max}, first_10={first}",
-        #                   mean=log_prob.mean(), std=log_prob.std(),
-        #                   min=log_prob.min(), max=log_prob.max(),
-        #                   first=log_prob[:10])
-
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # REINFORCE objective: maximize log_prob * advantages
-        # We want to MAXIMIZE this, so the loss should be NEGATIVE
         reinforce_obj = log_prob * jax.lax.stop_gradient(advantages)
 
-        # if debug:
-        #     jax.debug.print("Normalized advantages: mean={mean}, std={std}",
-        #                   mean=advantages.mean(), std=advantages.std())
-        #     jax.debug.print("Reinforce obj: mean={mean}, std={std}, sum={sum}",
-        #                   mean=reinforce_obj.mean(), std=reinforce_obj.std(),
-        #                   sum=reinforce_obj.sum())
-
-        # Entropy bonus encourages exploration (we want to MAXIMIZE entropy)
         entropy_bonus = entropy_scale * entropy
 
-        # Total objective to MAXIMIZE (higher is better)
         total_objective = reinforce_obj + entropy_bonus
 
-        # Loss to MINIMIZE (negative of what we want to maximize)
         actor_loss = -jnp.mean(total_objective)
 
         return actor_loss, {
@@ -914,7 +826,7 @@ def train_dreamerv2_actor_critic(
             targets_shuffled,
             values_shuffled,
             old_log_probs_shuffled,
-            debug=False,  # Disable debug now that issue is fixed
+            debug=False,
         )
         actor_state = actor_state.apply_gradients(grads=actor_grads)
 
@@ -976,15 +888,11 @@ def evaluate_real_performance(
         env, sticky_actions=False, episodic_life=False, frame_stack_size=4
     )
 
-    # Use a random seed if not provided
     seed = int(__import__("time").time() * 1000) % (2**31)
     rng = jax.random.PRNGKey(seed)
 
-    # Generate episode keys
     episode_keys = jax.random.split(rng, num_episodes)
 
-    # Run episodes in parallel with vmap (reusing the existing run_single_episode function)
-    # Use use_score_reward=True for evaluation to get actual Pong score
     vmapped_episode_fn = jax.vmap(
         lambda k: run_single_episode(
             k,
@@ -1003,7 +911,6 @@ def evaluate_real_performance(
         vmapped_episode_fn(episode_keys)
     )
 
-    # Extract episode rewards by summing valid rewards for each episode
     total_rewards = []
     all_obs = []
     all_actions = []
@@ -1011,7 +918,6 @@ def evaluate_real_performance(
     for ep_idx in range(num_episodes):
         ep_length = int(episode_lengths[ep_idx])
 
-        # Sum rewards for valid steps
         ep_reward = float(jnp.sum(rewards[ep_idx, :ep_length]))
         total_rewards.append(ep_reward)
 
@@ -1019,7 +925,6 @@ def evaluate_real_performance(
             f"Episode {ep_idx + 1}: Final reward: {ep_reward:.3f}, Steps: {ep_length}"
         )
 
-        # Collect observations and actions for rendering if needed
         if render:
             valid_obs = observations[ep_idx, :ep_length]
             valid_actions = actions[ep_idx, :ep_length]
@@ -1033,9 +938,8 @@ def evaluate_real_performance(
     print(f"Mean episode reward: {mean_reward:.3f} ± {std_reward:.3f}")
     print(f"Episode rewards: {total_rewards}")
 
-    # Render collected episodes if requested
     if render and len(all_obs) > 0:
-        # Concatenate all episodes for rendering
+
         obs_array = jnp.concatenate(all_obs, axis=0)
         actions_array = jnp.concatenate(all_actions, axis=0)
 
@@ -1069,24 +973,24 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 def main():
 
     training_runs = 100000
-    model_scale_factor = MODEL_SCALE_FACTOR  # Same as in worldmodelPong.py
+    model_scale_factor = MODEL_SCALE_FACTOR
 
     training_params = {
         "action_dim": 6,
-        "rollout_length": 7,  # Reduced from 6 to 4 - errors compound too fast by step 3
+        "rollout_length": 7,
         "num_rollouts": 30000,
-        "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
-        "critic_lr": 5e-4,  # Moderate critic learning rate
+        "policy_epochs": 10,
+        "actor_lr": 8e-5,
+        "critic_lr": 5e-4,
         "lambda_": 0.95,
-        "entropy_scale": 0.01,  # Maintain exploration
+        "entropy_scale": 0.01,
         "discount": 0.95,
-        "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
+        "max_grad_norm": 0.5,
+        "target_kl": 0.15,
         "early_stopping_patience": 100,
-        "retrain_interval": 50,  # Retrain world model every 50 iterations
-        "wm_sample_size": 500,  # Number of samples to collect for world model training
-        "wm_train_epochs": 20,  # Increased from 10 - better world model accuracy
+        "retrain_interval": 50,
+        "wm_sample_size": 500,
+        "wm_train_epochs": 20,
     }
 
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
@@ -1120,7 +1024,6 @@ def main():
 
     model_exists = False
 
-    # Load starting iteration counter from actor params if it exists
     start_iteration = 0
     if os.path.exists(f"{prefix}actor_params.pkl"):
         try:
@@ -1137,14 +1040,12 @@ def main():
         actor_network = create_dreamerv2_actor(training_params["action_dim"])
         critic_network = create_dreamerv2_critic()
 
-        # Try to load MLP world model first, fall back to LSTM model
         model_path = None
-        loaded_model_scale_factor = MODEL_SCALE_FACTOR  # Default
-        loaded_use_deep = True  # Default
-        loaded_model_type = "PongMLPDeep"  # Default
+        loaded_model_scale_factor = MODEL_SCALE_FACTOR
+        loaded_use_deep = True
+        loaded_model_type = "PongMLPDeep"
 
         model_path = "worldmodel_mlp.pkl"
-
 
         if model_path:
             with open(model_path, "rb") as f:
@@ -1153,26 +1054,20 @@ def main():
                     "params", saved_data.get("dynamics_params")
                 )
 
-
                 normalization_stats = saved_data["normalization_stats"]
 
-
-                # Load model architecture info (update outer scope variables)
                 loaded_model_scale_factor = saved_data.get(
                     "model_scale_factor", loaded_model_scale_factor
                 )
                 loaded_use_deep = saved_data.get("use_deep", loaded_use_deep)
                 loaded_model_type = saved_data.get("model_type", loaded_model_type)
 
-
                 model_exists = True
                 del saved_data
                 gc.collect()
 
-
             reward_predictor_params = None
 
-            # Always use experience_mlp.pkl for imagined rollouts
             experience_path = "experience_mlp.pkl"
 
             if not os.path.exists(experience_path):
@@ -1185,15 +1080,9 @@ def main():
                 obs = saved_data["obs"]
                 del saved_data
                 gc.collect()
-        # else:
-        #     print("Train Model first")
-        #     exit()
 
-        # obs_shape = obs.shape[1:]
         key = jax.random.PRNGKey(42)
-        # dummy_obs = jnp.zeros((1,) + obs_shape, dtype=jnp.float32)
 
-        # Create environment
         game = JaxPong()
         env = AtariWrapper(
             game, sticky_actions=False, episodic_life=False, frame_stack_size=4
@@ -1237,11 +1126,9 @@ def main():
 
         actor_param_count = sum(x.size for x in jax.tree.leaves(actor_params))
         critic_param_count = sum(x.size for x in jax.tree.leaves(critic_params))
-        # print(f"Actor parameters: {actor_param_count:,}")
-        # print(f"Critic parameters: {critic_param_count:,}")
 
         if args.eval:
-            # Use render parameter if provided, otherwise default to False
+
             render_eval = bool(args.render)
             evaluate_real_performance(
                 actor_network,
@@ -1253,25 +1140,19 @@ def main():
             )
             exit()
 
-        # stuff to make it run without a model
-        # if not model_exists:
-        #     obs = jax.numpy.array(dummy_obs, dtype=jnp.float32)
-        #     dynamics_params = None
-        #     reward_predictor_params = None
-        #     normalization_stats = None
-
         key, shuffle_key = jax.random.split(key)
         shuffled_obs = jax.random.permutation(shuffle_key, obs)
 
-        # Free the original obs array, we only need shuffled_obs
         del obs
         gc.collect()
 
-        print(f"Generating imagined rollouts of shape {(training_params['rollout_length'], training_params['num_rollouts'])}")
+        print(
+            f"Generating imagined rollouts of shape {(training_params['rollout_length'], training_params['num_rollouts'])}"
+        )
 
         (
             imagined_obs,
-            imagined_actions,  # FIX: Corrected order to match return statement
+            imagined_actions,
             imagined_rewards,
             imagined_discounts,
             imagined_values,
@@ -1295,28 +1176,22 @@ def main():
         if args.render:
             visualization_offset = 0
 
-            # Render multiple imagined rollouts sequentially (one rollout after another)
             n_rollouts = int(args.render)
             n_rollouts = min(n_rollouts, imagined_obs.shape[1])
             if n_rollouts <= 0:
                 print("No rollouts selected for rendering (args.render <= 0)")
             else:
-                # imagined_obs has shape (T, B, F). Select first n_rollouts -> (T, B_sel, F)
+
                 sel_obs = imagined_obs[:, :n_rollouts, :]
 
-                # Reorder to (B_sel, T, F) so frames of each rollout are contiguous when flattened
                 sel_obs = jnp.transpose(sel_obs, (1, 0, 2))
 
-                # Flatten to (B_sel * T, F): rollout0 frames, then rollout1 frames, ...
                 obs = sel_obs.reshape(
                     sel_obs.shape[0] * sel_obs.shape[1], sel_obs.shape[2]
                 )
 
-                # Prepare matching actions: imagined_actions has shape (T, B)
-                sel_actions = imagined_actions[:, :n_rollouts]  # (T, B_sel)
-                sel_actions = jnp.transpose(sel_actions, (1, 0)).reshape(
-                    -1
-                )  # (B_sel * T,)
+                sel_actions = imagined_actions[:, :n_rollouts]
+                sel_actions = jnp.transpose(sel_actions, (1, 0)).reshape(-1)
 
                 compare_real_vs_model(
                     steps_into_future=0,
@@ -1330,8 +1205,6 @@ def main():
                     calc_score_based_reward=True,
                     rollout_length=training_params["rollout_length"],
                 )
-
-
 
         actor_params, critic_params = train_dreamerv2_actor_critic(
             actor_params=actor_params,
@@ -1367,19 +1240,16 @@ def main():
             actor_network, actor_params, imagined_obs
         )
 
-        # Compute scalar metrics for logging
         mean_reward = float(jnp.mean(imagined_rewards))
         try:
             p = np.array(action_probs)
         except Exception:
             p = np.asarray(action_probs)
 
-        # simple entropy and movement metrics
         entropy_val = -float(np.sum(p * np.log(p + 1e-12)))
         movement_prob = float(p[3] + p[4]) if p.size > 4 else 0.0
         most_likely = int(np.argmax(p))
 
-        # Append a single-line log entry to training_log
         log_line = (
             f"iter={i}, mean_reward={mean_reward:.6f}, total_valid_steps={total_valid_steps}, "
             f"action_probs={p.tolist()}, entropy={entropy_val:.6f}, movement_prob={movement_prob:.6f}, "
@@ -1392,8 +1262,7 @@ def main():
         save_model_checkpoints(actor_params, critic_params, i, prefix=prefix)
 
         if i % training_params["retrain_interval"] == 0:
-            # evaluate_real_performance(actor_network, actor_params, num_episodes=3, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
-            # and print result into training_log
+
             eval_rewards = evaluate_real_performance(
                 actor_network,
                 actor_params,
@@ -1414,34 +1283,29 @@ def main():
                     f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!"
                 )
                 break
-                # Retrain worldmodel every retrain_interval training runs
+
         if (
             i % training_params["retrain_interval"] == 0
             and rollout_func == generate_imagined_rollouts
-        ):  # activate this later
+        ):
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")
 
-            # Determine which actor to use based on rollout_style
-            # Map 'model' -> 'imagined' for the actor filename
             actor_type = (
                 "imagined" if args.rollout_style == "model" else args.rollout_style
             )
 
-            # Collect fresh experience with trained actor
             print(f"Collecting fresh experience with {actor_type} actor...")
             os.system(
                 f"python MBRL/worldmodel_mlp.py collect {training_params['wm_sample_size']} {actor_type}"
             )
 
-            # Retrain worldmodel
             print("Retraining worldmodel...")
             os.system(
                 f"python MBRL/worldmodel_mlp.py train {training_params['wm_train_epochs']}"
             )
 
-            # Reload the updated worldmodel and get training error
             if os.path.exists("worldmodel_mlp.pkl"):
                 with open("worldmodel_mlp.pkl", "rb") as f:
                     saved_data = pickle.load(f)
@@ -1450,7 +1314,7 @@ def main():
                     )
                     if "normalization_stats" in saved_data:
                         normalization_stats = saved_data["normalization_stats"]
-                    # Get the training loss from the checkpoint
+
                     wm_training_loss = saved_data.get("loss", None)
                     print("Reloaded updated worldmodel!")
                     if wm_training_loss is not None:
