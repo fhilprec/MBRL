@@ -56,7 +56,7 @@ def calculate_score_based_reward(flat_obs, next_flat_obs):
 
     # Calculate score changes
     player_scored = player_score_new - player_score_old  # Should be 0 or 1
-    enemy_scored = enemy_score_new - enemy_score_old    # Should be 0 or 1
+    enemy_scored = enemy_score_new - enemy_score_old  # Should be 0 or 1
 
     # Reward is +1 if player scored, -1 if enemy scored, 0 otherwise
     score_reward = player_scored - enemy_scored
@@ -67,11 +67,9 @@ def calculate_score_based_reward(flat_obs, next_flat_obs):
     return score_reward
 
 
-
-
-
 VERBOSE = True
 model = None
+
 
 def print_full_array(arr):
     with jnp.printoptions(threshold=jnp.inf, linewidth=200):
@@ -223,9 +221,9 @@ def collect_experience_sequential(
                 obs.player.y[3] < obs.ball.y[3],
                 lambda _: jnp.array(3),
                 lambda _: jnp.array(0),
-                None
+                None,
             ),
-            None
+            None,
         )
 
         return jax.lax.select(do_random, random_action, perfect_action)
@@ -265,13 +263,22 @@ def collect_experience_sequential(
                 dummy_done = jnp.array(False, dtype=jnp.bool_)
                 dummy_valid = jnp.array(False, dtype=jnp.bool_)
 
-                dummy_transition = (obs, state, dummy_action, dummy_reward, dummy_done, dummy_valid)
+                dummy_transition = (
+                    obs,
+                    state,
+                    dummy_action,
+                    dummy_reward,
+                    dummy_done,
+                    dummy_valid,
+                )
                 return (rng, obs, state, done), dummy_transition
 
             return jax.lax.cond(done, skip_step, continue_step, None)
 
         initial_carry = (step_key, obs, state, jnp.array(False))
-        _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=max_steps_per_episode)
+        _, transitions = jax.lax.scan(
+            step_fn, initial_carry, None, length=max_steps_per_episode
+        )
 
         observations, states, actions, rewards, dones, valid_mask = transitions
 
@@ -287,7 +294,9 @@ def collect_experience_sequential(
 
     # Run episodes in parallel with vmap
     vmapped_episode_fn = jax.vmap(run_single_episode, in_axes=0)
-    observations, states, actions, rewards, dones, valid_mask, episode_lengths = vmapped_episode_fn(episode_keys)
+    observations, states, actions, rewards, dones, valid_mask, episode_lengths = (
+        vmapped_episode_fn(episode_keys)
+    )
 
     # Process each episode separately to extract only valid steps
     all_valid_obs = []
@@ -323,8 +332,12 @@ def collect_experience_sequential(
 
     # Concatenate all valid episodes
     if all_valid_obs:
-        all_obs = jax.tree.map(lambda *arrays: jnp.concatenate(arrays, axis=0), *all_valid_obs)
-        all_states = jax.tree.map(lambda *arrays: jnp.concatenate(arrays, axis=0), *all_valid_states)
+        all_obs = jax.tree.map(
+            lambda *arrays: jnp.concatenate(arrays, axis=0), *all_valid_obs
+        )
+        all_states = jax.tree.map(
+            lambda *arrays: jnp.concatenate(arrays, axis=0), *all_valid_states
+        )
         all_actions = jnp.concatenate(all_valid_actions, axis=0)
         all_rewards = jnp.concatenate(all_valid_rewards, axis=0)
         all_dones = jnp.concatenate(all_valid_dones, axis=0)
@@ -335,8 +348,12 @@ def collect_experience_sequential(
         state_leaves = jax.tree_util.tree_leaves(all_states)
 
         # Ensure all leaves are 2D (batch_size, features) before concatenating
-        obs_leaves_2d = [leaf if leaf.ndim == 2 else leaf[:, None] for leaf in obs_leaves]
-        state_leaves_2d = [leaf if leaf.ndim == 2 else leaf[:, None] for leaf in state_leaves]
+        obs_leaves_2d = [
+            leaf if leaf.ndim == 2 else leaf[:, None] for leaf in obs_leaves
+        ]
+        state_leaves_2d = [
+            leaf if leaf.ndim == 2 else leaf[:, None] for leaf in state_leaves
+        ]
 
         # Concatenate all leaves to create flat arrays
         flat_obs = jnp.concatenate(obs_leaves_2d, axis=1)
@@ -422,11 +439,13 @@ def train_world_model(
                 seq_end = seq_start + sequence_length
 
                 # Extract sequences directly - no padding needed since we validated length
-                sequences.append((
-                    normalized_obs[seq_start:seq_end],
-                    actions[seq_start:seq_end],
-                    normalized_next_obs[seq_start:seq_end]
-                ))
+                sequences.append(
+                    (
+                        normalized_obs[seq_start:seq_end],
+                        actions[seq_start:seq_end],
+                        normalized_next_obs[seq_start:seq_end],
+                    )
+                )
 
         return sequences
 
@@ -445,7 +464,9 @@ def train_world_model(
                 s = b[0].shape
                 shape_counts[s] = shape_counts.get(s, 0) + 1
             most_common_shape = max(shape_counts, key=shape_counts.get)
-            print(f"Most common shape: {most_common_shape} ({shape_counts[most_common_shape]} batches)")
+            print(
+                f"Most common shape: {most_common_shape} ({shape_counts[most_common_shape]} batches)"
+            )
             print(f"Filtering out batches with other shapes...")
             batches = [b for b in batches if b[0].shape == most_common_shape]
             print(f"Remaining batches: {len(batches)}")
@@ -482,7 +503,6 @@ def train_world_model(
     dummy_state = normalized_obs[:1]
     dummy_action = actions[:1]
 
-
     start_epoch = 0
     if checkpoint_path:
         checkpoint_file = checkpoint_path.replace(".pkl", "_checkpoint.pkl")
@@ -497,7 +517,9 @@ def train_world_model(
             opt_state = checkpoint_data["opt_state"]
             start_epoch = checkpoint_data["epoch"] + 1
             best_loss = checkpoint_data.get("best_loss", float("inf"))
-            normalization_stats = checkpoint_data.get("normalization_stats", normalization_stats)
+            normalization_stats = checkpoint_data.get(
+                "normalization_stats", normalization_stats
+            )
         print(f"Resuming training from epoch {start_epoch}")
     else:
         params = model.init(rng, dummy_state, dummy_action, None)
@@ -517,13 +539,12 @@ def train_world_model(
         max_epochs,
     ):
         # Teacher forcing probability (start at 1.0, decay to 0.3 over training)
-        teacher_forcing_prob = jnp.maximum(
-            0.3,
-            1.0 - 0.7 * (epoch / max_epochs)
-        )
+        teacher_forcing_prob = jnp.maximum(0.3, 1.0 - 0.7 * (epoch / max_epochs))
 
         # Decide ONCE per sequence whether to use teacher forcing (per-sequence, not per-step)
-        use_teacher_forcing = jax.random.uniform(jax.random.fold_in(rng, 0)) < teacher_forcing_prob
+        use_teacher_forcing = (
+            jax.random.uniform(jax.random.fold_in(rng, 0)) < teacher_forcing_prob
+        )
 
         def scan_fn(carry, inputs):
             rssm_state, prev_prediction = carry
@@ -532,9 +553,7 @@ def train_world_model(
             # Use teacher forcing decision for whole sequence
             # Only first step gets ground truth when NOT using teacher forcing
             input_state = jnp.where(
-                use_teacher_forcing | (step_idx == 0),
-                current_state,
-                prev_prediction
+                use_teacher_forcing | (step_idx == 0), current_state, prev_prediction
             )
 
             # Single-step prediction
@@ -562,13 +581,18 @@ def train_world_model(
                 """Compute penalty for a single state array"""
                 norm = jnp.linalg.norm(arr)
                 # Penalize norms outside healthy range [0.5, 3.0]
-                penalty = jnp.maximum(0.0, norm - 3.0) ** 2 + jnp.maximum(0.0, 0.5 - norm) ** 2
+                penalty = (
+                    jnp.maximum(0.0, norm - 3.0) ** 2
+                    + jnp.maximum(0.0, 0.5 - norm) ** 2
+                )
                 return penalty
 
             # Apply to all arrays in LSTM state and sum
             penalties = jax.tree.map(compute_state_penalty, new_rssm_state)
             # Increased from 0.001 to 0.01 for stronger regularization
-            lstm_penalty = 0.01 * jnp.sum(jnp.array(jax.tree_util.tree_leaves(penalties)))
+            lstm_penalty = 0.01 * jnp.sum(
+                jnp.array(jax.tree_util.tree_leaves(penalties))
+            )
 
             return (new_rssm_state, pred_next_state), (single_step_loss, lstm_penalty)
 
@@ -578,7 +602,9 @@ def train_world_model(
 
         # Initialize with zero prediction (will use teacher forcing for first step)
         initial_carry = (lstm_template, jnp.zeros_like(state_batch[0]))
-        (final_rssm_state, _), (step_losses, lstm_penalties) = lax.scan(scan_fn, initial_carry, scan_inputs)
+        (final_rssm_state, _), (step_losses, lstm_penalties) = lax.scan(
+            scan_fn, initial_carry, scan_inputs
+        )
 
         # Single-step loss component
         single_step_loss = jnp.mean(step_losses)
@@ -589,7 +615,9 @@ def train_world_model(
         max_horizon = 10
         # Faster curriculum: reach horizon 10 by epoch 500 (was 889)
         # This gives model more time to learn long rollouts
-        current_horizon = 1.0 + jnp.minimum(9.0, jnp.floor(9.0 * epoch / (max_epochs * 0.5)))
+        current_horizon = 1.0 + jnp.minimum(
+            9.0, jnp.floor(9.0 * epoch / (max_epochs * 0.5))
+        )
 
         # Compute multi-step losses for different horizons
         def compute_multistep_loss(horizon):
@@ -601,7 +629,9 @@ def train_world_model(
 
                 # Only apply model if step < horizon
                 def do_step(_):
-                    pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
+                    pred, new_rssm = model.apply(
+                        params, rng, state[None, :], action[None], rssm
+                    )
                     pred = pred.squeeze()
                     # Compute loss at THIS step, not just at the end
                     step_loss = jnp.mean((pred - target) ** 2)
@@ -611,10 +641,7 @@ def train_world_model(
                     return state, rssm, 0.0
 
                 new_state, new_rssm, step_loss = lax.cond(
-                    step < horizon,
-                    do_step,
-                    skip_step,
-                    None
+                    step < horizon, do_step, skip_step, None
                 )
 
                 return (new_state, new_rssm, step + 1), step_loss
@@ -633,9 +660,7 @@ def train_world_model(
 
             # Rollout and collect loss at EACH step
             _, step_losses = lax.scan(
-                rollout_fn,
-                (init_state, init_rssm, 0),
-                (actions_slice, targets_slice)
+                rollout_fn, (init_state, init_rssm, 0), (actions_slice, targets_slice)
             )
 
             # Average over all steps in this rollout (not just final step!)
@@ -651,24 +676,24 @@ def train_world_model(
 
         # Compute losses for horizons 2-10 (horizon 1 is already covered by single-step loss)
         # Use static list to avoid JAX tracer issues
-        horizon_losses = jnp.array([
-            compute_multistep_loss(2),
-            compute_multistep_loss(3),
-            compute_multistep_loss(4),
-            compute_multistep_loss(5),
-            compute_multistep_loss(6),
-            compute_multistep_loss(7),
-            compute_multistep_loss(8),
-            compute_multistep_loss(9),
-            compute_multistep_loss(10),
-        ])
+        horizon_losses = jnp.array(
+            [
+                compute_multistep_loss(2),
+                compute_multistep_loss(3),
+                compute_multistep_loss(4),
+                compute_multistep_loss(5),
+                compute_multistep_loss(6),
+                compute_multistep_loss(7),
+                compute_multistep_loss(8),
+                compute_multistep_loss(9),
+                compute_multistep_loss(10),
+            ]
+        )
 
         # Average over active horizons (zeros don't contribute)
         num_active = jnp.sum(horizon_losses > 0.0)
         multistep_loss = jnp.where(
-            num_active > 0,
-            jnp.sum(horizon_losses) / num_active,
-            0.0
+            num_active > 0, jnp.sum(horizon_losses) / num_active, 0.0
         )
 
         # ========== LSTM STATE CONTINUITY LOSS ==========
@@ -680,11 +705,14 @@ def train_world_model(
         # (simulating what happens during actual rendering)
         def full_sequence_rollout_loss():
             """Rollout through entire sequence with persistent LSTM state"""
+
             def persistent_rollout_fn(carry, inputs):
                 state, rssm = carry
                 action, target = inputs
 
-                pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm)
+                pred, new_rssm = model.apply(
+                    params, rng, state[None, :], action[None], rssm
+                )
                 pred = pred.squeeze()
 
                 # Loss at this step
@@ -698,7 +726,9 @@ def train_world_model(
 
             # Roll through entire sequence, feeding predictions back
             inputs = (action_batch, next_state_batch)
-            _, step_losses = lax.scan(persistent_rollout_fn, (init_state, init_rssm), inputs)
+            _, step_losses = lax.scan(
+                persistent_rollout_fn, (init_state, init_rssm), inputs
+            )
 
             # Weight later steps more heavily (they're harder and more important)
             num_steps = step_losses.shape[0]
@@ -716,7 +746,12 @@ def train_world_model(
         # - 1.0 for multi-step (short-horizon stability with per-step errors)
         # - 2.0 for continuity (long-horizon with persistent LSTM - CRITICAL for model-based RL!)
         # - lstm_regularization (already scaled)
-        total_loss = single_step_loss + 1.0 * multistep_loss + 2.0 * continuity_loss + lstm_regularization
+        total_loss = (
+            single_step_loss
+            + 1.0 * multistep_loss
+            + 2.0 * continuity_loss
+            + lstm_regularization
+        )
 
         return total_loss
 
@@ -788,17 +823,22 @@ def train_world_model(
         Note: Not JIT compiled to allow dynamic horizon parameter.
         Horizon must be static (not a traced value).
         """
+
         def single_sequence_multistep(state_seq, action_seq, target_seq):
             def rollout_fn(carry, action):
                 state, rssm_state = carry
-                pred, new_rssm = model.apply(params, rng, state[None, :], action[None], rssm_state)
+                pred, new_rssm = model.apply(
+                    params, rng, state[None, :], action[None], rssm_state
+                )
                 return (pred.squeeze(), new_rssm), pred.squeeze()
 
             # Take first state as initial condition
             init_state = state_seq[0]
             # Rollout for horizon steps (horizon is static, so this is fine)
             actions_to_use = action_seq[:horizon]
-            _, predictions = lax.scan(rollout_fn, (init_state, lstm_template), actions_to_use)
+            _, predictions = lax.scan(
+                rollout_fn, (init_state, lstm_template), actions_to_use
+            )
 
             # Compare to ground truth
             targets = target_seq[:horizon]
@@ -825,13 +865,24 @@ def train_world_model(
     warmup_actions = jnp.stack([train_batches[0][1]])
     warmup_next = jnp.stack([train_batches[0][2]])
     _, _, _ = update_step_batched(
-        params, opt_state, warmup_states, warmup_actions, warmup_next,
-        lstm_state_template, 0, num_epochs
+        params,
+        opt_state,
+        warmup_states,
+        warmup_actions,
+        warmup_next,
+        lstm_state_template,
+        0,
+        num_epochs,
     )
     print("JIT warmup complete")
 
     # Use tqdm for progress tracking
-    pbar = tqdm(range(start_epoch, num_epochs), desc="Training", initial=start_epoch, total=num_epochs)
+    pbar = tqdm(
+        range(start_epoch, num_epochs),
+        desc="Training",
+        initial=start_epoch,
+        total=num_epochs,
+    )
 
     for epoch in pbar:
 
@@ -926,7 +977,11 @@ def train_world_model(
                     horizon=10,
                 )
                 # Report the 10th step error (most important for your use case)
-                step_10_error = multistep_errors[9] if len(multistep_errors) >= 10 else multistep_errors[-1]
+                step_10_error = (
+                    multistep_errors[9]
+                    if len(multistep_errors) >= 10
+                    else multistep_errors[-1]
+                )
 
                 current_lr = lr_schedule(epoch)
                 log_message = f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}, 10-Step MSE: {step_10_error:.6f}, LR: {current_lr:.2e}"
@@ -943,7 +998,12 @@ def train_world_model(
 
             # Update progress bar
             if (epoch + 1) % 50 == 0:
-                pbar.set_postfix({"train_loss": f"{train_loss:.6f}", "10-step": f"{step_10_error:.6f}"})
+                pbar.set_postfix(
+                    {
+                        "train_loss": f"{train_loss:.6f}",
+                        "10-step": f"{step_10_error:.6f}",
+                    }
+                )
             else:
                 pbar.set_postfix({"train_loss": f"{train_loss:.6f}"})
 
@@ -958,7 +1018,6 @@ def train_world_model(
             }
             with open(checkpoint_file, "wb") as f:
                 pickle.dump(checkpoint_data, f)
-
 
     pbar.close()
     print("Training completed")
@@ -984,7 +1043,7 @@ def compare_real_vs_model(
     frame_stack_size: int = 4,
     model_scale_factor=model_scale_factor,
     model_path=None,
-    show_only_one_step = False,
+    show_only_one_step=False,
     reward_predictor_params=None,
     calc_score_based_reward: bool = True,
     print_error: bool = True,
@@ -992,7 +1051,6 @@ def compare_real_vs_model(
 ):
 
     rng = jax.random.PRNGKey(0)
-
 
     if len(obs) == 1:
         obs = obs.squeeze(0)
@@ -1027,19 +1085,17 @@ def compare_real_vs_model(
             #         f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
             #     )
 
-
-            
-
-
-        #for debugging purposes
+        # for debugging purposes
         if calc_score_based_reward:
             prev_real_obs = obs[step - 1] if step > 0 else real_obs
 
-            old_score =  prev_real_obs[-5]-prev_real_obs[-1]
-            new_score =  real_obs[-5]-real_obs[-1]
+            old_score = prev_real_obs[-5] - prev_real_obs[-1]
+            new_score = real_obs[-5] - real_obs[-1]
 
             score_reward = new_score - old_score
-            score_reward = jnp.array(jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)) 
+            score_reward = jnp.array(
+                jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
+            )
 
             if score_reward != 0:
                 score_val = float(score_reward)
@@ -1064,7 +1120,9 @@ def compare_real_vs_model(
 
             raw_val = float(jnp.squeeze(raw_prediction))
             # print(raw_val)
-            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(4/3)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            predicted_reward = jnp.round(
+                jnp.clip(jnp.squeeze((raw_prediction * (4 / 3) / 2)), -1.0, 1.0)
+            )  # *(4/3) / 2 means -0.75 to 0.75 becomes 0
             # rounded_reward = jnp.round(predicted_reward * 2) / 2
             pred_val = float(predicted_reward)
 
@@ -1074,14 +1132,20 @@ def compare_real_vs_model(
             prev_ball_x = float(prev_real_obs[-21])
             curr_ball_x = float(real_obs[-21])
             # print(curr_ball_x)
-            improved_reward = improved_reward = improved_pong_reward(real_obs, action, frame_stack_size=4)
+            improved_reward = improved_reward = improved_pong_reward(
+                real_obs, action, frame_stack_size=4
+            )
             reward = improved_reward + pred_val * 2.0
             # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
             if abs(pred_val) > 0.0:
                 if pred_val > 0:
-                    print(f"\033[92mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                    print(
+                        f"\033[92mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
                 else:
-                    print(f"\033[91mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                    print(
+                        f"\033[91mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
 
         if reward_predictor_params is not None and steps_into_future == 0:
 
@@ -1095,7 +1159,9 @@ def compare_real_vs_model(
 
             raw_val = float(jnp.squeeze(raw_prediction))
             # print(raw_val)
-            predicted_reward = jnp.round(jnp.clip(jnp.squeeze((raw_prediction*(10/9)/2)), -1.0, 1.0)) # *(4/3) / 2 means -0.75 to 0.75 becomes 0
+            predicted_reward = jnp.round(
+                jnp.clip(jnp.squeeze((raw_prediction * (10 / 9) / 2)), -1.0, 1.0)
+            )  # *(4/3) / 2 means -0.75 to 0.75 becomes 0
             # rounded_reward = jnp.round(predicted_reward * 2) / 2
             pred_val = float(predicted_reward)
 
@@ -1105,14 +1171,20 @@ def compare_real_vs_model(
             prev_ball_x = float(prev_real_obs[-21])
             curr_ball_x = float(real_obs[-21])
             # print(curr_ball_x)
-            improved_reward = improved_reward = improved_pong_reward(real_obs, action, frame_stack_size=4)
+            improved_reward = improved_reward = improved_pong_reward(
+                real_obs, action, frame_stack_size=4
+            )
             reward = improved_reward + pred_val * 2.0
             # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
             if abs(pred_val) > 0.0:
                 if pred_val > 0:
-                    print(f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                    print(
+                        f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
                 else:
-                    print(f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m")
+                    print(
+                        f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
+                    )
 
         if error > 20 and render_debugging:
             print("-" * 100)
@@ -1167,7 +1239,9 @@ def compare_real_vs_model(
         else:
             # Try final model first
             final_model = f"world_model_{MODEL_ARCHITECTURE.__name__}.pkl"
-            checkpoint_model = f"world_model_{MODEL_ARCHITECTURE.__name__}_checkpoint.pkl"
+            checkpoint_model = (
+                f"world_model_{MODEL_ARCHITECTURE.__name__}_checkpoint.pkl"
+            )
 
             if os.path.exists(final_model):
                 model_path = final_model
@@ -1232,7 +1306,6 @@ def compare_real_vs_model(
 
     model_base_state = None
 
-
     reset = False
 
     while step_count < min(num_steps, len(obs) - 1):
@@ -1274,7 +1347,9 @@ def compare_real_vs_model(
 
         # Denormalize WITHOUT rounding to avoid error accumulation
         # The model was trained on continuous values, not quantized ones
-        unnormalized_model_prediction = jnp.round(normalized_model_prediction * state_std + state_mean)
+        unnormalized_model_prediction = jnp.round(
+            normalized_model_prediction * state_std + state_mean
+        )
 
         # Squeeze batch dimension to maintain shape consistency (feature_dim,)
         model_obs = unnormalized_model_prediction.squeeze()
@@ -1285,7 +1360,7 @@ def compare_real_vs_model(
             previous_model_obs = normalized_flattened_model_obs * state_std + state_mean
             debug_obs(step_count, next_real_obs, model_obs, action, previous_model_obs)
 
-        #append state by 8 zeroes for the score part
+        # append state by 8 zeroes for the score part
         real_obs_for_state = jnp.concatenate([real_obs, jnp.zeros(8)])
         model_obs_for_state = jnp.concatenate([model_obs, jnp.zeros(8)])
         real_base_state = pong_flat_observation_to_state(
@@ -1342,19 +1417,20 @@ def compare_real_vs_model(
 
         step_count += 1
         clock.tick(clock_speed)
-        #we are doing this just for testing now
+        # we are doing this just for testing now
         if show_only_one_step:
             print_obs = real_obs[(4 - 1) :: 4]
             print_full_array(print_obs)
             time.sleep(1)
             break
         reset = False
-        
 
     pygame.quit()
     print("Comparison completed")
 
+
 import time
+
 
 def main():
 
@@ -1381,12 +1457,11 @@ def main():
 
         for i in range(0, experience_its):
             print(f"Collecting experience data (iteration {i+1}/{experience_its})...")
-            obs, actions, rewards, _, states, boundaries = collect_experience_sequential(
-                env, num_episodes=40, max_steps_per_episode=10000, seed=i
+            obs, actions, rewards, _, states, boundaries = (
+                collect_experience_sequential(
+                    env, num_episodes=40, max_steps_per_episode=10000, seed=i
+                )
             )
-
-            
-
 
             next_obs = obs[1:]
             obs = obs[:-1]
@@ -1436,19 +1511,25 @@ def main():
                 dynamics_params = checkpoint_data["params"]
                 normalization_stats = checkpoint_data.get("normalization_stats", None)
         else:
-            print(f"Error: No model found. Looked for {save_path} and {checkpoint_file}")
+            print(
+                f"Error: No model found. Looked for {save_path} and {checkpoint_file}"
+            )
             print("Please train first.")
             sys.exit(1)
 
         # Load standalone reward predictor
         reward_predictor_path = "reward_predictor_standalone.pkl"
         if os.path.exists(reward_predictor_path):
-            print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+            print(
+                f"Loading standalone reward predictor from {reward_predictor_path}..."
+            )
             with open(reward_predictor_path, "rb") as f:
                 reward_data = pickle.load(f)
                 reward_predictor_params = reward_data["params"]
         else:
-            print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+            print(
+                f"Warning: No standalone reward predictor found at {reward_predictor_path}"
+            )
             reward_predictor_params = None
     else:
         # Load experience data for training
@@ -1470,7 +1551,7 @@ def main():
         actions_array = jnp.array(actions)
         next_obs_array = jnp.array(next_obs)
         rewards_array = jnp.array(rewards)
- 
+
         # Train or continue training
         if os.path.exists(save_path):
             print(f"Existing model found. Continuing training from checkpoint...")
@@ -1505,12 +1586,16 @@ def main():
         # Load standalone reward predictor
         reward_predictor_path = "reward_predictor_standalone.pkl"
         if os.path.exists(reward_predictor_path):
-            print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+            print(
+                f"Loading standalone reward predictor from {reward_predictor_path}..."
+            )
             with open(reward_predictor_path, "rb") as f:
                 reward_data = pickle.load(f)
                 reward_predictor_params = reward_data["params"]
         else:
-            print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+            print(
+                f"Warning: No standalone reward predictor found at {reward_predictor_path}"
+            )
             reward_predictor_params = None
 
     gc.collect()
@@ -1525,9 +1610,7 @@ def main():
 
     if len(args := sys.argv) > 1 and args[1] == "renderonce":
 
-
-        
-        #just for now
+        # just for now
         for i in range(100):
             shuffled_obs = jax.random.permutation(jax.random.PRNGKey(i), obs)
             compare_real_vs_model(
@@ -1543,28 +1626,30 @@ def main():
                 render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
                 frame_stack_size=frame_stack_size,
                 model_scale_factor=model_scale_factor,
-                show_only_one_step=True
+                show_only_one_step=True,
             )
     if len(args := sys.argv) > 1 and args[1] == "render":
         compare_real_vs_model(
-                num_steps=1000,
-                render_scale=2,
-                obs=obs,
-                actions=actions,
-                normalization_stats=normalization_stats,
-                boundaries=boundaries,
-                env=env,
-                starting_step=0,
-                steps_into_future=3,
-                render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
-                frame_stack_size=frame_stack_size,
-                model_scale_factor=model_scale_factor,
-                reward_predictor_params=reward_predictor_params,
-            )
+            num_steps=1000,
+            render_scale=2,
+            obs=obs,
+            actions=actions,
+            normalization_stats=normalization_stats,
+            boundaries=boundaries,
+            env=env,
+            starting_step=0,
+            steps_into_future=3,
+            render_debugging=(args[3] == "verbose" if len(args) > 3 else False),
+            frame_stack_size=frame_stack_size,
+            model_scale_factor=model_scale_factor,
+            reward_predictor_params=reward_predictor_params,
+        )
 
 
 if __name__ == "__main__":
-    rtpt = RTPT(name_initials="FH", experiment_name="WorldModelTraining", max_iterations=3)
+    rtpt = RTPT(
+        name_initials="FH", experiment_name="WorldModelTraining", max_iterations=3
+    )
 
     rtpt.start()
     main()

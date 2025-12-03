@@ -379,6 +379,7 @@ def PongMLPLight(model_scale_factor=1):
     Lightweight MLP with residual connection.
     Designed for fast training with frame stacking (no recurrent state needed).
     """
+
     def forward(state, action, lstm_state=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
 
@@ -417,6 +418,7 @@ def PongMLPDeep(model_scale_factor=1):
     NOTE: Removes score features (last 8 features) from observations to prevent
     out-of-distribution issues during model-based rollouts.
     """
+
     def forward(state, action, lstm_state=None):
         batch_size = action.shape[0] if len(action.shape) > 0 else 1
 
@@ -480,20 +482,28 @@ def PongMLPDeep(model_scale_factor=1):
 
         for feat_idx in range(num_features_per_frame):
             # Get frames 1, 2, 3 for this feature (shift left)
-            old_indices = jnp.array([feat_idx * num_frames + f for f in range(1, num_frames)])
+            old_indices = jnp.array(
+                [feat_idx * num_frames + f for f in range(1, num_frames)]
+            )
             old_frames = flat_state[..., old_indices]  # Shape: (batch, 3)
 
             # Append the new predicted frame
-            new_frame_value = new_frame[..., feat_idx:feat_idx+1]  # Shape: (batch, 1)
+            new_frame_value = new_frame[
+                ..., feat_idx : feat_idx + 1
+            ]  # Shape: (batch, 1)
 
             # Concatenate: [frame1, frame2, frame3, NEW]
-            feature_frames = jnp.concatenate([old_frames, new_frame_value], axis=-1)  # Shape: (batch, 4)
+            feature_frames = jnp.concatenate(
+                [old_frames, new_frame_value], axis=-1
+            )  # Shape: (batch, 4)
             shifted_frames.append(feature_frames)
 
         # Stack all features in interleaved format
         # shifted_frames is list of 12 arrays, each (batch, 4)
         # We need to interleave them: [f0_frames, f1_frames, ..., f11_frames]
-        shifted_prediction = jnp.concatenate(shifted_frames, axis=-1)  # Shape: (batch, 48)
+        shifted_prediction = jnp.concatenate(
+            shifted_frames, axis=-1
+        )  # Shape: (batch, 48)
 
         return shifted_prediction, None
 
@@ -996,7 +1006,9 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     """
     if frame_stack_size > 1:
         curr_obs = obs[(frame_stack_size - 1) :: frame_stack_size]
-        prev_obs = obs[(frame_stack_size - 2) :: frame_stack_size]  # Fixed: was -3, should be -2
+        prev_obs = obs[
+            (frame_stack_size - 2) :: frame_stack_size
+        ]  # Fixed: was -3, should be -2
     else:
         curr_obs = obs
         prev_obs = obs
@@ -1008,10 +1020,10 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     #                    score_player, score_enemy]
     player_x = curr_obs[0]  # Player X position (pixel coords, ~140)
     player_y = curr_obs[1]  # Player Y position (pixel coords, 0-210)
-    enemy_x = curr_obs[4]   # Enemy X position (pixel coords, ~16)
-    enemy_y = curr_obs[5]   # Enemy Y position (pixel coords, 0-210)
-    ball_x = curr_obs[8]    # Ball X position (pixel coords, 0-160)
-    ball_y = curr_obs[9]    # Ball Y position (pixel coords, 0-210)
+    enemy_x = curr_obs[4]  # Enemy X position (pixel coords, ~16)
+    enemy_y = curr_obs[5]  # Enemy Y position (pixel coords, 0-210)
+    ball_x = curr_obs[8]  # Ball X position (pixel coords, 0-160)
+    ball_y = curr_obs[9]  # Ball Y position (pixel coords, 0-210)
 
     prev_ball_x = prev_obs[8]  # Ball X position from previous frame
 
@@ -1032,7 +1044,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     alignment_bonus = jnp.where(
         ball_on_player_side & (y_distance < 0.2),
         0.5,  # Strong bonus for good positioning
-        0.0
+        0.0,
     )
 
     # 3. Small encouragement for movement actions (helps exploration)
@@ -1040,7 +1052,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     movement_reward = jnp.where(
         (action == 2) | (action == 3) | (action == 4) | (action == 5),
         0.05,  # Small bonus
-        0.0
+        0.0,
     )
 
     # Detect crossing events using FIXED boundaries (not paddle positions)
@@ -1052,16 +1064,20 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     # Scoring boundaries (ball goes past these to score)
     # Enemy side (left): ball_x < ~10 means player missed (ball went left past enemy)
     # Player side (right): ball_x > ~150 means enemy missed (ball went right past player)
-    ENEMY_WALL_X = 10   # Left boundary - if ball crosses, enemy scored
-    PLAYER_WALL_X = 150 # Right boundary - if ball crosses, player scored
+    ENEMY_WALL_X = 10  # Left boundary - if ball crosses, enemy scored
+    PLAYER_WALL_X = 150  # Right boundary - if ball crosses, player scored
 
     margin = 3
 
     if frame_stack_size > 1:
         # Ball crossed LEFT wall (enemy scored, player missed)
-        ball_crossed_enemy_wall = (prev_ball_x >= ENEMY_WALL_X - margin) & (ball_x < ENEMY_WALL_X + margin)
+        ball_crossed_enemy_wall = (prev_ball_x >= ENEMY_WALL_X - margin) & (
+            ball_x < ENEMY_WALL_X + margin
+        )
         # Ball crossed RIGHT wall (player scored, enemy missed)
-        ball_crossed_player_wall = (prev_ball_x <= PLAYER_WALL_X + margin) & (ball_x > PLAYER_WALL_X - margin)
+        ball_crossed_player_wall = (prev_ball_x <= PLAYER_WALL_X + margin) & (
+            ball_x > PLAYER_WALL_X - margin
+        )
 
         margin = 5
 
@@ -1070,20 +1086,16 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         enemy_missed = (ball_x < enemy_x) & enemy_far_from_ball
 
         score_reward = jnp.where(
-                enemy_missed,
-                1.0,  # Player Scored (ball past enemy)
-                jnp.where(
-                    ball_x > player_x + margin,
-                    -1.0,  # Enemy scored
-                    0.0
-                )
-            )
-        
+            enemy_missed,
+            1.0,  # Player Scored (ball past enemy)
+            jnp.where(ball_x > player_x + margin, -1.0, 0.0),  # Enemy scored
+        )
+
     else:
         score_reward = 0.0
 
     # Combine rewards with appropriate scaling
-    total_reward = score_reward * 2.0 # + movement_reward
+    total_reward = score_reward * 2.0  # + movement_reward
 
     # Scale to reasonable range for learning
     return total_reward
@@ -1157,6 +1169,7 @@ def RewardPredictorMLP(model_scale_factor=1):
 
     Takes only observations (no LSTM state) and outputs a scalar reward.
     """
+
     def forward(state):
         batch_size = state.shape[0] if len(state.shape) > 1 else 1
 
@@ -1173,7 +1186,9 @@ def RewardPredictorMLP(model_scale_factor=1):
 
         # Output layer - single scalar reward
         reward = hk.Linear(1)(x)
-        reward = jnp.squeeze(reward, axis=-1)  # Remove last dimension to get scalar per batch
+        reward = jnp.squeeze(
+            reward, axis=-1
+        )  # Remove last dimension to get scalar per batch
 
         return reward
 
@@ -1195,6 +1210,7 @@ def RewardPredictorMLPTransition(model_scale_factor=1):
     Returns:
         Predicted scalar reward for the transition
     """
+
     def forward(current_state, action, next_state):
         batch_size = current_state.shape[0] if len(current_state.shape) > 1 else 1
 
@@ -1222,7 +1238,9 @@ def RewardPredictorMLPTransition(model_scale_factor=1):
 
         # Output layer - single scalar reward
         reward = hk.Linear(1)(x)
-        reward = jnp.squeeze(reward, axis=-1)  # Remove last dimension to get scalar per batch
+        reward = jnp.squeeze(
+            reward, axis=-1
+        )  # Remove last dimension to get scalar per batch
 
         return reward
 
@@ -1251,6 +1269,7 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
     Returns:
         Predicted scalar reward for the transition
     """
+
     def forward(current_state, action, next_state):
         # Ensure states are 2D
         if len(current_state.shape) == 1:
@@ -1265,7 +1284,7 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
         # Extract the latest frame from the stack
         if frame_stack_size > 1:
             # Get the latest frame by taking every frame_stack_size'th element starting from frame_stack_size-1
-            next_latest = next_state[:, (frame_stack_size - 1)::frame_stack_size]
+            next_latest = next_state[:, (frame_stack_size - 1) :: frame_stack_size]
         else:
             next_latest = next_state
 
@@ -1290,7 +1309,9 @@ def RewardPredictorMLPPositionOnly(model_scale_factor=1, frame_stack_size=4):
 
         # Output layer - single scalar reward
         reward = hk.Linear(1)(x)
-        reward = jnp.squeeze(reward, axis=-1)  # Remove last dimension to get scalar per batch
+        reward = jnp.squeeze(
+            reward, axis=-1
+        )  # Remove last dimension to get scalar per batch
 
         return reward
 

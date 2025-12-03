@@ -13,6 +13,7 @@ This trains the model to recognize scoring events purely from ball position.
 """
 
 import os
+
 os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import jax
@@ -48,7 +49,7 @@ def calculate_position_based_reward(next_flat_obs, frame_stack_size=4):
     """
     # Extract the latest frame from the interleaved observation
     # Takes indices [3, 7, 11, 15, ...] for frame_stack_size=4
-    last_frame = next_flat_obs[..., (frame_stack_size - 1)::frame_stack_size]
+    last_frame = next_flat_obs[..., (frame_stack_size - 1) :: frame_stack_size]
 
     # Ball x is at index 8 in the flat observation structure:
     # [player.x, player.y, player.width, player.height,  # 0-3
@@ -64,8 +65,7 @@ def calculate_position_based_reward(next_flat_obs, frame_stack_size=4):
     enemy_scored = ball_x > 140.0
 
     # Convert to reward
-    reward = jnp.where(player_scored, 1.0,
-                       jnp.where(enemy_scored, -1.0, 0.0))
+    reward = jnp.where(player_scored, 1.0, jnp.where(enemy_scored, -1.0, 0.0))
 
     return reward
 
@@ -122,7 +122,7 @@ def create_training_data(obs, next_obs, frame_stack_size=4):
 
     # Show ball position statistics for labeled cases
     # Extract last frame and get ball_x (same as in reward calculation)
-    last_frame_next = next_obs[:, (frame_stack_size - 1)::frame_stack_size]
+    last_frame_next = next_obs[:, (frame_stack_size - 1) :: frame_stack_size]
     ball_x_next = last_frame_next[:, 8]
 
     pos_mask = rewards > 0
@@ -130,12 +130,16 @@ def create_training_data(obs, next_obs, frame_stack_size=4):
 
     if jnp.sum(pos_mask) > 0:
         print(f"\n+1 cases (player scored):")
-        print(f"  Ball X range: {jnp.min(ball_x_next[pos_mask]):.1f} - {jnp.max(ball_x_next[pos_mask]):.1f}")
+        print(
+            f"  Ball X range: {jnp.min(ball_x_next[pos_mask]):.1f} - {jnp.max(ball_x_next[pos_mask]):.1f}"
+        )
         print(f"  Mean: {jnp.mean(ball_x_next[pos_mask]):.1f}")
 
     if jnp.sum(neg_mask) > 0:
         print(f"\n-1 cases (enemy scored):")
-        print(f"  Ball X range: {jnp.min(ball_x_next[neg_mask]):.1f} - {jnp.max(ball_x_next[neg_mask]):.1f}")
+        print(
+            f"  Ball X range: {jnp.min(ball_x_next[neg_mask]):.1f} - {jnp.max(ball_x_next[neg_mask]):.1f}"
+        )
         print(f"  Mean: {jnp.mean(ball_x_next[neg_mask]):.1f}")
 
     print(f"\nOverall ball_x statistics:")
@@ -214,7 +218,9 @@ def train_reward_predictor(
     weight_neg = total / (3 * jnp.maximum(num_neg, 1))
     weight_zero = total / (3 * jnp.maximum(num_zero, 1))
 
-    print(f"Class weights: +1={weight_pos:.1f}, -1={weight_neg:.1f}, 0={weight_zero:.1f}")
+    print(
+        f"Class weights: +1={weight_pos:.1f}, -1={weight_neg:.1f}, 0={weight_zero:.1f}"
+    )
 
     # Training step with weighted loss
     @jax.jit
@@ -223,14 +229,19 @@ def train_reward_predictor(
             # Dummy action (not used in position-only model after user's edit)
             dummy_actions = jnp.zeros(len(batch_obs), dtype=jnp.int32)
 
-            predicted = reward_model.apply(p, rng, batch_obs, dummy_actions, batch_next_obs)
+            predicted = reward_model.apply(
+                p, rng, batch_obs, dummy_actions, batch_next_obs
+            )
 
             # Weighted MSE loss to handle class imbalance
             errors = (predicted - batch_rewards) ** 2
 
             # Assign weights based on true reward class
-            weights = jnp.where(batch_rewards > 0, weight_pos,
-                               jnp.where(batch_rewards < 0, weight_neg, weight_zero))
+            weights = jnp.where(
+                batch_rewards > 0,
+                weight_pos,
+                jnp.where(batch_rewards < 0, weight_neg, weight_zero),
+            )
 
             loss = jnp.mean(errors * weights)
             return loss
@@ -244,7 +255,9 @@ def train_reward_predictor(
     def compute_metrics(params, batch_obs, batch_next_obs, batch_rewards):
         """Compute loss and accuracy metrics."""
         dummy_actions = jnp.zeros(len(batch_obs), dtype=jnp.int32)
-        predicted = reward_model.apply(params, rng, batch_obs, dummy_actions, batch_next_obs)
+        predicted = reward_model.apply(
+            params, rng, batch_obs, dummy_actions, batch_next_obs
+        )
 
         # MSE loss
         loss = jnp.mean((predicted - batch_rewards) ** 2)
@@ -258,20 +271,29 @@ def train_reward_predictor(
         neg_mask = batch_rewards < 0
         zero_mask = batch_rewards == 0
 
-        pos_acc = jnp.where(jnp.sum(pos_mask) > 0,
-                           jnp.mean((predicted_class == batch_rewards) * pos_mask) / jnp.mean(pos_mask),
-                           0.0)
-        neg_acc = jnp.where(jnp.sum(neg_mask) > 0,
-                           jnp.mean((predicted_class == batch_rewards) * neg_mask) / jnp.mean(neg_mask),
-                           0.0)
-        zero_acc = jnp.where(jnp.sum(zero_mask) > 0,
-                            jnp.mean((predicted_class == batch_rewards) * zero_mask) / jnp.mean(zero_mask),
-                            0.0)
+        pos_acc = jnp.where(
+            jnp.sum(pos_mask) > 0,
+            jnp.mean((predicted_class == batch_rewards) * pos_mask)
+            / jnp.mean(pos_mask),
+            0.0,
+        )
+        neg_acc = jnp.where(
+            jnp.sum(neg_mask) > 0,
+            jnp.mean((predicted_class == batch_rewards) * neg_mask)
+            / jnp.mean(neg_mask),
+            0.0,
+        )
+        zero_acc = jnp.where(
+            jnp.sum(zero_mask) > 0,
+            jnp.mean((predicted_class == batch_rewards) * zero_mask)
+            / jnp.mean(zero_mask),
+            0.0,
+        )
 
         return loss, accuracy, pos_acc, neg_acc, zero_acc
 
     # Training loop
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
     best_params = params
 
     num_batches = (len(train_obs) + batch_size - 1) // batch_size
@@ -294,7 +316,9 @@ def train_reward_predictor(
             batch_next_obs = train_next_obs[batch_indices]
             batch_rewards = train_rewards[batch_indices]
 
-            params, opt_state, loss = train_step(params, opt_state, batch_obs, batch_next_obs, batch_rewards)
+            params, opt_state, loss = train_step(
+                params, opt_state, batch_obs, batch_next_obs, batch_rewards
+            )
             epoch_losses.append(loss)
 
         train_loss = jnp.mean(jnp.array(epoch_losses))
@@ -305,14 +329,16 @@ def train_reward_predictor(
                 params, val_obs, val_next_obs, val_rewards
             )
 
-            pbar.set_postfix({
-                'train_loss': f'{train_loss:.4f}',
-                'val_loss': f'{val_loss:.4f}',
-                'acc': f'{val_acc:.3f}',
-                '+1': f'{pos_acc:.3f}',
-                '-1': f'{neg_acc:.3f}',
-                '0': f'{zero_acc:.3f}'
-            })
+            pbar.set_postfix(
+                {
+                    "train_loss": f"{train_loss:.4f}",
+                    "val_loss": f"{val_loss:.4f}",
+                    "acc": f"{val_acc:.3f}",
+                    "+1": f"{pos_acc:.3f}",
+                    "-1": f"{neg_acc:.3f}",
+                    "0": f"{zero_acc:.3f}",
+                }
+            )
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -320,13 +346,16 @@ def train_reward_predictor(
 
                 # Save best model
                 with open(save_path, "wb") as f:
-                    pickle.dump({
-                        "params": best_params,
-                        "val_loss": best_val_loss,
-                        "epoch": epoch,
-                    }, f)
+                    pickle.dump(
+                        {
+                            "params": best_params,
+                            "val_loss": best_val_loss,
+                            "epoch": epoch,
+                        },
+                        f,
+                    )
         else:
-            pbar.set_postfix({'train_loss': f'{train_loss:.4f}'})
+            pbar.set_postfix({"train_loss": f"{train_loss:.4f}"})
 
     # Final validation metrics
     val_loss, val_acc, pos_acc, neg_acc, zero_acc = compute_metrics(

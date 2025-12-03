@@ -32,6 +32,7 @@ MODEL_SCALE_FACTOR = 1  # Keep at 1 for speed
 # MLP World Model
 # ============================================================================
 
+
 def create_world_model(model_scale_factor=MODEL_SCALE_FACTOR, use_deep=True):
     """
     Create the world model.
@@ -46,6 +47,7 @@ def create_world_model(model_scale_factor=MODEL_SCALE_FACTOR, use_deep=True):
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
 
 def flatten_obs(state, single_state: bool = False) -> Tuple[jnp.ndarray, Any]:
     """Flatten the state PyTree into a single array and remove score features.
@@ -95,7 +97,9 @@ def detect_life_boundaries_vectorized(obs, next_obs, frame_stack_size=4):
 
     # Ball reset detection: ball moves to center position (~78) from edge
     ball_reset = jnp.abs(ball_x_next - 78.0) < 5.0  # Ball near center
-    ball_was_not_center = jnp.abs(ball_x_curr - 78.0) > 20.0  # Ball was away from center
+    ball_was_not_center = (
+        jnp.abs(ball_x_curr - 78.0) > 20.0
+    )  # Ball was away from center
 
     score_changed = ball_reset & ball_was_not_center
 
@@ -105,6 +109,7 @@ def detect_life_boundaries_vectorized(obs, next_obs, frame_stack_size=4):
 # ============================================================================
 # Experience Collection (JAX-accelerated with vmap + scan)
 # ============================================================================
+
 
 def collect_experience(
     env,
@@ -149,12 +154,13 @@ def collect_experience(
                 obs.player.y[frame_stack_size - 1] > obs.ball.y[frame_stack_size - 1],
                 lambda _: jnp.array(4),  # Up
                 lambda _: jax.lax.cond(
-                    obs.player.y[frame_stack_size - 1] < obs.ball.y[frame_stack_size - 1],
+                    obs.player.y[frame_stack_size - 1]
+                    < obs.ball.y[frame_stack_size - 1],
                     lambda _: jnp.array(3),  # Down
                     lambda _: jnp.array(0),  # Noop
-                    None
+                    None,
                 ),
-                None
+                None,
             )
 
             return jax.lax.select(do_random, random_action, perfect_action)
@@ -181,13 +187,21 @@ def collect_experience(
                 dummy_reward = jnp.array(0.0, dtype=jnp.float32)
                 dummy_done = jnp.array(False, dtype=jnp.bool_)
                 dummy_valid = jnp.array(False, dtype=jnp.bool_)
-                dummy_transition = (obs, dummy_action, dummy_reward, dummy_done, dummy_valid)
+                dummy_transition = (
+                    obs,
+                    dummy_action,
+                    dummy_reward,
+                    dummy_done,
+                    dummy_valid,
+                )
                 return (rng, obs, state, done), dummy_transition
 
             return jax.lax.cond(done, skip_step, continue_step, None)
 
         initial_carry = (step_key, obs, state, jnp.array(False))
-        _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=max_steps_per_episode)
+        _, transitions = jax.lax.scan(
+            step_fn, initial_carry, None, length=max_steps_per_episode
+        )
 
         observations, actions, rewards, dones, valid_mask = transitions
         episode_length = jnp.sum(valid_mask)
@@ -199,12 +213,16 @@ def collect_experience(
 
     print(f"Collecting {num_episodes} episodes with vmap + scan...")
     vmapped_episode_fn = jax.vmap(run_single_episode)
-    observations, actions, rewards, _, _, episode_lengths = vmapped_episode_fn(episode_keys)
+    observations, actions, rewards, _, _, episode_lengths = vmapped_episode_fn(
+        episode_keys
+    )
 
     print("Processing collected data...")
 
     # Flatten all observations at once (vectorized)
-    flat_obs_all, _ = flatten_obs(observations)  # (num_episodes, max_steps, 48) - scores removed
+    flat_obs_all, _ = flatten_obs(
+        observations
+    )  # (num_episodes, max_steps, 48) - scores removed
 
     # Process episodes
     all_obs = []
@@ -276,6 +294,7 @@ def collect_experience(
 # Training
 # ============================================================================
 
+
 def create_life_aware_batches(data, frame_stack_size=4):
     """
     Create training indices that don't include transitions crossing life boundaries.
@@ -296,8 +315,10 @@ def create_life_aware_batches(data, frame_stack_size=4):
             valid_indices.append(i)
 
     valid_indices = jnp.array(valid_indices)
-    print(f"Valid training indices: {len(valid_indices)} / {len(obs)} "
-          f"({100 * len(valid_indices) / len(obs):.1f}%)")
+    print(
+        f"Valid training indices: {len(valid_indices)} / {len(obs)} "
+        f"({100 * len(valid_indices) / len(obs):.1f}%)"
+    )
 
     return valid_indices
 
@@ -324,8 +345,10 @@ def create_sequence_indices(data, sequence_length=4):
             valid_sequence_starts.append(i)
 
     valid_sequence_starts = jnp.array(valid_sequence_starts)
-    print(f"Valid sequence starts (len={sequence_length}): {len(valid_sequence_starts)} / {len(obs)} "
-          f"({100 * len(valid_sequence_starts) / len(obs):.1f}%)")
+    print(
+        f"Valid sequence starts (len={sequence_length}): {len(valid_sequence_starts)} / {len(obs)} "
+        f"({100 * len(valid_sequence_starts) / len(obs):.1f}%)"
+    )
 
     return valid_sequence_starts
 
@@ -393,10 +416,11 @@ def train_world_model(
     # Previous schedule/decay was causing plateau - model couldn't escape local minimum
     optimizer = optax.chain(
         optax.clip_by_global_norm(1.0),
-        optax.adam(learning_rate=learning_rate),  # Pure Adam, no schedule, no weight decay
+        optax.adam(
+            learning_rate=learning_rate
+        ),  # Pure Adam, no schedule, no weight decay
     )
     opt_state = optimizer.init(params)
-
 
     # Ball-specific loss weighting - ball position errors compound fastest
     # INTERLEAVED format: for feature i, frame f: index = i * 4 + f
@@ -432,6 +456,7 @@ def train_world_model(
         action_batch: (batch,) actions
         target_batch: (batch, 48) target next observations (scores removed)
         """
+
         def loss_fn(params):
             def single_forward(obs, action):
                 pred, _ = model.apply(params, None, obs, jnp.array([action]), None)
@@ -454,13 +479,16 @@ def train_world_model(
 
     # Multi-step consistency loss - trains on 1-step + 2-step predictions
     @jax.jit
-    def train_step_multistep(params, opt_state, obs_batch, actions_batch, targets_batch):
+    def train_step_multistep(
+        params, opt_state, obs_batch, actions_batch, targets_batch
+    ):
         """
         Multi-step consistency training.
         obs_batch: (batch, 56) starting observations
         actions_batch: (batch, 2) actions for step 1 and 2
         targets_batch: (batch, 2, 56) targets for step 1 and 2
         """
+
         def loss_fn(params):
             def single_forward(obs, action):
                 pred, _ = model.apply(params, None, obs, jnp.array([action]), None)
@@ -507,8 +535,8 @@ def train_world_model(
         train_targets = []
         for idx in sequence_indices:
             train_obs.append(obs_normalized[idx])
-            train_actions.append(actions[idx:idx + 2])
-            train_targets.append(next_obs_normalized[idx:idx + 2])
+            train_actions.append(actions[idx : idx + 2])
+            train_targets.append(next_obs_normalized[idx : idx + 2])
         train_obs = jnp.array(train_obs)
         train_actions = jnp.array(train_actions)
         train_targets = jnp.array(train_targets)
@@ -516,10 +544,13 @@ def train_world_model(
 
         # JIT warmup
         print("Warming up JIT (multi-step)...")
-        _ = train_step_multistep(params, opt_state,
-                                 train_obs[:batch_size],
-                                 train_actions[:batch_size],
-                                 train_targets[:batch_size])
+        _ = train_step_multistep(
+            params,
+            opt_state,
+            train_obs[:batch_size],
+            train_actions[:batch_size],
+            train_targets[:batch_size],
+        )
         print("JIT warmup complete")
     else:
         # Use valid indices for single-step training
@@ -529,18 +560,21 @@ def train_world_model(
 
         # JIT warmup
         print("Warming up JIT (single-step)...")
-        _ = train_step_simple(params, opt_state,
-                             train_obs[:batch_size],
-                             train_actions[:batch_size],
-                             train_targets[:batch_size])
+        _ = train_step_simple(
+            params,
+            opt_state,
+            train_obs[:batch_size],
+            train_actions[:batch_size],
+            train_targets[:batch_size],
+        )
         print("JIT warmup complete")
 
     # Debug: compute approximate unnormalized MSE scale
-    avg_std_sq = float(jnp.mean(state_std ** 2))
+    avg_std_sq = float(jnp.mean(state_std**2))
     print(f"DEBUG: avg(std^2) = {avg_std_sq:.2f}")
     print(f"Expected normalized loss if predicting mean: ~1.0")
 
-    best_loss = float('inf')
+    best_loss = float("inf")
     num_samples = len(train_obs)
     num_batches = num_samples // batch_size
 
@@ -560,18 +594,20 @@ def train_world_model(
 
             if use_multistep:
                 params, opt_state, loss, step1_loss = train_step_multistep(
-                    params, opt_state,
+                    params,
+                    opt_state,
                     train_obs[batch_perm],
                     train_actions[batch_perm],
-                    train_targets[batch_perm]
+                    train_targets[batch_perm],
                 )
                 epoch_step1_losses.append(step1_loss)
             else:
                 params, opt_state, loss = train_step_simple(
-                    params, opt_state,
+                    params,
+                    opt_state,
                     train_obs[batch_perm],
                     train_actions[batch_perm],
-                    train_targets[batch_perm]
+                    train_targets[batch_perm],
                 )
             epoch_losses.append(loss)
 
@@ -583,7 +619,9 @@ def train_world_model(
         if (epoch + 1) % 10 == 0:
             if use_multistep:
                 avg_step1 = float(jnp.mean(jnp.array(epoch_step1_losses)))
-                print(f"Epoch {epoch + 1}: TotalLoss={avg_loss:.6f}, Step1Loss={avg_step1:.6f}, Best={best_loss:.6f}")
+                print(
+                    f"Epoch {epoch + 1}: TotalLoss={avg_loss:.6f}, Step1Loss={avg_step1:.6f}, Best={best_loss:.6f}"
+                )
             else:
                 print(f"Epoch {epoch + 1}: Loss={avg_loss:.6f}, Best={best_loss:.6f}")
 
@@ -612,27 +650,42 @@ def train_world_model(
 
     print(f"Training complete! Best loss: {best_loss:.6f}")
     if use_multistep:
-        print(f"Multi-step training complete. Model trained on 1-step + 2-step predictions.")
+        print(
+            f"Multi-step training complete. Model trained on 1-step + 2-step predictions."
+        )
     else:
         print(f"Single-step training complete. You can now test rollout performance.")
-    print(f"Improvements applied: ball-weighted loss, residual=0.2, {'multi-step' if use_multistep else 'single-step'}")
+    print(
+        f"Improvements applied: ball-weighted loss, residual=0.2, {'multi-step' if use_multistep else 'single-step'}"
+    )
     return params, {"mean": state_mean, "std": state_std}
 
 
-def save_checkpoint(path, params, normalization_stats, epoch, loss, model_scale_factor=MODEL_SCALE_FACTOR, use_deep=True):
+def save_checkpoint(
+    path,
+    params,
+    normalization_stats,
+    epoch,
+    loss,
+    model_scale_factor=MODEL_SCALE_FACTOR,
+    use_deep=True,
+):
     """Save model checkpoint (compatible with pong_agent.py)."""
     model_type = "PongMLPDeep" if use_deep else "PongMLPLight"
     with open(path, "wb") as f:
-        pickle.dump({
-            "params": params,
-            "dynamics_params": params,  # Alias for compatibility
-            "normalization_stats": normalization_stats,
-            "epoch": epoch,
-            "loss": float(loss),
-            "model_scale_factor": model_scale_factor,
-            "model_type": model_type,
-            "use_deep": use_deep,
-        }, f)
+        pickle.dump(
+            {
+                "params": params,
+                "dynamics_params": params,  # Alias for compatibility
+                "normalization_stats": normalization_stats,
+                "epoch": epoch,
+                "loss": float(loss),
+                "model_scale_factor": model_scale_factor,
+                "model_type": model_type,
+                "use_deep": use_deep,
+            },
+            f,
+        )
     print(f"Saved checkpoint to {path} (epoch {epoch}, loss {loss:.6f})")
 
 
@@ -663,6 +716,7 @@ def set_model_architecture(use_deep=True):
 # Main CLI
 # ============================================================================
 
+
 def create_env(frame_stack_size=4):
     """Create the Pong environment with wrappers."""
     game = JaxPong()
@@ -683,10 +737,18 @@ def main():
         print("Lightweight MLP World Model for Pong")
         print()
         print("Usage:")
-        print("  python worldmodel_mlp.py collect [num_episodes] [actor_type]  - Collect experience data")
-        print("                                                     actor_type: 'real', 'imagined', or 'none' (default: none)")
-        print("  python worldmodel_mlp.py train [num_epochs]                   - Train the world model")
-        print("  python worldmodel_mlp.py render [start_idx]                   - Visualize predictions")
+        print(
+            "  python worldmodel_mlp.py collect [num_episodes] [actor_type]  - Collect experience data"
+        )
+        print(
+            "                                                     actor_type: 'real', 'imagined', or 'none' (default: none)"
+        )
+        print(
+            "  python worldmodel_mlp.py train [num_epochs]                   - Train the world model"
+        )
+        print(
+            "  python worldmodel_mlp.py render [start_idx]                   - Visualize predictions"
+        )
         print()
         print("Files:")
         print("  experience_mlp.pkl   - Collected experience data")
@@ -698,7 +760,9 @@ def main():
 
     if command == "collect":
         num_episodes = int(args[1]) if len(args) > 1 else 100
-        actor_type = args[2] if len(args) > 2 else "none"  # 'real', 'imagined', or 'none'
+        actor_type = (
+            args[2] if len(args) > 2 else "none"
+        )  # 'real', 'imagined', or 'none'
 
         env = create_env(frame_stack_size)
 
@@ -721,13 +785,19 @@ def main():
                         actor_params = saved_data.get("params", saved_data)
 
                     actor_network = create_dreamerv2_actor(action_dim=6)
-                    print(f"Successfully loaded {actor_type} actor for experience collection!")
+                    print(
+                        f"Successfully loaded {actor_type} actor for experience collection!"
+                    )
                 except Exception as e:
-                    print(f"Warning: Could not load {actor_type} actor ({e}), using ball-tracking policy")
+                    print(
+                        f"Warning: Could not load {actor_type} actor ({e}), using ball-tracking policy"
+                    )
                     actor_params = None
                     actor_network = None
             else:
-                print(f"No {actor_type} actor found at {actor_path}, using ball-tracking policy")
+                print(
+                    f"No {actor_type} actor found at {actor_path}, using ball-tracking policy"
+                )
         else:
             print("Using ball-tracking policy (no actor specified)")
 
@@ -784,7 +854,9 @@ def main():
         checkpoint = load_checkpoint(checkpoint_path)
         norm_stats = checkpoint["normalization_stats"]
         model_scale_factor = checkpoint.get("model_scale_factor", 1)
-        use_deep = checkpoint.get("use_deep", False)  # Default False for old checkpoints
+        use_deep = checkpoint.get(
+            "use_deep", False
+        )  # Default False for old checkpoints
         set_model_architecture(use_deep)
         print(f"Using {'deep' if use_deep else 'light'} model from checkpoint")
         # Note: params loaded from checkpoint by compare_real_vs_model via model_path
@@ -796,8 +868,6 @@ def main():
         print("=" * 60 + "\n")
 
         env = create_env(frame_stack_size)
-
-    
 
         # Collect 1 fresh episode with ball-tracking policy
         test_data = collect_experience(
@@ -819,30 +889,42 @@ def main():
 
         # Check first observation values
         sample_obs = obs[min(start_idx, len(obs) - 1)]
-        print(f"\nSample obs at idx {min(start_idx, len(obs) - 1)} (INTERLEAVED format):")
-        print(f"  Frame stacking: {frame_stack_size} frames x 14 features = {frame_stack_size * 14}")
+        print(
+            f"\nSample obs at idx {min(start_idx, len(obs) - 1)} (INTERLEAVED format):"
+        )
+        print(
+            f"  Frame stacking: {frame_stack_size} frames x 14 features = {frame_stack_size * 14}"
+        )
         for frame in range(frame_stack_size):
             player_y_idx = 1 * frame_stack_size + frame
             ball_x_idx = 8 * frame_stack_size + frame
             ball_y_idx = 9 * frame_stack_size + frame
             score_p_idx = 12 * frame_stack_size + frame
             score_e_idx = 13 * frame_stack_size + frame
-            print(f"  Frame {frame}: player_y={sample_obs[player_y_idx]:.1f}, "
-                  f"ball_x={sample_obs[ball_x_idx]:.1f}, ball_y={sample_obs[ball_y_idx]:.1f}, "
-                  f"score_p={sample_obs[score_p_idx]:.0f}, score_e={sample_obs[score_e_idx]:.0f}")
+            print(
+                f"  Frame {frame}: player_y={sample_obs[player_y_idx]:.1f}, "
+                f"ball_x={sample_obs[ball_x_idx]:.1f}, ball_y={sample_obs[ball_y_idx]:.1f}, "
+                f"score_p={sample_obs[score_p_idx]:.0f}, score_e={sample_obs[score_e_idx]:.0f}"
+            )
 
-        print(f"\nFormat: [feat0_f0..f3, feat1_f0..f3, ...] - last frame uses idx i*4+3")
+        print(
+            f"\nFormat: [feat0_f0..f3, feat1_f0..f3, ...] - last frame uses idx i*4+3"
+        )
         print("=" * 60)
 
         # Load standalone reward predictor
         reward_predictor_path = "reward_predictor_standalone.pkl"
         if os.path.exists(reward_predictor_path):
-            print(f"Loading standalone reward predictor from {reward_predictor_path}...")
+            print(
+                f"Loading standalone reward predictor from {reward_predictor_path}..."
+            )
             with open(reward_predictor_path, "rb") as f:
                 reward_data = pickle.load(f)
                 reward_predictor_params = reward_data["params"]
         else:
-            print(f"Warning: No standalone reward predictor found at {reward_predictor_path}")
+            print(
+                f"Warning: No standalone reward predictor found at {reward_predictor_path}"
+            )
             reward_predictor_params = None
 
         compare_real_vs_model(
