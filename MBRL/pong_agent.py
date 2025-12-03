@@ -1338,7 +1338,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR, render_bad_episodes=False):
     """Evaluate the trained policy in the real Pong environment using JAX scan."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1381,6 +1381,8 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=10, rend
 
         # Collect observations and actions for rendering if needed
         if render:
+            if (render_bad_episodes and ep_reward >= 0):
+                continue  # Skip good episodes if only rendering bad ones
             valid_obs = observations[ep_idx, :ep_length]
             valid_actions = actions[ep_idx, :ep_length]
             all_obs.append(valid_obs)
@@ -1636,7 +1638,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=5)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=500, render_bad_episodes=True)
             exit()
 
 
