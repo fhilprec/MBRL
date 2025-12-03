@@ -1263,7 +1263,7 @@ def main():
             eval_rewards = evaluate_real_performance(
                 actor_network,
                 actor_params,
-                num_episodes=10,
+                num_episodes=50,
                 render=False,
                 reward_predictor_params=reward_predictor_params,
                 model_scale_factor=loaded_model_scale_factor,
