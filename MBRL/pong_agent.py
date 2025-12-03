@@ -7,7 +7,7 @@ import getpass
 user = getpass.getuser()
 
 if user == 'fhilprecht':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 import jax
 import jax.numpy as jnp
@@ -1465,8 +1465,8 @@ def main():
         "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
         "retrain_interval": 50,  # Retrain world model every 50 iterations
-        "wm_sample_size": 500,  # Number of samples to collect for world model training
-        "wm_train_epochs": 20,  # Increased from 10 - better world model accuracy
+        "wm_sample_size": 100000,  # Number of samples to collect for world model training
+        "wm_train_epochs": 10,  # Increased from 10 - better world model accuracy
     }
 
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
@@ -1570,7 +1570,7 @@ def main():
 
             if not os.path.exists(experience_path):
                 print(f"ERROR: {experience_path} not found!")
-                print("Run: python MBRL/worldmodel_mlp.py collect 100")
+                print("Run: python MBRL/worldmodel_mlp.py collect 100000")
                 return
 
             print(f"Loading experience data from {experience_path}...")
@@ -1806,11 +1806,11 @@ def main():
             eval_std = float(np.std(eval_rewards))
             with open(f"{prefix}training_log", "a") as lf:
                 lf.write(f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n")
-            if eval_mean >= 14.0:
+            if eval_mean >= 18.0:
                 print(f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!")
                 break
                 # Retrain worldmodel every retrain_interval training runs
-        if i % training_params["retrain_interval"] == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
+        if i > 0 and i % training_params["retrain_interval"] == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")
