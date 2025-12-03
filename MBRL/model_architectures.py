@@ -1066,15 +1066,11 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
         margin = 5
 
         # Check if ball is near enemy paddle but enemy is far away in y (missed ball)
-        ball_near_enemy = ball_x < enemy_x + margin
         enemy_far_from_ball = jnp.abs(ball_y - enemy_y) > 15
-        enemy_missed = ball_near_enemy & enemy_far_from_ball
+        enemy_missed = (ball_x < enemy_x) & enemy_far_from_ball
 
         score_reward = jnp.where(
-            enemy_missed,
-            5.0,  # Big reward: ball near enemy but enemy missed
-            jnp.where(
-                ball_x < enemy_x,
+                enemy_missed,
                 1.0,  # Player Scored (ball past enemy)
                 jnp.where(
                     ball_x > player_x + margin,
@@ -1082,7 +1078,7 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
                     0.0
                 )
             )
-        )
+        
     else:
         score_reward = 0.0
 

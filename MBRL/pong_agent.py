@@ -1359,7 +1359,7 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=10, rend
     # Run episodes in parallel with vmap (reusing the existing run_single_episode function)
     # Use use_score_reward=True for evaluation to get actual Pong score
     vmapped_episode_fn = jax.vmap(
-        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=False),
+        lambda k: run_single_episode(k, actor_params, actor_network, env, reward_predictor_params=reward_predictor_params, model_scale_factor=model_scale_factor, use_score_reward=True, inference=True, num_episodes=5),
         in_axes=0
     )
 
@@ -1452,15 +1452,15 @@ def main():
     training_params = {
         "action_dim": 6,
         "rollout_length": 7,  # Reduced from 6 to 4 - errors compound too fast by step 3
-        "num_rollouts": 20000,
+        "num_rollouts": 30000,
         "policy_epochs": 10,  # Max epochs, KL will stop earlier
-        "actor_lr": 4e-5,  # Reduced significantly for smaller policy updates
-        "critic_lr": 2.5e-4,  # Moderate critic learning rate
+        "actor_lr": 8e-5,  # Reduced significantly for smaller policy updates
+        "critic_lr": 5e-4,  # Moderate critic learning rate
         "lambda_": 0.95,
         "entropy_scale": 0.01,  # Maintain exploration
         "discount": 0.95,
         "max_grad_norm": 0.5,  # Tight gradient clipping
-        "target_kl": 0.1,  # Slightly relaxed to allow 2-3 epochs
+        "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
         "retrain_interval": 50,  # Retrain world model every 50 iterations
         "wm_sample_size": 500,  # Number of samples to collect for world model training
@@ -1636,7 +1636,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=100)
             exit()
 
 
@@ -1800,10 +1800,13 @@ def main():
             # and print result into training_log
             eval_rewards = evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor)
             eval_mean = float(np.mean(eval_rewards))
+            
             eval_std = float(np.std(eval_rewards))
             with open(f"{prefix}training_log", "a") as lf:
                 lf.write(f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n")
-
+            if eval_mean >= 14.0:
+                print(f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!")
+                break
                 # Retrain worldmodel every retrain_interval training runs
         if i % training_params["retrain_interval"] == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
             print(f"\n{'='*60}")
