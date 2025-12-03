@@ -108,7 +108,7 @@ def detect_life_boundaries_vectorized(obs, next_obs, frame_stack_size=4):
 
 def collect_experience(
     env,
-    num_episodes=100,
+    total_steps=100000,
     max_steps_per_episode=1000,
     frame_stack_size=4,
     exploration_rate=0.5,
@@ -119,9 +119,18 @@ def collect_experience(
     """
     Collect experience data using JAX vmap and scan for speed.
 
+    Args:
+        total_steps: Total number of steps to collect
+        max_steps_per_episode: Maximum steps per episode
+
     Uses a trained actor policy if provided, otherwise uses ball-tracking policy with exploration.
     """
     rng = jax.random.PRNGKey(seed)
+
+    # Collect episodes in batches until we reach total_steps
+    collected_steps = 0
+    all_episode_data = []
+    batch_size = 50  # Collect 50 episodes at a time
 
     def perfect_policy(obs, rng):
         """Ball tracking policy with exploration, or trained actor policy if provided."""
@@ -194,19 +203,36 @@ def collect_experience(
 
         return observations, actions, rewards, dones, valid_mask, episode_length
 
-    # Generate episode keys and run in parallel
-    episode_keys = jax.random.split(rng, num_episodes)
-
-    print(f"Collecting {num_episodes} episodes with vmap + scan...")
+    # Collect episodes in batches until we reach total_steps
     vmapped_episode_fn = jax.vmap(run_single_episode)
-    observations, actions, rewards, _, _, episode_lengths = vmapped_episode_fn(episode_keys)
 
+    print(f"Collecting {total_steps} total steps with vmap + scan...")
+
+    while collected_steps < total_steps:
+        # Generate episode keys for this batch
+        rng, batch_key = jax.random.split(rng)
+        episode_keys = jax.random.split(batch_key, batch_size)
+
+        # Run batch of episodes
+        batch_observations, batch_actions, batch_rewards, _, _, batch_episode_lengths = vmapped_episode_fn(episode_keys)
+
+        # Store the batch data
+        all_episode_data.append({
+            'observations': batch_observations,
+            'actions': batch_actions,
+            'rewards': batch_rewards,
+            'episode_lengths': batch_episode_lengths
+        })
+
+        # Update collected steps count
+        batch_steps = int(jnp.sum(batch_episode_lengths))
+        collected_steps += batch_steps
+        print(f"Progress: {collected_steps}/{total_steps} steps collected ({len(all_episode_data) * batch_size} episodes)")
+
+    print(f"Finished collecting. Total steps: {collected_steps}")
     print("Processing collected data...")
 
-    # Flatten all observations at once (vectorized)
-    flat_obs_all, _ = flatten_obs(observations)  # (num_episodes, max_steps, 48) - scores removed
-
-    # Process episodes
+    # Process all batches
     all_obs = []
     all_actions = []
     all_next_obs = []
@@ -215,48 +241,69 @@ def collect_experience(
     life_boundaries = []
     cumulative_steps = 0
 
-    for ep_idx in range(num_episodes):
-        ep_length = int(episode_lengths[ep_idx])
+    for batch_data in all_episode_data:
+        observations = batch_data['observations']
+        actions = batch_data['actions']
+        rewards = batch_data['rewards']
+        episode_lengths = batch_data['episode_lengths']
 
-        if ep_length > 1:
-            flat_obs = flat_obs_all[ep_idx, :ep_length]
-            valid_actions = actions[ep_idx, :ep_length]
-            valid_rewards = rewards[ep_idx, :ep_length]
+        # Flatten all observations at once (vectorized)
+        flat_obs_all, _ = flatten_obs(observations)  # (batch_size, max_steps, 48) - scores removed
 
-            # obs[i] -> next_obs[i] = obs[i+1]
-            obs_slice = flat_obs[:-1]
-            next_obs_slice = flat_obs[1:]
-            actions_slice = valid_actions[:-1]
-            rewards_slice = valid_rewards[:-1]
+        for ep_idx in range(batch_size):
+            ep_length = int(episode_lengths[ep_idx])
 
-            # Vectorized life boundary detection using ball position (scores removed)
-            # Ball x (feat 8) at last frame: index = 8 * frame_stack_size + (frame_stack_size - 1) = 35
-            ball_x_idx = 8 * frame_stack_size + (frame_stack_size - 1)  # = 35
+            if ep_length > 1:
+                flat_obs = flat_obs_all[ep_idx, :ep_length]
+                valid_actions = actions[ep_idx, :ep_length]
+                valid_rewards = rewards[ep_idx, :ep_length]
 
-            # Detect ball resets (ball moves to center ~78 from edge)
-            ball_x_curr = obs_slice[:, ball_x_idx]
-            ball_x_next = next_obs_slice[:, ball_x_idx]
+                # obs[i] -> next_obs[i] = obs[i+1]
+                obs_slice = flat_obs[:-1]
+                next_obs_slice = flat_obs[1:]
+                actions_slice = valid_actions[:-1]
+                rewards_slice = valid_rewards[:-1]
 
-            ball_reset = jnp.abs(ball_x_next - 78.0) < 5.0  # Ball near center
-            ball_was_not_center = jnp.abs(ball_x_curr - 78.0) > 20.0  # Ball was away
+                # Vectorized life boundary detection using ball position (scores removed)
+                # Ball x (feat 8) at last frame: index = 8 * frame_stack_size + (frame_stack_size - 1) = 35
+                ball_x_idx = 8 * frame_stack_size + (frame_stack_size - 1)  # = 35
 
-            score_changes = ball_reset & ball_was_not_center
-            boundary_indices = jnp.where(score_changes)[0] + cumulative_steps
-            life_boundaries.extend(boundary_indices.tolist())
+                # Detect ball resets (ball moves to center ~78 from edge)
+                ball_x_curr = obs_slice[:, ball_x_idx]
+                ball_x_next = next_obs_slice[:, ball_x_idx]
 
-            all_obs.append(obs_slice)
-            all_actions.append(actions_slice)
-            all_next_obs.append(next_obs_slice)
-            all_rewards.append(rewards_slice)
+                ball_reset = jnp.abs(ball_x_next - 78.0) < 5.0  # Ball near center
+                ball_was_not_center = jnp.abs(ball_x_curr - 78.0) > 20.0  # Ball was away
 
-            cumulative_steps += ep_length - 1
-            episode_boundaries.append(cumulative_steps)
+                score_changes = ball_reset & ball_was_not_center
+                boundary_indices = jnp.where(score_changes)[0] + cumulative_steps
+                life_boundaries.extend(boundary_indices.tolist())
+
+                all_obs.append(obs_slice)
+                all_actions.append(actions_slice)
+                all_next_obs.append(next_obs_slice)
+                all_rewards.append(rewards_slice)
+
+                cumulative_steps += ep_length - 1
+                episode_boundaries.append(cumulative_steps)
 
     # Concatenate all episodes
     all_obs = jnp.concatenate(all_obs, axis=0)
     all_actions = jnp.concatenate(all_actions, axis=0)
     all_next_obs = jnp.concatenate(all_next_obs, axis=0)
     all_rewards = jnp.concatenate(all_rewards, axis=0)
+
+    # Trim to exactly total_steps transitions if we collected too many
+    if len(all_obs) > total_steps:
+        print(f"Trimming from {len(all_obs)} to {total_steps} transitions")
+        all_obs = all_obs[:total_steps]
+        all_actions = all_actions[:total_steps]
+        all_next_obs = all_next_obs[:total_steps]
+        all_rewards = all_rewards[:total_steps]
+
+        # Update episode and life boundaries - remove any beyond total_steps
+        episode_boundaries = [b for b in episode_boundaries if b <= total_steps]
+        life_boundaries = [b for b in life_boundaries if b < total_steps]
 
     print(f"Collected {len(all_obs)} total transitions")
     print(f"Found {len(life_boundaries)} scoring events (life boundaries)")
@@ -683,10 +730,11 @@ def main():
         print("Lightweight MLP World Model for Pong")
         print()
         print("Usage:")
-        print("  python worldmodel_mlp.py collect [num_episodes] [actor_type]  - Collect experience data")
+        print("  python worldmodel_mlp.py collect [total_steps] [actor_type]  - Collect experience data")
+        print("                                                     total_steps: number of environment steps to collect (default: 100000)")
         print("                                                     actor_type: 'real', 'imagined', or 'none' (default: none)")
-        print("  python worldmodel_mlp.py train [num_epochs]                   - Train the world model")
-        print("  python worldmodel_mlp.py render [start_idx]                   - Visualize predictions")
+        print("  python worldmodel_mlp.py train [num_epochs]                  - Train the world model")
+        print("  python worldmodel_mlp.py render [start_idx]                  - Visualize predictions")
         print()
         print("Files:")
         print("  experience_mlp.pkl   - Collected experience data")
@@ -697,7 +745,7 @@ def main():
     frame_stack_size = 4
 
     if command == "collect":
-        num_episodes = int(args[1]) if len(args) > 1 else 100
+        total_steps = int(args[1]) if len(args) > 1 else 100000
         actor_type = args[2] if len(args) > 2 else "none"  # 'real', 'imagined', or 'none'
 
         env = create_env(frame_stack_size)
@@ -733,11 +781,14 @@ def main():
 
         data = collect_experience(
             env,
-            num_episodes=num_episodes,
+            total_steps=total_steps,
+            max_steps_per_episode=1000,
             frame_stack_size=frame_stack_size,
             actor_params=actor_params,
             actor_network=actor_network,
         )
+
+        print(f"Collected {len(data['obs'])} samples")
 
         save_path = "experience_mlp.pkl"
         with open(save_path, "wb") as f:
@@ -802,7 +853,7 @@ def main():
         # Collect 1 fresh episode with ball-tracking policy
         test_data = collect_experience(
             env,
-            num_episodes=1,
+            total_steps=1000,  # Collect approximately 1 episode worth of steps
             max_steps_per_episode=1000,
             frame_stack_size=frame_stack_size,
             exploration_rate=0.5,

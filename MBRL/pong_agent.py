@@ -1338,7 +1338,7 @@ def train_dreamerv2_actor_critic(
     return actor_state.params, critic_state.params
 
 
-def evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR):
+def evaluate_real_performance(actor_network, actor_params, num_episodes=10, render=False, reward_predictor_params=None, model_scale_factor=MODEL_SCALE_FACTOR, render_bad_episodes=False):
     """Evaluate the trained policy in the real Pong environment using JAX scan."""
     from jaxatari.games.jax_pong import JaxPong
 
@@ -1381,6 +1381,8 @@ def evaluate_real_performance(actor_network, actor_params, num_episodes=10, rend
 
         # Collect observations and actions for rendering if needed
         if render:
+            if (render_bad_episodes and ep_reward >= 0):
+                continue  # Skip good episodes if only rendering bad ones
             valid_obs = observations[ep_idx, :ep_length]
             valid_actions = actions[ep_idx, :ep_length]
             all_obs.append(valid_obs)
@@ -1463,8 +1465,8 @@ def main():
         "target_kl": 0.15,  # Slightly relaxed to allow 2-3 epochs
         "early_stopping_patience": 100,
         "retrain_interval": 50,  # Retrain world model every 50 iterations
-        "wm_sample_size": 500,  # Number of samples to collect for world model training
-        "wm_train_epochs": 20,  # Increased from 10 - better world model accuracy
+        "wm_sample_size": 100000,  # Number of samples to collect for world model training
+        "wm_train_epochs": 10,  # Increased from 10 - better world model accuracy
     }
 
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
@@ -1568,7 +1570,7 @@ def main():
 
             if not os.path.exists(experience_path):
                 print(f"ERROR: {experience_path} not found!")
-                print("Run: python MBRL/worldmodel_mlp.py collect 100")
+                print("Run: python MBRL/worldmodel_mlp.py collect 100000")
                 return
 
             print(f"Loading experience data from {experience_path}...")
@@ -1636,7 +1638,7 @@ def main():
         if args.eval:
             # Use render parameter if provided, otherwise default to False
             render_eval = bool(args.render)
-            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=100)
+            evaluate_real_performance(actor_network, actor_params, render=render_eval, reward_predictor_params=reward_predictor_params, model_scale_factor=loaded_model_scale_factor, num_episodes=500, render_bad_episodes=True)
             exit()
 
 
@@ -1804,11 +1806,11 @@ def main():
             eval_std = float(np.std(eval_rewards))
             with open(f"{prefix}training_log", "a") as lf:
                 lf.write(f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n")
-            if eval_mean >= 14.0:
+            if eval_mean >= 18.0:
                 print(f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!")
                 break
                 # Retrain worldmodel every retrain_interval training runs
-        if i % training_params["retrain_interval"] == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
+        if i > 0 and i % training_params["retrain_interval"] == 0 and rollout_func == generate_imagined_rollouts:   #activate this later
             print(f"\n{'='*60}")
             print(f"RETRAINING WORLDMODEL AFTER {i} TRAINING RUNS")
             print(f"{'='*60}\n")

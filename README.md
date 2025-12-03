@@ -33,6 +33,8 @@ source .venv/bin/activate
 
 python3 -m pip install -U pip
 pip3 install -e .
+
+pip install -e /home/fhilprec/MBRL/
 ```
 
 ## Usage

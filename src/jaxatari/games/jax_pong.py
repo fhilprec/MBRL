@@ -1,6 +1,7 @@
 import os
 from functools import partial
 from typing import NamedTuple, Tuple
+import jax
 import jax.lax
 import jax.numpy as jnp
 import chex
@@ -379,21 +380,52 @@ class JaxPong(JaxEnvironment[PongState, PongObservation, PongInfo]):
         """
         Resets the game state to the initial state.
         Returns the initial state and the reward (i.e. 0)
+
+        Args:
+            key: JAX random key for randomizing initial state.
+                 Randomizes:
+                 - Ball X velocity direction (left or right)
+                 - Ball Y velocity direction (up or down)
+                 - Ball starting Y position (±10 pixels)
+                 - Player starting Y position (±10 pixels)
+                 - Enemy starting Y position (±10 pixels)
         """
+        # Always use a key - if None provided, create a default one
+        if key is None:
+            key = jax.random.PRNGKey(0)
+
+        # Split key for different random choices
+        key_ball_x, key_ball_y, key_ball_pos, key_player_pos, key_enemy_pos = jax.random.split(key, 5)
+
+        # Randomize ball X velocity direction (left=-1 or right=1)
+        ball_vel_x = jax.random.choice(key_ball_x, jnp.array([-1, 1]))
+
+        # Randomize ball Y velocity direction (up=-1 or down=1)
+        ball_vel_y = jax.random.choice(key_ball_y, jnp.array([-1, 1]))
+
+        # Randomize ball starting Y position (115 ± 10 pixels)
+        ball_y = BALL_START_Y + jax.random.randint(key_ball_pos, (), -10, 11)
+
+        # Randomize player starting Y position (96 ± 10 pixels)
+        player_y = jnp.array(96) + jax.random.randint(key_player_pos, (), -10, 11)
+
+        # Randomize enemy starting Y position (115 ± 10 pixels)
+        enemy_y = jnp.array(115) + jax.random.randint(key_enemy_pos, (), -10, 11)
+
         state = PongState(
-            player_y=jnp.array(96).astype(jnp.int32),
+            player_y=player_y.astype(jnp.int32),
             player_speed=jnp.array(0.0).astype(jnp.int32),
             ball_x=jnp.array(78).astype(jnp.int32),
-            ball_y=jnp.array(115).astype(jnp.int32),
-            enemy_y=jnp.array(115).astype(jnp.int32),
+            ball_y=ball_y.astype(jnp.int32),
+            enemy_y=enemy_y.astype(jnp.int32),
             enemy_speed=jnp.array(0.0).astype(jnp.int32),
-            ball_vel_x=BALL_SPEED[0].astype(jnp.int32),
-            ball_vel_y=BALL_SPEED[1].astype(jnp.int32),
+            ball_vel_x=ball_vel_x.astype(jnp.int32),
+            ball_vel_y=ball_vel_y.astype(jnp.int32),
             player_score=jnp.array(0).astype(jnp.int32),
             enemy_score=jnp.array(0).astype(jnp.int32),
             step_counter=jnp.array(0).astype(jnp.int32),
             acceleration_counter=jnp.array(0).astype(jnp.int32),
-            buffer=jnp.array(96).astype(jnp.int32),
+            buffer=player_y.astype(jnp.int32),
         )
         initial_obs = self._get_observation(state)
 
