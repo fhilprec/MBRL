@@ -1,9 +1,9 @@
-PWD /home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example
+PWD /home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example
 INPUT /etc/texmf/web2c/texmf.cnf
 INPUT /usr/share/texmf/web2c/texmf.cnf
 INPUT /usr/share/texlive/texmf-dist/web2c/texmf.cnf
 INPUT /var/lib/texmf/web2c/pdftex/pdflatex.fmt
-INPUT /home/florian/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex
+INPUT /home/fhilprec/MBRL/MBRL/LaTeX/doc/latex/tuda-ci/example/DEMO-TUDaThesis.tex
 OUTPUT DEMO-TUDaThesis.log
 INPUT ./tudapub.cls
 INPUT tudapub.cls

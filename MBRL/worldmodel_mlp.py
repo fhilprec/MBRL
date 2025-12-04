@@ -18,6 +18,7 @@ import sys
 import pygame
 from tqdm import tqdm
 from typing import Tuple, Any
+import numpy as np
 
 # Import from jaxatari for environment
 from obs_state_converter import pong_flat_observation_to_state
@@ -94,10 +95,10 @@ def compare_real_vs_model(
                 print(
                     f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} \033[91m Reward: {score_val} \033[0m"
                 )
-            # else:
-            #     print(
-            #         f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
-            #     )
+            else:
+                print(
+                    f"Step {step}, MSE Error: {error:.4f} | Action: {action_map.get(int(action), action)} Reward: {score_val} "
+                )
 
         # for debugging purposes
         if calc_score_based_reward:
@@ -1132,7 +1133,7 @@ def main():
     frame_stack_size = 4
 
     if command == "collect":
-        num_episodes = int(args[1]) if len(args) > 1 else 100
+        num_steps = int(args[1]) if len(args) > 1 else 100
         actor_type = (
             args[2] if len(args) > 2 else "none"
         )  # 'real', 'imagined', or 'none'
@@ -1174,6 +1175,10 @@ def main():
         else:
             print("Using ball-tracking policy (no actor specified)")
 
+
+        num_episodes = int(num_steps/1000) #simple heuristic to determine number of episodes
+
+
         data = collect_experience(
             env,
             num_episodes=num_episodes,
@@ -1181,6 +1186,33 @@ def main():
             actor_params=actor_params,
             actor_network=actor_network,
         )
+
+        if len(data["obs"]) < num_steps:
+            while True:
+                #sample again
+                print("Sampling more experience to reach desired number of steps...")
+                data_extra = collect_experience(
+                    env,
+                    num_episodes=num_episodes,
+                    frame_stack_size=frame_stack_size,
+                    actor_params=actor_params,
+                    actor_network=actor_network,
+                )
+                #concat onto data
+                for key in data:
+                    if key in ["episode_boundaries", "life_boundaries"]:
+                        # These are lists, extend them
+                        data[key].extend(data_extra[key])
+                    else:
+                        # These are arrays, concatenate them
+                        data[key] = jnp.concatenate([data[key], data_extra[key]], axis=0)
+                if len(data["obs"]) >= num_steps:
+                    break
+
+        print(f"Collected {len(data['obs'])} total transitions cutting to {num_steps}...")
+        #cut cata to exactly num_steps
+        for key in data:
+            data[key] = data[key][:num_steps]
 
         save_path = "experience_mlp.pkl"
         with open(save_path, "wb") as f:
@@ -1226,12 +1258,6 @@ def main():
 
         checkpoint = load_checkpoint(checkpoint_path)
         norm_stats = checkpoint["normalization_stats"]
-        use_deep = checkpoint.get(
-            "use_deep", False
-        )  # Default False for old checkpoints
-        set_model_architecture(use_deep)
-        print(f"Using {'deep' if use_deep else 'light'} model from checkpoint")
-        # Note: params loaded from checkpoint by compare_real_vs_model via model_path
 
         # Generate FRESH test episode to check for overfitting
         print("\n" + "=" * 60)
@@ -1310,7 +1336,6 @@ def main():
             starting_step=min(start_idx, len(obs) - 1),
             steps_into_future=10,
             frame_stack_size=frame_stack_size,
-            model_scale_factor=MODEL_SCALE_FACTOR,
             # reward_predictor_params=reward_predictor_params,
             model_path=checkpoint_path,
             clock_speed=100,
