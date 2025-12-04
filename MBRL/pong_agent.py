@@ -449,7 +449,7 @@ def run_single_episode(
     actor_params,
     actor_network,
     env,
-    max_steps=10000,
+    max_steps=100000,
     reward_predictor_params=None,
     model_scale_factor=MODEL_SCALE_FACTOR,
     use_score_reward=False,
@@ -876,13 +876,14 @@ def evaluate_real_performance(
     render=False,
     reward_predictor_params=None,
     model_scale_factor=MODEL_SCALE_FACTOR,
+    max_steps=10000,
 ):
     """Evaluate the trained policy in the real Pong environment using JAX scan."""
     from jaxatari.games.jax_pong import JaxPong
 
     env = JaxPong()
     env = AtariWrapper(
-        env, sticky_actions=False, episodic_life=False, frame_stack_size=4
+        env, sticky_actions=False, episodic_life=False, frame_stack_size=4, max_episode_length=max_steps
     )
 
     seed = int(__import__("time").time() * 1000) % (2**31)
@@ -896,6 +897,7 @@ def evaluate_real_performance(
             actor_params,
             actor_network,
             env,
+            max_steps=max_steps,
             reward_predictor_params=reward_predictor_params,
             model_scale_factor=model_scale_factor,
             use_score_reward=True,
@@ -1137,7 +1139,8 @@ def main():
                 render=render_eval,
                 reward_predictor_params=reward_predictor_params,
                 model_scale_factor=loaded_model_scale_factor,
-                num_episodes=1,
+                num_episodes=10,
+                max_steps=100000,
             )
             exit()
 
