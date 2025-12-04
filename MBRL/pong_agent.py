@@ -911,6 +911,7 @@ def evaluate_real_performance(
     )
 
     total_rewards = []
+    episode_steps = []
     all_obs = []
     all_actions = []
 
@@ -919,6 +920,7 @@ def evaluate_real_performance(
 
         ep_reward = float(jnp.sum(rewards[ep_idx, :ep_length]))
         total_rewards.append(ep_reward)
+        episode_steps.append(ep_length)
 
         print(
             f"Episode {ep_idx + 1}: Final reward: {ep_reward:.3f}, Steps: {ep_length}"
@@ -955,7 +957,7 @@ def evaluate_real_performance(
             reward_predictor_params=None,
         )
 
-    return total_rewards
+    return total_rewards, episode_steps
 
 
 def analyze_policy_behavior(actor_network, actor_params, observations):
@@ -1270,7 +1272,7 @@ def main():
 
         if i % training_params["retrain_interval"] == 0:
 
-            eval_rewards = evaluate_real_performance(
+            eval_rewards, eval_steps = evaluate_real_performance(
                 actor_network,
                 actor_params,
                 num_episodes=50,
@@ -1285,6 +1287,8 @@ def main():
                 lf.write(
                     f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n"
                 )
+                lf.write(f"episode_rewards={eval_rewards}\n")
+                lf.write(f"episode_steps={eval_steps}\n")
 
             # Check if this is a new best performance
             if eval_mean > best_eval_performance:
