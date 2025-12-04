@@ -479,20 +479,10 @@ def run_single_episode(
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
 
-            old_player_score = state.env_state.player_score
-            old_enemy_score = state.env_state.enemy_score
-            new_player_score = next_state.env_state.player_score
-            new_enemy_score = next_state.env_state.enemy_score
-
-            score_reward = (new_player_score - old_player_score) - (
-                new_enemy_score - old_enemy_score
-            )
-
-            score_reward = jnp.where(jnp.abs(score_reward) > 1, 0.0, score_reward)
-
             if use_score_reward:
-
-                final_reward = jnp.array(score_reward, dtype=jnp.float32)
+                # When done=True, the wrapper resets the environment, so we can't read scores
+                # Use the reward from the environment directly instead
+                final_reward = jnp.array(reward, dtype=jnp.float32)
             else:
 
                 improved_reward = improved_pong_reward(
@@ -524,6 +514,8 @@ def run_single_episode(
                     dtype=jnp.float32,
                 )
 
+            # Mark transition as valid if we haven't been done yet
+            # This ensures we include the transition that causes done=True
             transition = (flat_obs, state, action, final_reward, ~done)
 
             return (rng_new, next_flat_obs, next_state, next_done), transition
@@ -918,7 +910,8 @@ def evaluate_real_performance(
     for ep_idx in range(num_episodes):
         ep_length = int(episode_lengths[ep_idx])
 
-        ep_reward = float(jnp.sum(rewards[ep_idx, :ep_length]))
+        # Use valid_mask to sum only valid rewards, not slicing by length
+        ep_reward = float(jnp.sum(rewards[ep_idx] * valid_mask[ep_idx]))
         total_rewards.append(ep_reward)
         episode_steps.append(ep_length)
 
