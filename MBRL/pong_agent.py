@@ -454,6 +454,7 @@ def run_single_episode(
     model_scale_factor=MODEL_SCALE_FACTOR,
     use_score_reward=False,
     inference=False,
+    sample_mode=False,
 ):
     """Run one complete episode using JAX scan with masking."""
     reset_key, step_key = jax.random.split(episode_key)
@@ -475,6 +476,10 @@ def run_single_episode(
                 scaled_logits = pi.logits / temperature
                 pi_temp = distrax.Categorical(logits=scaled_logits)
                 action = pi_temp.sample(seed=action_key)
+
+                #override action for deterministic eval
+                if sample_mode:
+                    action = pi.sample(seed=action_key)
 
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
@@ -869,6 +874,7 @@ def evaluate_real_performance(
     reward_predictor_params=None,
     model_scale_factor=MODEL_SCALE_FACTOR,
     max_steps=10000,
+    sample_mode=False,
 ):
     """Evaluate the trained policy in the real Pong environment using JAX scan."""
     from jaxatari.games.jax_pong import JaxPong
@@ -894,6 +900,7 @@ def evaluate_real_performance(
             model_scale_factor=model_scale_factor,
             use_score_reward=True,
             inference=True,
+            sample_mode=sample_mode,
         ),
         in_axes=0,
     )
@@ -1296,7 +1303,20 @@ def main():
                 render=False,
                 reward_predictor_params=reward_predictor_params,
                 model_scale_factor=loaded_model_scale_factor,
+                sample_mode=False,
             )
+
+            mode_reward, mode_steps = evaluate_real_performance(
+                actor_network,
+                actor_params,
+                num_episodes=1,
+                render=False,
+                reward_predictor_params=reward_predictor_params,
+                model_scale_factor=loaded_model_scale_factor,
+                sample_mode=True,
+            )
+
+
             eval_mean = float(np.mean(eval_rewards))
 
             eval_std = float(np.std(eval_rewards))
@@ -1306,6 +1326,10 @@ def main():
                 )
                 lf.write(f"episode_rewards={eval_rewards}\n")
                 lf.write(f"episode_steps={eval_steps}\n")
+
+                lf.write(
+                    f"MAXIMUM REWARD: mode_eval_reward={mode_reward[0]:.6f}, mode_eval_steps={mode_steps[0]}\n"
+                )
 
             # Check if this is a new best performance
             if eval_mean > best_eval_performance:
