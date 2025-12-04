@@ -1044,40 +1044,64 @@ def main():
         loaded_model_type = "PongMLPDeep"
 
         model_path = "worldmodel_mlp.pkl"
+        experience_path = "experience_mlp.pkl"
 
-        if model_path:
-            with open(model_path, "rb") as f:
-                saved_data = pickle.load(f)
-                dynamics_params = saved_data.get(
-                    "params", saved_data.get("dynamics_params")
-                )
+        # Check if this is the initial run (no model or experience exists)
+        model_exists = os.path.exists(model_path)
+        experience_exists = os.path.exists(experience_path)
 
-                normalization_stats = saved_data["normalization_stats"]
-
-                loaded_model_scale_factor = saved_data.get(
-                    "model_scale_factor", loaded_model_scale_factor
-                )
-                loaded_use_deep = saved_data.get("use_deep", loaded_use_deep)
-                loaded_model_type = saved_data.get("model_type", loaded_model_type)
-
-                model_exists = True
-                del saved_data
-                gc.collect()
-
-            reward_predictor_params = None
-
-            experience_path = "experience_mlp.pkl"
-
+        if not experience_exists:
+            print(f"\n{'='*60}")
+            print("INITIAL RUN: No experience found!")
+            print(f"Collecting {training_params['wm_sample_size']} initial steps with random policy...")
+            print(f"{'='*60}\n")
+            os.system(
+                f"python MBRL/worldmodel_mlp.py collect {training_params['wm_sample_size']} random"
+            )
             if not os.path.exists(experience_path):
-                print(f"ERROR: {experience_path} not found!")
-                print("Run: python MBRL/worldmodel_mlp.py collect 100")
+                print(f"ERROR: Failed to collect initial experience!")
                 return
+            print("Initial experience collection complete!\n")
 
-            with open(experience_path, "rb") as f:
-                saved_data = pickle.load(f)
-                obs = saved_data["obs"]
-                del saved_data
-                gc.collect()
+        if not model_exists:
+            print(f"\n{'='*60}")
+            print("INITIAL RUN: No world model found!")
+            print(f"Training initial world model for {training_params['wm_train_epochs']} epochs...")
+            print(f"{'='*60}\n")
+            os.system(
+                f"python MBRL/worldmodel_mlp.py train {training_params['wm_train_epochs']}"
+            )
+            if not os.path.exists(model_path):
+                print(f"ERROR: Failed to train initial world model!")
+                return
+            print("Initial world model training complete!\n")
+
+        # Now load the model and experience
+        with open(model_path, "rb") as f:
+            saved_data = pickle.load(f)
+            dynamics_params = saved_data.get(
+                "params", saved_data.get("dynamics_params")
+            )
+
+            normalization_stats = saved_data["normalization_stats"]
+
+            loaded_model_scale_factor = saved_data.get(
+                "model_scale_factor", loaded_model_scale_factor
+            )
+            loaded_use_deep = saved_data.get("use_deep", loaded_use_deep)
+            loaded_model_type = saved_data.get("model_type", loaded_model_type)
+
+            model_exists = True
+            del saved_data
+            gc.collect()
+
+        reward_predictor_params = None
+
+        with open(experience_path, "rb") as f:
+            saved_data = pickle.load(f)
+            obs = saved_data["obs"]
+            del saved_data
+            gc.collect()
 
         key = jax.random.PRNGKey(42)
 
@@ -1308,7 +1332,8 @@ def main():
                 break
 
         if (
-            i % training_params["retrain_interval"] == 0
+            i > 0 #skip initial training
+            and i % training_params["retrain_interval"] == 0
             and rollout_func == generate_imagined_rollouts
         ):
             print(f"\n{'='*60}")
