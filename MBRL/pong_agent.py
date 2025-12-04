@@ -1022,15 +1022,19 @@ def main():
     model_exists = False
 
     start_iteration = 0
+    best_eval_performance = 0.0  # Default to 0 if no previous best exists
     if os.path.exists(f"{prefix}actor_params.pkl"):
         try:
             with open(f"{prefix}actor_params.pkl", "rb") as f:
                 saved_data = pickle.load(f)
                 start_iteration = saved_data.get("iteration", 0)
+                best_eval_performance = saved_data.get("best_eval_performance", 0.0)
                 print(f"Resuming from iteration {start_iteration}")
+                print(f"Loaded best eval performance: {best_eval_performance:.3f}")
         except Exception as e:
             print(f"Could not load iteration counter: {e}. Starting from 0")
             start_iteration = 0
+            best_eval_performance = 0.0
 
     for i in range(start_iteration, start_iteration + training_runs):
 
@@ -1225,11 +1229,14 @@ def main():
         )
 
         def save_model_checkpoints(
-            actor_params, critic_params, iteration, prefix=prefix
+            actor_params, critic_params, iteration, prefix=prefix, best_eval_performance=None
         ):
-            """Save parameters with consistent structure including iteration counter"""
+            """Save parameters with consistent structure including iteration counter and best performance"""
+            actor_data = {"params": actor_params, "iteration": iteration + 1}
+            if best_eval_performance is not None:
+                actor_data["best_eval_performance"] = best_eval_performance
             with open(f"{prefix}actor_params.pkl", "wb") as f:
-                pickle.dump({"params": actor_params, "iteration": iteration + 1}, f)
+                pickle.dump(actor_data, f)
             with open(f"{prefix}critic_params.pkl", "wb") as f:
                 pickle.dump({"params": critic_params, "iteration": iteration + 1}, f)
 
@@ -1256,7 +1263,7 @@ def main():
         with open(f"{prefix}training_log", "a") as lf:
             lf.write(log_line)
 
-        save_model_checkpoints(actor_params, critic_params, i, prefix=prefix)
+        save_model_checkpoints(actor_params, critic_params, i, prefix=prefix, best_eval_performance=best_eval_performance)
 
         if i % training_params["retrain_interval"] == 0:
 
@@ -1275,6 +1282,25 @@ def main():
                 lf.write(
                     f"eval_mean_reward={eval_mean:.6f}, eval_std_reward={eval_std:.6f}\n"
                 )
+
+            # Check if this is a new best performance
+            if eval_mean > best_eval_performance:
+                print(f"New best performance! {eval_mean:.3f} > {best_eval_performance:.3f}")
+                best_eval_performance = eval_mean
+
+                # Save best checkpoints with best_ prefix
+                with open(f"best_{prefix}actor_params.pkl", "wb") as f:
+                    pickle.dump({"params": actor_params, "iteration": i + 1, "best_eval_performance": best_eval_performance}, f)
+                with open(f"best_{prefix}critic_params.pkl", "wb") as f:
+                    pickle.dump({"params": critic_params, "iteration": i + 1}, f)
+
+                print(f"Saved best checkpoints at iteration {i}")
+                with open(f"{prefix}training_log", "a") as lf:
+                    lf.write(f"*** NEW BEST: {best_eval_performance:.6f} at iteration {i} ***\n")
+
+                # Update the regular checkpoints with new best performance
+                save_model_checkpoints(actor_params, critic_params, i, prefix=prefix, best_eval_performance=best_eval_performance)
+
             if eval_mean >= 19.0:
                 print(
                     f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!"
