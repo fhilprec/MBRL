@@ -966,7 +966,7 @@ def analyze_policy_behavior(actor_network, actor_params, observations):
 
 def main():
 
-    training_runs = 100000
+    training_runs = 3120
     model_scale_factor = MODEL_SCALE_FACTOR
 
     training_params = {
@@ -982,9 +982,9 @@ def main():
         "max_grad_norm": 0.5,
         "target_kl": 0.15,
         "early_stopping_patience": 100,
-        "retrain_interval": 50,
-        "wm_sample_size": 500,
-        "wm_train_epochs": 20,
+        "retrain_interval": 10,
+        "wm_sample_size": 160000, # sample 160000 new steps
+        "wm_train_epochs": 50,
     }
 
     parser = argparse.ArgumentParser(description="DreamerV2 Pong agent")
