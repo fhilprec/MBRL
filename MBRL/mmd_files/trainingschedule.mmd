@@ -1,0 +1,30 @@
+%% Training Pipeline - Simplified
+%% Based on Section 3.3 of DEMO-TUDaThesis.tex
+
+graph TB
+    Start([Start]) --> Init[Initial Sampling<br/>in Real Env]
+    Init --> TrainWM[Train World Model]
+
+    TrainWM --> Loop{Real ENV Steps<br/>< 50M?}
+
+    Loop -->|Yes| Sample[Sample 30k States<br/>from Buffer]
+    Sample --> Rollout[Generate Rollouts<br/>using World Model]
+    Rollout --> Lambda[Calculate λ-Returns]
+    Lambda --> TrainAC[Train Actor-Critic]
+
+    TrainAC --> Check{50 Epochs?}
+    Check -->|Yes| Resample[Resample in Real Env]
+    Resample --> RetrainWM[Retrain World Model]
+    RetrainWM --> Loop
+
+    Check -->|No| Sample
+    Loop -->|No| End([Done])
+
+    %% Styling
+    classDef setupClass fill:#e1f5ff,stroke:#4a90e2,stroke-width:2px
+    classDef trainClass fill:#fff4e1,stroke:#f5a623,stroke-width:2px
+    classDef decisionClass fill:#fce4ec,stroke:#e91e63,stroke-width:2px
+
+    class Init,Resample setupClass
+    class TrainWM,Sample,Rollout,Lambda,TrainAC,RetrainWM trainClass
+    class Loop,Check decisionClass

@@ -731,6 +731,13 @@ Our complete training procedure alternates between the world model training and 
 \subsection{World Model Training and Experience Collection}
 \label{subsec:world_model_training}
 
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.3\textwidth]{images/trainingschedule.png}
+	\caption{Training schedule showing the alternating phases of world model training and policy optimization. The world model is retrained every 10 policy iterations using newly collected experience from the current policy.}
+	\label{fig:trainingschedule}
+\end{figure}
+
 The training pipeline begins with an initial data collection phase, followed by iterative improvement of both the world model and policy:
 
 \begin{algorithm}

@@ -114,3 +114,9 @@ This project is licensed under the MIT License.
 See the [LICENSE](LICENSE) file for details.
 
 ---
+
+
+
+
+
+./MBRL/mmd_files/mmd2pdf.sh trainingschedule.mmd training_pipeline pdf
