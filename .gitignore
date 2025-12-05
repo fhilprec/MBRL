@@ -24,7 +24,7 @@ IMPLEMENTATION_NOTES.md
 *.toc
 *.xmpdata
 training_log
-
+*.fls
 node_modules/
 package-lock.json
 package.json

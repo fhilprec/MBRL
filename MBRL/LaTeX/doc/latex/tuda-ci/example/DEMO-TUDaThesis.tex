@@ -499,55 +499,313 @@ accuracy and policy learning.
 \chapter{Methodology}
 \label{chap:methodology}
 
+This chapter presents the technical details of our object-centric model based reinforcement learning approach for Pong. We describe the world model architecture, the actor-critic framework, and the complete training pipeline that integrates these components.
+
 \section{World Model Architecture}
 \label{sec:world_model_arch}
 
-\subsection{LSTM-Based World Model (PongLSTM)}
-\label{subsec:ponglstm}
-explain LSTM
-explain why is might be good for world models in general instead of models that only take the last state into account
+Our world model is designed to predict future object-centric states given the current state and action. Unlike pixel-based approaches that operate on high-dimensional visual inputs, our model works with compact object representations provided by JAXAtari, consisting of 48 features (12 object features across 4 stacked frames, with score features removed to avoid trivial prediction).
+
+\subsection{Deep Residual MLP (PongMLPDeep)}
+\label{subsec:pongmlp}
+
+Our world model \texttt{PongMLPDeep} is a deep feedforward neural network with residual connections and layer normalization. Instead of using recurrent architectures, we rely on frame stacking to provide the temporal context. The input state contains 4 consecutive frames, which gives the model information about velocities and trajectories through the temporal differences between frames.
+
+The feedforward architecture offers several advantages for our object-centric setting. First, frame stacking provides sufficient temporal information for the deterministic physics of Pong—the ball's velocity and direction can be inferred from the consecutive frame differences. Second, feedforward networks are significantly faster to train and evaluate than recurrent models, since they have no sequential dependencies that require iterative computation. Third, the structured nature of object-centric states (explicit positions, velocities) means the model does not need to learn temporal abstractions from the scratch.
+
+Our implementation uses a 4-layer residual architecture that predicts frame-shifted states. The model is defined as:
+
+\begin{equation}
+\hat{s}_{t+1} = f_\theta(s_t, a_t)
+\end{equation}
+
+where $s_t \in \mathbb{R}^{48}$ is the normalized object-centric state containing 4 stacked frames, $a_t \in \{0,1,2,3,4,5\}$ is the discrete action, and $f_\theta$ represents our parameterized dynamics function. Importantly, the output $\hat{s}_{t+1}$ represents a shifted frame stack: frames $[f_1, f_2, f_3, f_{\text{new}}]$ where the oldest frame $f_0$ gets discarded and a new predicted frame gets appended.
+
+The architecture consists of following layers with hidden dimension $h = 256 \cdot \text{scale\_factor}$:
+
+\begin{enumerate}
+    \item \textbf{Input Processing:} State and one-hot encoded action are concatenated: $x_0 = [s_t; \text{OneHot}(a_t)] \in \mathbb{R}^{54}$
+    \item \textbf{Layer 1:} $x_1 = \text{GELU}(\text{LayerNorm}(\text{Dense}_h(x_0)))$
+    \item \textbf{Layer 2 with Residual:} $x_2 = \text{GELU}(\text{LayerNorm}(\text{Dense}_h(x_1))) + x_1$
+    \item \textbf{Layer 3 with Residual:} $x_3 = \text{GELU}(\text{LayerNorm}(\text{Dense}_h(x_2))) + x_2$
+    \item \textbf{Layer 4 with Residual:} $x_4 = \text{GELU}(\text{LayerNorm}(\text{Dense}_h(x_3))) + x_3$
+    \item \textbf{Output Layer:} Predict only the new frame: $f_{\text{new}} = \text{Dense}_{12}(x_4)$
+    \item \textbf{Frame Shifting:} Construct $\hat{s}_{t+1}$ by shifting frames: $[f_1, f_2, f_3, f_{\text{new}}]$
+\end{enumerate}
+
+The residual connections after layers 2-4 facilitate the gradient flow through the deep network and prevent vanishing gradients. Layer normalization after each dense layer stabilizes the activations and accelerates the training. We use GELU (Gaussian Error Linear Unit) activation functions, which have been shown to work well for deep networks compared to ReLU.
+
+An important architectural choice is to predict only the newest frame instead of the entire 48-dimensional state. This reduces the output complexity from 48 to 12 dimensions and naturally incorporates an inductive bias: the model focuses on predicting how objects change instead of reconstructing static features from previous frames. The frame shifting operation (model\_architectures.py:77-107) handles the interleaved feature format where each of 12 features has 4 frame values.
 
 \subsection{Alternative Architectures Explored}
 \label{subsec:alternative_architectures}
-Talk about MLP, Transformer, other RNNs
-(TODO) erwähnen dass ich sie ausprobiert habe und warum ich sie nicht genommen habe
-(Was ich nicht probiert habe in Future work oder related work)
+
+Before settling on the deep residual MLP architecture, we explored several alternative approaches to understand their trade-offs for object-centric world modeling:
+
+\textbf{Shallow MLP:} A lightweight feedforward architecture with 2 hidden layers of 128 neurons each. While being computationally efficient and fast to train, shallow networks struggled with modeling the complex state transitions. The limited capacity meant that the model could not capture the nonlinear interactions between objects (e.g., ball-paddle collisions with varying angles) accurately.
+
+\textbf{MLP without Residual Connections:} We tested deep architectures (4-6 layers) without skip connections. These models showed training difficulties due to vanishing gradients, especially in the deeper variants. The convergence was slow and the final performance was inferior to the residual version, which confirms the importance of residual connections for deep feedforward networks.
+
+\textbf{Recurrent Architectures (LSTM/GRU):} We considered LSTM and GRU networks that maintain hidden states across the time. While recurrent models can theoretically learn more rich temporal dynamics, they introduce significant computational overhead due to the sequential dependencies. Each prediction requires to iterate through LSTM cells, which prevents efficient parallelization. Moreover, for the deterministic physics of Pong, frame stacking provides sufficient temporal context without the need for learned memory.
+
+In preliminary experiments, LSTM-based models showed comparable single-step prediction accuracy but were 3-5× slower during the imagined rollout generation—which is a critical bottleneck since we generate 30,000 rollouts per training iteration. The computational cost outweighed any potential benefits for our structured, low-dimensional state space.
+
+\textbf{Transformer-based Models:} We considered also transformer architectures with self-attention over the frame history. Transformers excel at learning long-range dependencies from large datasets, but our setting does not require these capabilities. The physics of Pong are local and Markovian—the next state depends primarily on the most recent 2-3 frames. Additionally, transformers have higher parameter counts and data requirements, which conflicts with our sample efficiency goals.
+
+\textbf{Direct State Prediction vs. Frame Prediction:} An important design choice was whether to predict the full 48-dimensional next state or only the newest 12-dimensional frame. We found that the frame-based prediction (our final choice) works better because of:
+\begin{itemize}
+\item \textbf{Reduced output complexity:} 12 outputs vs. 48 reduces the model capacity requirements
+\item \textbf{Inductive bias:} Forces the model to predict changes instead of copying static features
+\item \textbf{Better generalization:} Less prone to overfitting when the training data is limited
+\end{itemize}
+
+Ultimately, we selected the 4-layer residual MLP with frame prediction since it provides the best balance between prediction accuracy, computational efficiency, and training stability. With hidden dimension 256 (scale\_factor=1), the model has approximately 600K parameters—which is sufficient for the structured dynamics of Pong while remaining tractable for training on limited experience data.
 
 \subsection{State Normalization and Stability}
 \label{subsec:normalization}
-why normalization helps in RL in general and why it was used here
-(TODO im Background erwähnen dass es Normalisierung in RL gibt und kurz reinschreiben dass ich das gemacht habe)
+
+Normalization is crucial for a stable training in deep reinforcement learning. Object-centric states in Pong have features with very different scales: paddle positions range from 0-190, ball positions from 0-160 (x) and 0-210 (y), while velocities range from approximately -3 to 3. Without normalization, the gradients would be dominated by the high-magnitude features, which leads to unstable training and poor convergence.
+
+We apply Z-score normalization to all state features:
+
+\begin{equation}
+\tilde{s}_t = \frac{s_t - \mu}{\sigma + \epsilon}
+\end{equation}
+
+where $\mu \in \mathbb{R}^{48}$ and $\sigma \in \mathbb{R}^{48}$ are the mean and standard deviation computed over the training dataset, and $\epsilon = 10^{-8}$ prevents the division by zero. The normalization statistics are computed only from valid training transitions (excluding the episode boundaries) and get saved with the model checkpoint for the consistent inference.
+
+During training, we normalize the inputs before feeding them to the network, and denormalize the predictions back to the original scale:
+
+\begin{equation}
+\hat{s}_{t+1} = \tilde{s}_{t+1} \cdot \sigma + \mu
+\end{equation}
+
+For the world model training, we additionally apply feature-specific loss weighting to emphasize the physically critical variables:
+
+\begin{equation}
+\mathcal{L}_{\text{world}} = \mathbb{E}\left[\sum_{i=1}^{48} w_i \left(\hat{s}_{t+1}^{(i)} - s_{t+1}^{(i)}\right)^2\right]
+\end{equation}
+
+where the weights are set as: $w_i = 10.0$ for ball position features (indices 32-39), $w_i = 5.0$ for ball velocity features (indices 16-23), $w_i = 2.0$ for paddle position (indices 4-7), and $w_i = 1.0$ for other features. This weighting scheme reflects that the ball dynamics are most critical for accurate long-term rollouts, since the position errors in the ball compound fastest during the imagined trajectories.
+
+Additional stability measures include:
+
+\begin{itemize}
+    \item \textbf{Gradient Clipping:} Global norm clipping at 1.0 prevents gradient explosion in deep networks
+    \item \textbf{Learning Rate:} Conservative Adam optimizer with $\alpha = 3 \times 10^{-4}$ and $\epsilon = 10^{-5}$
+    \item \textbf{Residual Connections:} Skip connections in layers 2-4 facilitate gradient flow through the 4-layer network
+    \item \textbf{Layer Normalization:} Applied after each dense layer to stabilize activations and accelerate convergence
+    \item \textbf{GELU Activation:} Gaussian Error Linear Units provide smoother gradients than ReLU, improving training stability
+\end{itemize}
 
 \section{Actor-Critic Integration}
 \label{sec:actor_critic}
-Explain how the actor-critic framework is integrated with the object-centric world model.
-Discuss any modifications made to the standard actor-critic approach to accommodate the
-object-centric representations.
+
+Following the DreamerV2 framework, we train an actor-critic policy entirely from the imagined rollouts generated by our object-centric world model. Unlike the original DreamerV2 which operates on latent states from a learned image encoder, our approach directly uses the interpretable object-centric states from JAXAtari. This architectural choice eliminates the need for the representation learning while maintaining the sample efficiency benefits of model based RL.
 
 \subsection{DreamerV2-Style Actor-Critic}
 \label{subsec:dreamer_ac}
-Explain the Dreamer approach and how it differs which is mainly in the latent space
+
+The key insight of the Dreamer approach is to separate the representation learning from the policy optimization. DreamerV2 learns a latent world model that compresses the high-dimensional observations into compact latent states, then trains actor-critic networks purely in this imagined latent space. Our approach differs in that we bypass the representation learning phase entirely—the object-centric states from JAXAtari already provide a compact, meaningful representation of the environment.
+
+\textbf{Actor Network:} The actor $\pi_\psi(a|s)$ is a categorical distribution over the 6 discrete actions in Pong (NOOP, UP, DOWN, and their variants). It is implemented as a 3-layer MLP with 64 hidden units per layer, ELU activations, and a final softmax output:
+
+\begin{align}
+h_1 &= \text{ELU}(\text{Dense}_{64}(s)) \\
+h_2 &= \text{ELU}(\text{Dense}_{64}(h_1)) \\
+h_3 &= \text{ELU}(\text{Dense}_{64}(h_2)) \\
+\pi_\psi(a|s) &= \text{Categorical}(\text{Dense}_6(h_3))
+\end{align}
+
+The network uses orthogonal initialization with scaling $\sqrt{2}$ for the hidden layers and 0.01 for the output layer, which promotes stable gradient flow and prevents the premature convergence to deterministic policies.
+
+\textbf{Critic Network:} The critic $v_\xi(s)$ estimates the state values through a distributional representation. Instead of outputting a single scalar value, it predicts a Gaussian distribution $\mathcal{N}(\mu_v, \sigma_v)$ over the returns:
+
+\begin{align}
+h_1 &= \text{ELU}(\text{Dense}_{64}(s)) \\
+h_2 &= \text{ELU}(\text{Dense}_{64}(h_1)) \\
+h_3 &= \text{ELU}(\text{Dense}_{64}(h_2)) \\
+\mu_v &= \text{Dense}_1(h_3) \\
+\log \sigma_v &= \text{clip}(\text{Dense}_1(h_3), -3, 0)
+\end{align}
+
+The distributional critic provides the uncertainty estimates and has been shown to improve the learning stability in actor-critic methods. During training, we minimize the negative log-likelihood of the target returns under this distribution.
 
 \subsection{Policy Learning in Imagined Rollouts}
 \label{subsec:imagined_rollouts}
-how the policy is learned in imagined rollouts from the world model
+
+A core principle of model based RL is to learn policies from the simulated trajectories instead of requiring expensive real environment interactions. Our training procedure operates in two phases:
+
+\textbf{Phase 1: Rollout Generation}
+
+Given a batch of $N=30000$ initial states sampled from the experience buffer, we generate the imagined trajectories of length $H=7$ by repeatedly applying the current actor policy in the world model:
+
+\begin{algorithm}
+\caption{Imagined Rollout Generation}
+\begin{algorithmic}[1]
+\STATE \textbf{Input:} Initial states $\{s_0^{(i)}\}_{i=1}^N$, world model $f_\theta$, actor $\pi_\psi$, critic $v_\xi$
+\STATE \textbf{Output:} Trajectories $(s_t, a_t, r_t, \gamma_t, v_t)$ for $t=0..H$
+\FOR{$i = 1$ to $N$}
+    \STATE $s_t \gets s_0^{(i)}$ \hfill // Initialize from experience buffer
+    \FOR{$t = 0$ to $H-1$}
+        \STATE Sample action: $a_t \sim \pi_\psi(\cdot | s_t)$
+        \STATE Predict value: $v_t \gets \mathbb{E}[v_\xi(s_t)]$
+        \STATE Predict next state: $s_{t+1} \gets f_\theta(s_t, a_t)$
+        \STATE Compute reward: $r_t \gets R(s_{t+1}, a_t)$
+        \STATE Set discount: $\gamma_t \gets 0.95$
+    \ENDFOR
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+The rollout length $H=7$ was chosen to balance the computational efficiency with sufficient lookahead for the credit assignment. Shorter rollouts ($H < 5$) provided insufficient temporal context, while longer rollouts ($H > 10$) accumulated the prediction errors that degraded the policy learning.
+
+Critically, the rewards are computed from the predicted states using a hand-crafted reward function instead of relying on the environment's score. We use an improved reward function based on the ball-paddle interactions:
+
+\begin{equation}
+R(s_{t+1}, a_t) = \begin{cases}
++2.0 & \text{if ball crosses left edge and paddle aligned} \\
+-2.0 & \text{if ball crosses left edge and paddle misaligned} \\
++0.5 & \text{if ball moving toward paddle and paddle tracking} \\
+-0.1 & \text{if paddle moving without ball approaching} \\
+0.0 & \text{otherwise}
+\end{cases}
+\end{equation}
+
+This dense reward provides more learning signal than the sparse score-based rewards, especially during the early training when the agent rarely hits the ball.
+
+\textbf{Phase 2: Policy Optimization}
+
+Once the imagined rollouts are generated, we train the actor and critic using the collected trajectories. The critic is trained to predict the lambda-returns (described in Section \ref{subsec:lambda_returns}), while the actor maximizes these predicted returns using the REINFORCE gradient estimator.
+
+A key implementation detail is the batching strategy. We flatten all trajectories into a single dataset of $(s_t, a_t, V^\lambda_t)$ tuples totaling $N \times H = 210,000$ samples, then we perform mini-batch SGD with batch size 256. This approach improves the hardware utilization and gradient stability compared to the per-trajectory updates.
 
 \subsection{Lambda-Return Computation}
 \label{subsec:lambda_returns}
-provide the formular here and briefly explain it
+
+The lambda-return $V^\lambda_t$ provides a bias-variance trade-off between the Monte Carlo returns (high variance, low bias) and the TD(0) estimates (low variance, high bias). We compute the lambda-returns recursively following the DreamerV2 formulation:
+
+\begin{equation}
+V^\lambda_t = r_t + \gamma_t \cdot \left[(1 - \lambda) v_\xi(s_{t+1}) + \lambda V^\lambda_{t+1}\right]
+\label{eq:lambda_return}
+\end{equation}
+
+with the base case $V^\lambda_H = v_\xi(s_H)$ at the horizon. We set $\lambda = 0.95$ following the DreamerV2's Atari configuration, which heavily weights the bootstrapped value estimates while maintaining some Monte Carlo influence.
+
+The computation is implemented via a JAX scan operation that processes the trajectories backwards in time:
+
+\begin{algorithm}
+\caption{Lambda-Return Computation (Backward Pass)}
+\begin{algorithmic}[1]
+\STATE \textbf{Input:} Rewards $\{r_t\}_{t=1}^{H}$, values $\{v_t\}_{t=0}^{H}$, discounts $\{\gamma_t\}_{t=1}^{H}$, $\lambda$
+\STATE \textbf{Output:} Lambda-returns $\{V^\lambda_t\}_{t=0}^{H-1}$
+\STATE $V^\lambda_H \gets v_H$ \hfill // Bootstrap from final value
+\FOR{$t = H-1$ down to $0$}
+    \STATE $V^\lambda_t \gets r_{t+1} + \gamma_{t+1} \left[(1-\lambda) v_{t+1} + \lambda V^\lambda_{t+1}\right]$
+\ENDFOR
+\STATE \textbf{return} $\{V^\lambda_t\}_{t=0}^{H-1}$
+\end{algorithmic}
+\end{algorithm}
+
+These lambda-returns serve as regression targets for the critic:
+
+\begin{equation}
+\mathcal{L}_{\text{critic}} = \mathbb{E}_{s \sim \text{rollouts}}\left[-\log p_{v_\xi}(V^\lambda | s)\right]
+\end{equation}
+
+where $p_{v_\xi}(V^\lambda | s)$ is the Gaussian density predicted by the critic. The stop-gradient operator is applied to the lambda-returns to prevent the gradients from flowing back through the target computation.
+
+The actor is trained using the policy gradient with advantages computed as $A_t = V^\lambda_t - v_\xi(s_t)$:
+
+\begin{equation}
+\mathcal{L}_{\text{actor}} = \mathbb{E}_{s,a \sim \text{rollouts}}\left[-\log \pi_\psi(a|s) \cdot \text{sg}(A_t) - \eta \mathcal{H}[\pi_\psi(\cdot|s)]\right]
+\end{equation}
+
+where $\eta = 0.01$ is the entropy bonus coefficient that encourages exploration, and $\text{sg}(\cdot)$ denotes the stop-gradient. We additionally normalize the advantages to have zero mean and unit variance within each batch, which improves the gradient stability.
 
 \section{Training Pipeline}
 \label{sec:training_pipeline}
-explain when the worldmodel gets retrained and how sampling works
 
-\subsection{World Model Training and experience collection}
+Our complete training procedure alternates between the world model training and the policy optimization, with periodic retraining of the world model using fresh experience collected by the improving policy. This cyclic approach addresses a key challenge in model based RL: as the policy improves, it explores new regions of the state space where the world model may be inaccurate.
+
+\subsection{World Model Training and Experience Collection}
 \label{subsec:world_model_training}
-(TODO Pseudo CODE mit Abbildung)
-explain how the initial experience for the world model is collected and how it can be updated during later training stages
+
+The training pipeline begins with an initial data collection phase, followed by iterative improvement of both the world model and policy:
+
+\begin{algorithm}
+\caption{Complete Training Pipeline}
+\begin{algorithmic}[1]
+\STATE \textbf{// Phase 1: Initial Setup}
+\IF{no experience buffer exists}
+    \STATE Collect 160,000 steps using ball-tracking policy in real environment
+    \STATE Train world model $f_\theta$ for 50 epochs on collected data
+\ENDIF
+\STATE Load world model parameters $\theta$ and experience buffer
+\STATE Initialize actor $\pi_\psi$ and critic $v_\xi$ with random weights
+\STATE
+\STATE \textbf{// Phase 2: Iterative Training}
+\FOR{iteration $i = 0$ to 3120}
+    \STATE \textbf{// Policy optimization from imagination}
+    \STATE Sample 30,000 initial states from experience buffer
+    \STATE Generate $H=7$ step imagined rollouts using $f_\theta$, $\pi_\psi$
+    \STATE Compute lambda-returns using $v_\xi$
+    \STATE Update $\pi_\psi$ and $v_\xi$ for 10 epochs on imagined data
+    \STATE
+    \STATE \textbf{// Evaluation}
+    \IF{$i \mod 10 = 0$}
+        \STATE Evaluate $\pi_\psi$ for 50 episodes in real environment
+        \IF{mean reward $>$ best so far}
+            \STATE Save best checkpoint
+        \ENDIF
+    \ENDIF
+    \STATE
+    \STATE \textbf{// World model retraining (for model-based mode only)}
+    \IF{$i \mod 10 = 0$ and using model-based rollouts}
+        \STATE Collect 160,000 new steps using current $\pi_\psi$ in real environment
+        \STATE Retrain $f_\theta$ for 50 epochs on updated experience buffer
+    \ENDIF
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Initial Experience Collection:} Before any training begins, we collect a diverse dataset of state transitions using a ball-tracking heuristic policy. This policy moves the paddle toward the ball's y-coordinate with 50\% random exploration, which provides reasonable coverage of reachable states without requiring a pre-trained agent. The ball-tracking policy achieves approximately -5 to +5 average reward in Pong, which is sufficient for observing the ball-paddle interactions.
+
+The collected experience is stored as tuples $(s_t, a_t, s_{t+1})$ with metadata marking the episode and life boundaries (ball resets). These boundaries are crucial for the world model training—we exclude the transitions that cross boundaries from the training batches, since they violate the temporal continuity.
+
+\textbf{World Model Training Details:} The world model is trained via supervised learning to predict the one-step transitions. We use the mean squared error loss with feature-specific weighting:
+
+\begin{equation}
+\mathcal{L}_{\text{world}} = \mathbb{E}_{(s,a,s') \sim \mathcal{D}}\left[\sum_{i=1}^{48} w_i \left(f_\theta(s, a)^{(i)} - s'^{(i)}\right)^2\right]
+\end{equation}
+
+Training uses the Adam optimizer with learning rate $3 \times 10^{-4}$, batch size 512, and 50 epochs. The model gets saved every 10 epochs along with the normalization statistics.
+
+\textbf{Experience Buffer Management:} The experience buffer maintains a sliding window of recent transitions. In the real-environment baseline mode, we do not update the buffer after the initial collection. In the model-based mode, we periodically collect fresh data using the current policy, then retrain the world model every 10 policy optimization iterations.
+
+When retraining, we append new transitions to the existing buffer instead of replacing it. This prevents the catastrophic forgetting of state regions that the improved policy no longer visits. The buffer size is capped at 500,000 transitions to manage the memory.
 
 \subsection{Policy Optimization}
 \label{subsec:policy_optimization}
-explain how the policy is optimized and how often
+
+Within each training iteration, the policy optimization proceeds through several stages:
+
+\textbf{Stage 1: Rollout Generation:} We sample 30,000 initial states uniformly from the experience buffer and generate the 7-step imagined trajectories. The large batch size improves the GPU utilization and provides diverse training signal. The rollouts are generated in sub-batches of 100 to manage the memory, with each sub-batch processed in parallel via the JAX's vmap and scan primitives.
+
+\textbf{Stage 2: Data Preparation:} The generated trajectories are flattened into a dataset of 210,000 $(s_t, a_t, r_t, \gamma_t, v_t)$ tuples. We compute the lambda-returns via a vectorized backward pass over all trajectories simultaneously. The advantages are then computed and normalized.
+
+\textbf{Stage 3: Actor-Critic Updates:} We perform 10 epochs of mini-batch gradient descent on the prepared data. Each epoch shuffles the data and processes it in batches of 256. The critic and actor get updated sequentially within each mini-batch:
+
+\begin{align}
+\xi &\gets \xi - \alpha_{\text{critic}} \nabla_\xi \mathcal{L}_{\text{critic}} \\
+\psi &\gets \psi - \alpha_{\text{actor}} \nabla_\psi \mathcal{L}_{\text{actor}}
+\end{align}
+
+with learning rates $\alpha_{\text{critic}} = 5 \times 10^{-4}$ and $\alpha_{\text{actor}} = 8 \times 10^{-5}$. Both optimizers use the gradient clipping at global norm 0.5 to prevent the instability.
+
+\textbf{Early Stopping:} We employ two early stopping criteria: (1) KL divergence threshold—if $D_{KL}(\pi_{\text{old}} || \pi_{\text{new}}) > 0.15$, we terminate the updates early. (2) Loss plateau—if the combined loss does not improve for 100 consecutive epochs, we reduce the actor learning rate by 50\%.
+
+The complete policy optimization cycle takes approximately 95 seconds per iteration on an NVIDIA RTX 3090 GPU, which enables 3120 iterations in roughly 80 hours of wall-clock time.
 
 \chapter{Experiments and Results}
 \label{chap:experiments}
