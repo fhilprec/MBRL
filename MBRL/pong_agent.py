@@ -479,7 +479,7 @@ def run_single_episode(
 
                 #override action for deterministic eval
                 if sample_mode:
-                    action = pi.sample(seed=action_key)
+                    action = pi.mode()
 
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
             next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
@@ -953,7 +953,6 @@ def evaluate_real_performance(
             actions=actions_array,
             frame_stack_size=4,
             clock_speed=50,
-            model_scale_factor=model_scale_factor,
             reward_predictor_params=None,
         )
 
@@ -989,7 +988,7 @@ def main():
         "max_grad_norm": 0.5,
         "target_kl": 0.15,
         "early_stopping_patience": 100,
-        "retrain_interval": 10,
+        "retrain_interval": 50,
         "wm_sample_size": 160000, # sample 160000 new steps
         "wm_train_epochs": 50,
     }

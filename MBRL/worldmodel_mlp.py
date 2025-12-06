@@ -63,6 +63,7 @@ def compare_real_vs_model(
     calc_score_based_reward: bool = True,
     print_error: bool = True,
     rollout_length: int = 0,
+    frame_skip: int = 4,
 ):
 
     rng = jax.random.PRNGKey(0)
@@ -119,126 +120,8 @@ def compare_real_vs_model(
                 elif score_val < 0:
                     print(f"\033[91mStep {step}, Score Reward: {score_val}\033[0m")
 
-        # print(pred_obs)
-        # print(reward_predictor_params)
-        # TEMPORARY: Using transition-based reward predictor for visualization
-        # TODO_CLEANUP: This will become standard once migration is complete
-        if reward_predictor_params is not None and previous_model_obs is not None:
+       
 
-            reward_model_viz = RewardPredictorMLPTransition(1)
-            # Need previous observation for transition-based prediction
-            # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
-            prev_real_obs = obs[step]
-            raw_prediction = reward_model_viz.apply(
-                reward_predictor_params, rng, previous_model_obs, action, pred_obs
-            )
-
-            raw_val = float(jnp.squeeze(raw_prediction))
-            # print(raw_val)
-            predicted_reward = jnp.round(
-                jnp.clip(jnp.squeeze((raw_prediction * (4 / 3) / 2)), -1.0, 1.0)
-            )  # *(4/3) / 2 means -0.75 to 0.75 becomes 0
-            # rounded_reward = jnp.round(predicted_reward * 2) / 2
-            pred_val = float(predicted_reward)
-
-            # Debug: print ball_x from prev and current obs to understand what model sees
-            frame_stack_size = 4
-            base = (frame_stack_size - 1) * 14
-            prev_ball_x = float(prev_real_obs[-21])
-            curr_ball_x = float(real_obs[-21])
-            # print(curr_ball_x)
-            improved_reward = improved_reward = improved_pong_reward(
-                real_obs, action, frame_stack_size=4
-            )
-            reward = improved_reward + pred_val * 2.0
-            # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
-            if abs(pred_val) > 0.0:
-                if pred_val > 0:
-                    print(
-                        f"\033[92mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
-                    )
-                else:
-                    print(
-                        f"\033[91mStep {step}, Imagined Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
-                    )
-
-        if reward_predictor_params is not None and steps_into_future == 0:
-
-            reward_model_viz = RewardPredictorMLPTransition(1)
-            # Need previous observation for transition-based prediction
-            # Note: real_obs is actually next_real_obs (obs[step+1]), so prev should be obs[step]
-            prev_real_obs = obs[step]
-            raw_prediction = reward_model_viz.apply(
-                reward_predictor_params, rng, prev_real_obs, action, real_obs
-            )
-
-            raw_val = float(jnp.squeeze(raw_prediction))
-            # print(raw_val)
-            predicted_reward = jnp.round(
-                jnp.clip(jnp.squeeze((raw_prediction * (10 / 9) / 2)), -1.0, 1.0)
-            )  # *(4/3) / 2 means -0.75 to 0.75 becomes 0
-            # rounded_reward = jnp.round(predicted_reward * 2) / 2
-            pred_val = float(predicted_reward)
-
-            # Debug: print ball_x from prev and current obs to understand what model sees
-            frame_stack_size = 4
-            base = (frame_stack_size - 1) * 14
-            prev_ball_x = float(prev_real_obs[-21])
-            curr_ball_x = float(real_obs[-21])
-            # print(curr_ball_x)
-            improved_reward = improved_reward = improved_pong_reward(
-                real_obs, action, frame_stack_size=4
-            )
-            reward = improved_reward + pred_val * 2.0
-            # print("REWARD COMPONENTS: ", reward, " = ", improved_reward, " + ", pred_val*2.0)
-            if abs(pred_val) > 0.0:
-                if pred_val > 0:
-                    print(
-                        f"\033[92mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
-                    )
-                else:
-                    print(
-                        f"\033[91mStep {step}, Reward Model Prediction: {pred_val} (raw: {raw_val:.3f}, ball_x: {prev_ball_x:.1f} -> {curr_ball_x:.1f})\033[0m"
-                    )
-
-        if error > 20 and render_debugging:
-            print("-" * 100)
-            print("Indexes where difference > 1:")
-            for j in range(len(pred_obs)):
-                if jnp.abs(pred_obs[j] - real_obs[j]) > 10:
-                    print(
-                        f"Index {j}: Predicted {pred_obs[j]:.2f} vs Real {real_obs[j]:.2f}"
-                    )
-            print("-" * 100)
-
-    def check_lstm_state_health(lstm_state, step):
-        if lstm_state is not None:
-
-            lstm1_state, lstm2_state = lstm_state
-
-            hidden1_norm = jnp.linalg.norm(lstm1_state.hidden)
-            cell1_norm = jnp.linalg.norm(lstm1_state.cell)
-
-            hidden2_norm = jnp.linalg.norm(lstm2_state.hidden)
-            cell2_norm = jnp.linalg.norm(lstm2_state.cell)
-
-            max_norm = max(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
-            min_norm = min(hidden1_norm, cell1_norm, hidden2_norm, cell2_norm)
-
-            if max_norm > 5.0:
-                print(
-                    f"Step {step}: LSTM state explosion - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
-                )
-            elif min_norm < 0.01:
-                print(
-                    f"Step {step}: LSTM state vanishing - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
-                )
-            else:
-
-                if step % 50 == 0:
-                    print(
-                        f"Step {step}: LSTM states healthy - Layer1 h:{hidden1_norm:.2f} c:{cell1_norm:.2f}, Layer2 h:{hidden2_norm:.2f} c:{cell2_norm:.2f}"
-                    )
 
     if normalization_stats:
         state_mean = normalization_stats["mean"]
@@ -285,6 +168,7 @@ def compare_real_vs_model(
         sticky_actions=False,
         episodic_life=False,
         frame_stack_size=frame_stack_size,
+        frame_skip=frame_skip,
     )
     dummy_obs, _ = env.reset(jax.random.PRNGKey(int(time.time())))
     _, unflattener = flatten_obs(dummy_obs, single_state=True)
@@ -1091,7 +975,7 @@ def load_checkpoint(path):
 
 
 
-def create_env(frame_stack_size=4):
+def create_env(frame_stack_size=4, frame_skip=4):
     """Create the Pong environment with wrappers."""
     game = JaxPong()
     env = AtariWrapper(
@@ -1099,6 +983,7 @@ def create_env(frame_stack_size=4):
         sticky_actions=False,
         episodic_life=False,
         frame_stack_size=frame_stack_size,
+        frame_skip=frame_skip,
     )
     env = FlattenObservationWrapper(env)
     return env
@@ -1112,16 +997,22 @@ def main():
         print()
         print("Usage:")
         print(
-            "  python worldmodel_mlp.py collect [num_episodes] [actor_type]  - Collect experience data"
+            "  python worldmodel_mlp.py collect [num_episodes] [actor_type] [frame_skip]  - Collect experience data"
         )
         print(
             "                                                     actor_type: 'real', 'imagined', or 'none' (default: none)"
         )
         print(
-            "  python worldmodel_mlp.py train [num_epochs]                   - Train the world model"
+            "                                                     frame_skip: number of frames to skip (default: 4)"
         )
         print(
-            "  python worldmodel_mlp.py render [start_idx]                   - Visualize predictions"
+            "  python worldmodel_mlp.py train [num_epochs]                                 - Train the world model"
+        )
+        print(
+            "  python worldmodel_mlp.py render [start_idx] [frame_skip]                    - Visualize predictions"
+        )
+        print(
+            "                                                     frame_skip: number of frames to skip (default: 4)"
         )
         print()
         print("Files:")
@@ -1137,8 +1028,10 @@ def main():
         actor_type = (
             args[2] if len(args) > 2 else "none"
         )  # 'real', 'imagined', or 'none'
+        frame_skip = int(args[3]) if len(args) > 3 else 4
 
-        env = create_env(frame_stack_size)
+        env = create_env(frame_stack_size, frame_skip=frame_skip)
+        print(f"Collecting experience with frame_skip={frame_skip}")
 
         # Load trained actor based on actor_type parameter
         actor_params = None
@@ -1248,6 +1141,7 @@ def main():
 
     elif command == "render":
         start_idx = int(args[1]) if len(args) > 1 else 0
+        frame_skip = int(args[2]) if len(args) > 2 else 4
 
         # Load model
         checkpoint_path = "worldmodel_mlp.pkl"
@@ -1263,9 +1157,10 @@ def main():
         print("\n" + "=" * 60)
         print("GENERATING FRESH TEST EPISODE (not from training data)")
         print("This tests if the model generalizes vs. overfits to training data")
+        print(f"Using frame_skip={frame_skip}")
         print("=" * 60 + "\n")
 
-        env = create_env(frame_stack_size)
+        env = create_env(frame_stack_size, frame_skip=frame_skip)
 
         # Collect 1 fresh episode with ball-tracking policy
         test_data = collect_experience(
@@ -1340,6 +1235,7 @@ def main():
             model_path=checkpoint_path,
             clock_speed=100,
             print_error=True,
+            frame_skip=frame_skip,
         )
 
     else:
