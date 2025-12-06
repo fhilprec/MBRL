@@ -217,6 +217,100 @@ def improved_pong_reward(obs, action, frame_stack_size=4):
     return total_reward
 
 
+def SeaquestMLPDeep(model_scale_factor=1):
+    """
+    Deeper MLP with LayerNorm and residual connections for Seaquest.
+    4 layers with skip connections for better gradient flow.
+
+    Adapted from PongMLPDeep for Seaquest's observation space and 18 actions.
+    """
+
+    def forward(state, action, lstm_state=None):
+        batch_size = action.shape[0] if len(action.shape) > 0 else 1
+
+        if len(state.shape) == 1:
+            feature_size = state.shape[0]
+            flat_state = state.reshape(batch_size, feature_size // batch_size)
+        else:
+            flat_state = state
+
+        # Seaquest has 18 actions (vs Pong's 6)
+        action_one_hot = jax.nn.one_hot(action, num_classes=18)
+        x = jnp.concatenate([flat_state, action_one_hot], axis=-1)
+
+        hidden_size = int(256 * model_scale_factor)
+
+        # Layer 1
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+
+        # Layer 2 with residual
+        residual = x
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = x + residual
+
+        # Layer 3 with residual
+        residual = x
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = x + residual
+
+        # Layer 4 with residual
+        residual = x
+        x = hk.Linear(hidden_size)(x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.gelu(x)
+        x = x + residual
+
+        # Output layer - predict NEW frame only (not full state)
+        # For frame stacking, we need to SHIFT frames and add new frame
+        # Seaquest observation size depends on the flattened state structure
+        # We'll determine features per frame dynamically from input
+        num_frames = 4
+        total_features = flat_state.shape[-1]
+        num_features_per_frame = total_features // num_frames
+
+        # Predict only the NEW frame
+        new_frame = hk.Linear(num_features_per_frame)(x)
+
+        # Shift frames: [f0, f1, f2, f3] -> [f1, f2, f3, NEW]
+        # Interleaved format: for feature i, frame f: index = i * num_frames + f
+
+        # Build index arrays for vectorized shifting
+        shifted_frames = []
+
+        for feat_idx in range(num_features_per_frame):
+            # Get frames 1, 2, 3 for this feature (shift left)
+            old_indices = jnp.array(
+                [feat_idx * num_frames + f for f in range(1, num_frames)]
+            )
+            old_frames = flat_state[..., old_indices]  # Shape: (batch, 3)
+
+            # Append the new predicted frame
+            new_frame_value = new_frame[
+                ..., feat_idx : feat_idx + 1
+            ]  # Shape: (batch, 1)
+
+            # Concatenate: [frame1, frame2, frame3, NEW]
+            feature_frames = jnp.concatenate(
+                [old_frames, new_frame_value], axis=-1
+            )  # Shape: (batch, 4)
+            shifted_frames.append(feature_frames)
+
+        # Stack all features in interleaved format
+        shifted_prediction = jnp.concatenate(
+            shifted_frames, axis=-1
+        )  # Shape: (batch, total_features)
+
+        return shifted_prediction, None
+
+    return hk.transform(forward)
+
+
 def RewardPredictorMLPTransition(model_scale_factor=1):
     """
     Transition-based reward predictor that takes (current_state, action, next_state).
