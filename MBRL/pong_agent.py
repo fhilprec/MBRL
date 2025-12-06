@@ -120,7 +120,7 @@ SEED = 42
 
 
 def flatten_obs(
-    state, single_state: bool = False, is_list=False
+    state, single_state: bool = False, is_list=False, inference=False
 ) -> Tuple[jnp.ndarray, Any]:
 
     if isinstance(state, jnp.ndarray):
@@ -140,8 +140,10 @@ def flatten_obs(
                 flat_states.append(s)
             else:
                 flat_state, _ = jax.flatten_util.ravel_pytree(s)
-
-                flat_states.append(flat_state[:-8])
+                if not inference:
+                    flat_states.append(flat_state[:-8])
+                else:
+                    flat_states.append(flat_state)
         flat_states = jnp.stack(flat_states, axis=0)
         print(flat_states.shape)
         return flat_states
@@ -149,7 +151,10 @@ def flatten_obs(
     if single_state:
         flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
 
-        return flat_state[:-8], unflattener
+        if not inference:
+            return flat_state[:-8], unflattener
+        else:
+            return flat_state, unflattener
 
     batch_shape = (
         state.player_x.shape[0]
@@ -160,7 +165,10 @@ def flatten_obs(
     flat_state, unflattener = jax.flatten_util.ravel_pytree(state)
     flat_state = flat_state.reshape(batch_shape, -1)
 
-    return flat_state[..., :-8], unflattener
+    if not inference:
+        return flat_state[..., :-8], unflattener
+    else:
+        return flat_state, unflattener
 
 
 def create_dreamerv2_actor(action_dim: int):
@@ -466,8 +474,9 @@ def run_single_episode(
         def continue_step(_):
 
             rng_new, action_key = jax.random.split(rng)
-            flat_obs, _ = flatten_obs(obs, single_state=True)
-            pi = actor_network.apply(actor_params, flat_obs)
+            flat_obs, _ = flatten_obs(obs, single_state=True, inference=True)
+            # Actor was trained without scores, so remove the last 8 features
+            pi = actor_network.apply(actor_params, flat_obs[:-8])
             if not inference:
                 action = pi.sample(seed=action_key)
             else:
@@ -482,7 +491,7 @@ def run_single_episode(
                     action = pi.mode()
 
             next_obs, next_state, reward, next_done, _ = env.step(state, action)
-            next_flat_obs = flatten_obs(next_obs, single_state=True)[0]
+            next_flat_obs = flatten_obs(next_obs, single_state=True, inference=True)[0]
 
             if use_score_reward:
                 # When done=True, the wrapper resets the environment, so we can't read scores
@@ -491,7 +500,7 @@ def run_single_episode(
             else:
 
                 improved_reward = improved_pong_reward(
-                    next_flat_obs, action, frame_stack_size=4
+                    next_flat_obs[:-8], action, frame_stack_size=4
                 )
 
                 reward_predictor_reward = jnp.array(0.0, dtype=jnp.float32)
@@ -502,9 +511,9 @@ def run_single_episode(
                     predicted_reward = reward_model.apply(
                         reward_predictor_params,
                         rng_reward,
-                        flat_obs[None, :],
+                        flat_obs[None, :-8],
                         jnp.array([action]),
-                        next_flat_obs[None, :],
+                        next_flat_obs[None, :-8],
                     )
 
                     predicted_reward_clipped = jnp.round(
@@ -527,7 +536,7 @@ def run_single_episode(
 
         def skip_step(_):
 
-            flat_obs, _ = flatten_obs(obs, single_state=True)
+            flat_obs, _ = flatten_obs(obs, single_state=True, inference=True)
 
             dummy_action = jnp.array(0, dtype=jnp.int32)
             dummy_reward = jnp.array(0.0, dtype=jnp.float32)
@@ -544,7 +553,7 @@ def run_single_episode(
 
         return jax.lax.cond(done, skip_step, continue_step, None)
 
-    flattened_init_obs = flatten_obs(obs, single_state=True)[0]
+    flattened_init_obs = flatten_obs(obs, single_state=True, inference=True)[0]
 
     initial_carry = (step_key, flattened_init_obs, state, jnp.array(False))
     _, transitions = jax.lax.scan(step_fn, initial_carry, None, length=max_steps)
@@ -1175,9 +1184,7 @@ def main():
         del obs
         gc.collect()
 
-        print(
-            f"Generating imagined rollouts of shape {(training_params['rollout_length'], training_params['num_rollouts'])}"
-        )
+        
 
         (
             imagined_obs,
@@ -1200,6 +1207,10 @@ def main():
             key=jax.random.PRNGKey(SEED),
             reward_predictor_params=reward_predictor_params,
             model_scale_factor=loaded_model_scale_factor,
+        )
+
+        print(
+            f"Generating imagined rollouts of shape {imagined_obs.shape} using model scale factor {loaded_model_scale_factor}"
         )
 
         if args.render:
@@ -1348,7 +1359,7 @@ def main():
                 # Update the regular checkpoints with new best performance
                 save_model_checkpoints(actor_params, critic_params, i, prefix=prefix, best_eval_performance=best_eval_performance)
 
-            if eval_mean >= 19.0:
+            if eval_mean >= 20.8:
                 print(
                     f"Achieved eval mean reward of {eval_mean:.2f}, stopping training early!"
                 )

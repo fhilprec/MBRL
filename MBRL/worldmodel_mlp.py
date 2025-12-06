@@ -175,7 +175,7 @@ def compare_real_vs_model(
 
     real_obs = obs[0]
     model_obs = obs[0]
-
+    
     # Initialize LSTM state (only if using model predictions)
     if steps_into_future > 0:
         dummy_action = jnp.zeros(1, dtype=jnp.int32)
@@ -248,10 +248,10 @@ def compare_real_vs_model(
         real_obs_for_state = jnp.concatenate([real_obs, jnp.zeros(8)])
         model_obs_for_state = jnp.concatenate([model_obs, jnp.zeros(8)])
         real_base_state = pong_flat_observation_to_state(
-            real_obs_for_state, unflattener, frame_stack_size=frame_stack_size
+            real_obs, unflattener, frame_stack_size=frame_stack_size
         )
         model_base_state = pong_flat_observation_to_state(
-            model_obs_for_state, unflattener, frame_stack_size=frame_stack_size
+            model_obs, unflattener, frame_stack_size=frame_stack_size
         )
 
         real_raster = renderer.render(real_base_state)
